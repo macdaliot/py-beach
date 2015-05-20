@@ -25,32 +25,32 @@ class Actor( Greenlet ):
         self.port = port
         self.name = uid
 
-        # This socket receives all taskings for the actor and dispatch
-        # the messages as requested by user
-        self._multiplexRep( 'tcp://*:%d' % self.port, 'inproc://%s' % ( self.name, ) )
-
-        # We support up to n concurrent requests
-        for n in range( 5 ):
-            gevent.spawn( self._opsHandler )
-
         # We keep track of all the handlers for the user per message request type
         self.handlers = {}
 
-        # We use a simple counter to determine if all handlers
-        # for this specific actor have finished executing to
-        # then call the deinit function safely
-        self.nRunning = 0
+        self.reqHandlers = []
 
     def _run( self ):
 
         if hasattr( self, 'init' ):
             self.init()
 
+        # This socket receives all taskings for the actor and dispatch
+        # the messages as requested by user
+        self._multiplexRep( 'tcp://*:%d' % self.port, 'inproc://%s' % ( self.name, ) )
+
+        # We support up to n concurrent requests
+        for n in range( 5 ):
+            self.reqHandlers.append( gevent.spawn( self._opsHandler ) )
+
         self.stopEvent.wait()
 
-        while 0 != self.nRunning:
-            self.log( "Waiting on %d handlers still running..." % self.nRunning )
-            gevent.sleep( 1 )
+        # Finish all the handlers
+        for h in self.reqHandlers:
+            h.join( timeout = 2 )
+            if not h.ready():
+                self.logCritical( "Waited for 2 seconds for handler/scheduled %s to finish, timeout, killing." % str( h ) )
+                h.kill()
 
         if hasattr( self, 'deinit' ):
             self.deinit()
@@ -107,8 +107,14 @@ class Actor( Greenlet ):
 
     def schedule( self, delay, func, *args, **kw_args ):
         if not self.stopEvent.wait( 0 ):
-            gevent.spawn_later( 0, func, *args, **kw_args )
             gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args )
+            try:
+                self.reqHandlers.append( gevent.getcurrent() )
+                func( *args, **kw_args )
+            except:
+                self.logCritical( traceback.format_exc( ) )
+            finally:
+                self.reqHandlers.remove( gevent.getcurrent() )
 
     def log( self, msg ):
         msg = '%s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
