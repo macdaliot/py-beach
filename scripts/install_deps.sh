@@ -5,7 +5,7 @@ apt-get -y install build-essential
 apt-get -y install libzmq
 apt-get -y install python-pip
 apt-get -y install python-dev
-pip install pyzmq
 apt-get -y install python-gevent
-
+pip install pyzmq
+pup install netifaces
 pip install pyyaml

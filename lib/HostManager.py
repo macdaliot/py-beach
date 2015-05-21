@@ -12,6 +12,7 @@ import time
 import uuid
 import random
 from sets import Set
+import netifaces
 
 timeToStopEvent = Event()
 
@@ -45,6 +46,8 @@ class HostManager ( object ):
         self.opsPort = 0
         self.opsSocket = None
         self.port_range = ( 0, 0 )
+        self.interface = None
+        self.ifaceIp4 = None
         self.nodes = {}
         self.peer_keepalive_seconds = 0
         self.instance_keepalive_seconds = 0
@@ -64,12 +67,15 @@ class HostManager ( object ):
         self.seedNodes = self.configFile.get( 'seed_nodes', [] )
         for s in self.seedNodes:
             print( "Using seed node: %s" % s )
+
+        self.interface = self.configFile.get( 'interface', 'eth0' )
+        self.ifaceIp4 = netifaces.ifaddresses( self.interface )[ netifaces.AF_INET ][ 0 ][ 'addr' ]
         
         self.directoryPort = ZSocket( zmq.REP, self.configFile.get( 'directory_port', 'ipc:///tmp/py_beach_directory_port' ), isBind = True )
         self.managementPort = ZSocket( zmq.REP, self.configFile.get( 'management_port', 'ipc:///tmp/py_beach_management_port' ), isBind = True )
         
         self.opsPort = self.configFile.get( 'ops_port', 4999 )
-        self.opsSocket = ZSocket( zmq.REP, 'tcp://*:%d' % self.opsPort, isBind = True )
+        self.opsSocket = ZSocket( zmq.REP, 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ), isBind = True )
         
         self.port_range = ( self.configFile.get( 'port_range_start', 5000 ), self.configFile.get( 'port_range_end', 6000 ) )
         self.ports_available.update( xrange( self.port_range[ 0 ], self.port_range[ 1 ] + 1 ) )
@@ -120,10 +126,13 @@ class HostManager ( object ):
                     break
             if isFound:
                 self.tombstones[ uid ] = int( time.time() )
-                port = self.actorInfo[ uid ][ 'port' ]
-                self.ports_available.add( port )
-                del( self.actorInfo[ uid ] )
                 break
+
+        if uid in self.actorInfo:
+            port = self.actorInfo[ uid ][ 'port' ]
+            self.ports_available.add( port )
+            del( self.actorInfo[ uid ] )
+
         return isFound
     
     def _getAvailablePortForUid( self, uid ):
@@ -168,12 +177,13 @@ class HostManager ( object ):
             if data is not False and 'req' in data:
                 action = data[ 'req' ]
                 if 'keepalive' == action:
-                    self.opsSocket.send( messageSuccess() )
+                    self.opsSocket.send( successMessage() )
                 elif 'start_actor' == action:
-                    if 'actor_name' not in data:
+                    if 'actor_name' not in data or 'cat' not in data:
                         self.opsSocket.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
+                        category = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
                         uid = uuid.uuid4()
                         port = self._getAvailablePort( uid )
@@ -183,6 +193,10 @@ class HostManager ( object ):
                                                                        'realm' : realm,
                                                                        'uid' : uid,
                                                                        'port' : port } )
+                        if isMessageSuccess( newMsg ):
+                            self.directory.setdefault( realm, {} ).setdefault( category, {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4, port )
+                        else:
+                            self._removeUidFromDirectory( uid )
                         self.opsSocket.send( newMsg )
                 elif 'kill_actor' == action:
                     if 'uid' not in data:
@@ -220,10 +234,10 @@ class HostManager ( object ):
             data = self.directoryPort.recv()
             
             realm = data.get( 'realm', 'global' )
-            if 'cat' not in data:
-                self.directoryPort.send( errorMessage( 'no category specified' ) )
-            else:
+            if 'cat' in data:
                 self.directoryPort.send( successMessage( data = self.directory.get( realm, {} ).get( data[ 'cat' ], {} ) ) )
+            else:
+                self.directoryPort.send( errorMessage( 'no category specified' ) )
     
     def svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):

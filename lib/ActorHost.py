@@ -6,6 +6,8 @@ from gevent import Greenlet
 from gevent.event import Event
 from Utils import *
 import imp
+from Actors import ActorHandle
+import zmq.green as zmq
 
 
 timeToStopEvent = Event()
@@ -37,6 +39,8 @@ class ActorHost ( object ):
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
         self.hostOpsSocket = ZSocket( zmq.REP, 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
+
+        ActorHandle._zHostDir = self.configFile.get( 'directory_port', 'ipc:///tmp/py_beach_directory_port' )
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
@@ -66,7 +70,9 @@ class ActorHost ( object ):
                         realm = data.get( 'realm', 'global' )
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
-                        actor = getattr( importlib.load_source( '%s_%s' % ( realm, actorName ), '%s/%s.py' % ( self.codeDirectory, actorName ) ), actorName )( realm, port, uid )
+                        actor = getattr( importlib.load_source( '%s_%s' % ( realm, actorName ),
+                                                                '%s/%s.py' % ( self.codeDirectory, actorName ) ),
+                                         actorName )( self, realm, port, uid )
                         self.actors[ uid ] = actor
                         actor.start()
                         self.opsSocket.send( successMessage() )
@@ -99,6 +105,7 @@ class ActorHost ( object ):
                     del( self.actors[ uid ] )
                     self.hostOpsSocket.request( { 'req' : 'remove_actor', 'uid' : uid } )
             gevent.sleep( 30 )
+
 
 if __name__ == '__main__':
     host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ] )

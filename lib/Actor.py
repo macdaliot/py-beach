@@ -1,13 +1,12 @@
 import gevent
-from gevent import Greenlet
-from gevent.event import Event
 import zmq.green as zmq
 import json
 import traceback
 import time
 from Utils import *
+import random
 
-class Actor( Greenlet ):
+class Actor( gevent.Greenlet ):
 
     # Available to the Actor implementation:
     #  stopEvent, an Event indicating the Actor should stop cleanly
@@ -17,18 +16,50 @@ class Actor( Greenlet ):
     #  handle, set the function to call on messages received on a socket
     #  schedule, set a recurring function
 
-    def __init__( self, realm, port, uid ):
-        Greenlet.__init__( self )
+    class _ActorHandle ( object ):
+        _zHostDir = None
 
-        self.stopEvent = Event()
-        self.realm = realm
-        self.port = port
+        def __init__( self, realm, category, mode = 'random' ):
+            self._cat = category
+            self._realm = realm
+            self._mode = mode
+            self._endpoints = {}
+            self._srcSockets = []
+            self._zDir = ZSocket( zmq.REQ, self._zHostDir )
+            self._svc = gevent.spawn_later( 60, self._svc_refreshDir )
+
+        def _svc_refreshDir( self ):
+            self._endpoints = self._zDir.request( data = { 'realm' : self._realm, 'cat' : self._cat } )
+            self._svc = gevent.spawn_later( 60, self._svc_refreshDir )
+
+        def request( self, data ):
+            z = None
+            ret = None
+            if 0 == len( self._srcSockets ):
+                z = self._srcSockets.pop()
+            elif 'random' == self._mode:
+                endpoints = self._endpoints.values()
+                z = ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+
+            if z is not None:
+                ret = z.request( data )
+                self._srcSockets.append( z )
+
+            return ret
+
+    def __init__( self, host, realm, port, uid ):
+        gevent.Greenlet.__init__( self )
+
+        self.stopEvent = gevent.Event()
+        self._realm = realm
+        self._port = port
         self.name = uid
+        self._host = host
 
         # We keep track of all the handlers for the user per message request type
-        self.handlers = {}
+        self._handlers = {}
 
-        self.reqHandlers = []
+        self._threads = gevent.pool.Group()
 
     def _run( self ):
 
@@ -37,38 +68,39 @@ class Actor( Greenlet ):
 
         # This socket receives all taskings for the actor and dispatch
         # the messages as requested by user
-        self._multiplexRep( 'tcp://*:%d' % self.port, 'inproc://%s' % ( self.name, ) )
+        self._multiplexRep( 'tcp://*:%d' % self._port, 'inproc://%s' % ( self.name, ) )
 
         # We support up to n concurrent requests
         for n in range( 5 ):
-            self.reqHandlers.append( gevent.spawn( self._opsHandler ) )
+            self._threads.add( gevent.spawn( self._opsHandler ) )
 
         self.stopEvent.wait()
 
-        # Finish all the handlers
-        for h in self.reqHandlers:
-            h.join( timeout = 2 )
-            if not h.ready():
-                self.logCritical( "Waited for 2 seconds for handler/scheduled %s to finish, timeout, killing." % str( h ) )
-                h.kill()
+        # Before we break the party, we ask gently to exit
+        gevent.sleep( 10 )
+
+        # Finish all the handlers, in theory we could rely on GC to eventually
+        # signal the Greenlets to quit, but it's nicer to control the exact timing
+        self._threads.kill( timeout = 10 )
 
         if hasattr( self, 'deinit' ):
             self.deinit()
 
-    def _multiplexRep(self, frontEnd, backEnd ):
+    def _multiplexRep( self, frontEnd, backEnd ):
         zCtx = zmq.Context()
         zFront = zCtx.socket( zmq.ROUTER )
         zBack = zCtx.socket( zmq.DEALER )
         zFront.bind( frontEnd )
         zBack.bind( backEnd )
 
-        gevent.spawn( self._proxy, zFront, zBack )
-        gevent.spawn( self._proxy, zBack, zFront )
+        self._threads.add( gevent.spawn( self._proxy, zFront, zBack ) )
+        self._threads.add( gevent.spawn( self._proxy, zBack, zFront ) )
 
-    def _proxy(self, zFrom, zTo ):
+    def _proxy( self, zFrom, zTo ):
         while not self.stopEvent.wait( 0 ):
             msg = zFrom.recv_multipart()
-            zTo.send_multipart( msg )
+            if not self.stopEvent.wait( 0 ):
+                zTo.send_multipart( msg )
 
     def _opsHandler( self ):
         z = ZSocket( zmq.REP, 'inproc://%s' % ( self.name, ) )
@@ -76,9 +108,11 @@ class Actor( Greenlet ):
             msg = z.recv()
             if msg is not None and 'req' in msg and not self.stopEvent.wait( 0 ):
                 action = msg[ 'req' ]
-                handler = self.handlers.get( action, self._defaultHandler )
+                handler = self._handlers.get( action, self._defaultHandler )
                 try:
                     ret = handler( msg )
+                except gevent.GreenletExit:
+                    raise
                 except:
                     ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
                 if ret is True:
@@ -100,21 +134,20 @@ class Actor( Greenlet ):
 
     def handle( self, requestType, handlerFunction ):
         old = None
-        if requestType in self.handlers:
-            old = self.handlers[ requestType ]
-        self.handlers[ requestType ] = handlerFunction
+        if requestType in self._handlers:
+            old = self._handlers[ requestType ]
+        self._handlers[ requestType ] = handlerFunction
         return old
 
     def schedule( self, delay, func, *args, **kw_args ):
         if not self.stopEvent.wait( 0 ):
-            gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args )
+            self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
             try:
-                self.reqHandlers.append( gevent.getcurrent() )
                 func( *args, **kw_args )
+            except gevent.GreenletExit:
+                raise
             except:
                 self.logCritical( traceback.format_exc( ) )
-            finally:
-                self.reqHandlers.remove( gevent.getcurrent() )
 
     def log( self, msg ):
         msg = '%s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
@@ -123,3 +156,9 @@ class Actor( Greenlet ):
     def logCritical( self, msg ):
         msg = '!!! %s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
         print( msg )
+
+    def getActorHandle( self, category, mode = 'random' ):
+        return self._ActorHandle( self._realm, category, mode )
+
+
+
