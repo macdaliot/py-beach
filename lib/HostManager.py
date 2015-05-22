@@ -1,9 +1,7 @@
 import sys
 import os
-import importlib
 import signal
 import gevent
-from gevent import Greenlet
 from gevent.event import Event
 import yaml
 import multiprocessing
@@ -12,9 +10,9 @@ import time
 import uuid
 import random
 from sets import Set
-import netifaces
 import syslog
 import subprocess
+import psutil
 
 timeToStopEvent = Event()
 
@@ -47,7 +45,6 @@ class HostManager ( object ):
         self.initialProcesses = False
         self.seedNodes = []
         self.directoryPort = None
-        self.managementPort = None
         self.opsPort = 0
         self.opsSocket = None
         self.port_range = ( 0, 0 )
@@ -196,7 +193,7 @@ class HostManager ( object ):
                         actorName = data[ 'actor_name' ]
                         category = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
-                        uid = uuid.uuid4()
+                        uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
                         instance = self._getInstanceForActor( uid, actorName, realm )
                         newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'start_actor',
@@ -206,8 +203,10 @@ class HostManager ( object ):
                                                                                    'port' : port },
                                                                                  timeout = 10 )
                         if isMessageSuccess( newMsg ):
-                            self.directory.setdefault( realm, {} ).setdefault( category, {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
-                                                                                                                         port )
+                            self.directory.setdefault( realm,
+                                                       {} ).setdefault( category,
+                                                                        {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                        port )
                         else:
                             self._removeUidFromDirectory( uid )
                         self.opsSocket.send( newMsg )
@@ -226,7 +225,7 @@ class HostManager ( object ):
                             if isMessageSuccess( newMsg ):
                                 if not self._removeUidFromDirectory( uid ):
                                     newMsg = errorMessage( 'error removing actor from directory after stop' )
-                            
+
                             self.opsSocket.send( newMsg )
                 elif 'remove_actor' == action:
                     if 'uid' not in data:
@@ -238,6 +237,12 @@ class HostManager ( object ):
                             self.opsSocket.send( successMessage() )
                         else:
                             self.opsSocket.send( errorMessage( 'actor to stop not found' ) )
+                elif 'host_info' == action:
+                    self.opsSocket.send( successMessage( { 'cpu' : psutil.cpu_percent( percpu = True,
+                                                                                       interval = 2 ),
+                                                           'mem' : psutil.virtual_memory()[ 'percent' ] } ) )
+                elif 'get_dir' == action:
+                    self.opsSocket.send( successMessage( { 'realms' : self.directory } ) )
                 else:
                     self.opsSocket.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:

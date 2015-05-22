@@ -1,6 +1,8 @@
+import os
 import gevent
+import gevent.event
+import gevent.pool
 import zmq.green as zmq
-import json
 import traceback
 import time
 from Utils import *
@@ -53,7 +55,7 @@ class Actor( gevent.Greenlet ):
 
         self._initLogging()
 
-        self.stopEvent = gevent.Event()
+        self.stopEvent = gevent.event.Event()
         self._realm = realm
         self._port = port
         self.name = uid
@@ -63,6 +65,7 @@ class Actor( gevent.Greenlet ):
         self._handlers = {}
 
         self._threads = gevent.pool.Group()
+        self._coreThreads = gevent.pool.Group()
 
     def _run( self ):
 
@@ -79,11 +82,15 @@ class Actor( gevent.Greenlet ):
 
         self.stopEvent.wait()
 
+        self._coreThreads.kill( timeout = 10 )
+
         # Before we break the party, we ask gently to exit
-        gevent.sleep( 10 )
+        self.log( "Waiting for threads to finish" )
+        self._threads.join( timeout = 1 )
 
         # Finish all the handlers, in theory we could rely on GC to eventually
         # signal the Greenlets to quit, but it's nicer to control the exact timing
+        self.log( "Killing any remaining threads" )
         self._threads.kill( timeout = 10 )
 
         if hasattr( self, 'deinit' ):
@@ -96,8 +103,8 @@ class Actor( gevent.Greenlet ):
         zFront.bind( frontEnd )
         zBack.bind( backEnd )
 
-        self._threads.add( gevent.spawn( self._proxy, zFront, zBack ) )
-        self._threads.add( gevent.spawn( self._proxy, zBack, zFront ) )
+        self._coreThreads.add( gevent.spawn( self._proxy, zFront, zBack ) )
+        self._coreThreads.add( gevent.spawn( self._proxy, zBack, zFront ) )
 
     def _proxy( self, zFrom, zTo ):
         while not self.stopEvent.wait( 0 ):
@@ -109,6 +116,7 @@ class Actor( gevent.Greenlet ):
         z = ZSocket( zmq.REP, 'inproc://%s' % ( self.name, ), isBind = False )
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
+            self.log( "Received: %s" % str( msg ) )
             if msg is not None and 'req' in msg and not self.stopEvent.wait( 0 ):
                 action = msg[ 'req' ]
                 handler = self._handlers.get( action, self._defaultHandler )
@@ -130,6 +138,7 @@ class Actor( gevent.Greenlet ):
         return errorMessage( 'request type not supported by actor' )
 
     def stop( self ):
+        self.log( "Stopping" )
         self.stopEvent.set()
 
     def isRunning( self ):

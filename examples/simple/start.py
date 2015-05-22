@@ -9,6 +9,7 @@ import sys
 import os
 import json
 import yaml
+import time
 
 # Adding the beach lib directory relatively for this example
 curFileDir = os.path.dirname( os.path.abspath( __file__ ) )
@@ -28,9 +29,21 @@ beach = Beach( os.path.join( curFileDir, 'simple.yaml' ),
                                                                     'r' ) ).get( 'interface', 'eth0' ) ) )
 
 print( "Creating ping actor in random beach node." )
-a1 = beach.addActor( 'ping', 'pingers' )
+a1 = beach.addActor( 'Ping', 'pingers' )
 print( json.dumps( a1, indent = 4 ) )
 
 print( "Creating pong actor in random beach node." )
-a2 = beach.addActor( 'pong', 'pongers' )
+a2 = beach.addActor( 'Pong', 'pongers' )
 print( json.dumps( a2, indent = 4 ) )
+
+print( "Idling for a few seconds..." )
+time.sleep( 5 )
+
+print( "Querying for beach directory." )
+d = beach.getDirectory()
+print( json.dumps( d, indent = 4 ) )
+
+time.sleep( 2 )
+print( "Flushing beach." )
+f = beach.flush()
+print( json.dumps( f, indent = 4 ) )

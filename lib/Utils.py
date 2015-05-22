@@ -1,6 +1,7 @@
 import uuid
 import datetime
 import gevent
+import gevent.coros
 import zmq.green as zmq
 import netifaces
 
@@ -29,6 +30,8 @@ def sanitizeJson( obj ):
                     data.append( _sanitizeJsonValue( value ) )
                 except AttributeError:
                     data.append( _sanitizeValue( value ) )
+        elif type( obj ) is bool:
+            data = obj
         else:
             raise AttributeError
                     
@@ -64,6 +67,7 @@ class ZSocket( object ):
         self._socketType = socketType
         self._url = url
         self._isBind = isBind
+        self._isTransactionSocket = ( self._socketType == zmq.REQ or self._socketType == zmq.REP )
 
         self._buildSocket()
 
@@ -73,14 +77,16 @@ class ZSocket( object ):
             self.s.bind( self._url )
         else:
             self.s.connect( self._url )
+        if self._isTransactionSocket:
+            self._lock = gevent.coros.BoundedSemaphore( 1 )
 
     def _rebuildIfNecessary( self ):
-        if self._socketType == zmq.REQ or self._socketType == zmq.REP:
+        if self._isTransactionSocket:
             self._buildSocket()
     
     def send( self, data, timeout = None ):
         isSuccess = False
-        
+
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, self.TimeoutException ):
@@ -93,12 +99,12 @@ class ZSocket( object ):
             raise
         else:
             isSuccess = True
-        
+
         return isSuccess
     
     def recv( self, timeout = None ):
         data = False
-        
+
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, self.TimeoutException ):
@@ -109,12 +115,18 @@ class ZSocket( object ):
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
             raise
-        
+
         return data
     
     def request( self, data, timeout = None ):
+        self._lock.acquire()
         self.send( data, timeout )
-        return self.recv( timeout = timeout )
+        data = self.recv( timeout = timeout )
+        # False indicates a timeout or failure, where the socket
+        # would have been rebuilt
+        if data is not False or not self._isTransactionSocket:
+            self._lock.release()
+        return data
 
 def getIpv4ForIface( iface ):
     ip = None

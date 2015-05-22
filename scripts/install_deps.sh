@@ -9,3 +9,4 @@ apt-get -y install python-gevent
 pip install pyzmq
 pip install netifaces
 pip install pyyaml
+pip install psutil
