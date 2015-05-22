@@ -1,7 +1,8 @@
 import uuid
 import datetime
-import psycopg2.extras
+import gevent
 import zmq.green as zmq
+import netifaces
 
 def sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):
@@ -13,9 +14,6 @@ def sanitizeJson( obj ):
     
     def _sanitizeJsonStruct( obj ):
         data = None
-        
-        if type( obj ) is psycopg2.extras.DictRow:
-            obj = dict( obj )
         
         if issubclass( type( obj ), dict ):
             data = {}
@@ -40,55 +38,88 @@ def sanitizeJson( obj ):
 
 def isMessageSuccess( msg ):
     isSuccess = False
-    if msg is not False:
+    if msg is not False and msg is not None:
         if msg.get( 'status', {} ).get( 'success', False ) is not False:
             isSuccess = True
     return isSuccess
 
 def errorMessage( errorString, data = None ):
-    msg = { 'status' : False, 'error' : errorString }
+    msg = { 'status' : { 'success' : False, 'error' : errorString } }
     if data is not None:
         msg[ 'data' ] = data
     return msg
 
 def successMessage( data = None ):
-    msg = { 'status' : True }
+    msg = { 'status' : { 'success' : True } }
     if data is not None:
         msg.update( data )
     return msg
 
 class ZSocket( object ):
+
+    class TimeoutException(Exception): pass
     
     def __init__( self, socketType, url, isBind = False ):
         self.ctx = zmq.Context()
-        self.s = self.ctx.socket( socketType, url )
-        if isBind:
-            self.s.bind( url )
+        self._socketType = socketType
+        self._url = url
+        self._isBind = isBind
+
+        self._buildSocket()
+
+    def _buildSocket( self ):
+        self.s = self.ctx.socket( self._socketType )
+        if self._isBind:
+            self.s.bind( self._url )
         else:
-            self.s.connect( url )
+            self.s.connect( self._url )
+
+    def _rebuildIfNecessary( self ):
+        if self._socketType == zmq.REQ or self._socketType == zmq.REP:
+            self._buildSocket()
     
-    def send( self, data ):
+    def send( self, data, timeout = None ):
         isSuccess = False
         
         try:
-            self.s.send_json( sanitizeJson( data ) )
+            if timeout is not None:
+                with gevent.Timeout( timeout, self.TimeoutException ):
+                    self.s.send_json( sanitizeJson( data ) )
+            else:
+                self.s.send_json( sanitizeJson( data ) )
+        except self.TimeoutException:
+            self._rebuildIfNecessary()
         except zmq.ZMQError, e:
-            pass
+            raise
         else:
             isSuccess = True
         
         return isSuccess
     
-    def recv( self ):
+    def recv( self, timeout = None ):
         data = False
         
         try:
-            data = self.s.recv_json()
+            if timeout is not None:
+                with gevent.Timeout( timeout, self.TimeoutException ):
+                    data = self.s.recv_json()
+            else:
+                data = self.s.recv_json()
+        except self.TimeoutException:
+            self._rebuildIfNecessary()
         except zmq.ZMQError, e:
-            pass
+            raise
         
         return data
     
-    def request( self, data ):
-        self.send( data )
-        return self.recv()
+    def request( self, data, timeout = None ):
+        self.send( data, timeout )
+        return self.recv( timeout = timeout )
+
+def getIpv4ForIface( iface ):
+    ip = None
+    try:
+        ip = netifaces.ifaddresses( iface )[ netifaces.AF_INET ][ 0 ][ 'addr' ]
+    except:
+        pass
+    return ip

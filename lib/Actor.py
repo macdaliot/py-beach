@@ -5,6 +5,7 @@ import traceback
 import time
 from Utils import *
 import random
+import syslog
 
 class Actor( gevent.Greenlet ):
 
@@ -49,6 +50,8 @@ class Actor( gevent.Greenlet ):
 
     def __init__( self, host, realm, port, uid ):
         gevent.Greenlet.__init__( self )
+
+        self._initLogging()
 
         self.stopEvent = gevent.Event()
         self._realm = realm
@@ -103,7 +106,7 @@ class Actor( gevent.Greenlet ):
                 zTo.send_multipart( msg )
 
     def _opsHandler( self ):
-        z = ZSocket( zmq.REP, 'inproc://%s' % ( self.name, ) )
+        z = ZSocket( zmq.REP, 'inproc://%s' % ( self.name, ), isBind = False )
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
             if msg is not None and 'req' in msg and not self.stopEvent.wait( 0 ):
@@ -149,11 +152,16 @@ class Actor( gevent.Greenlet ):
             except:
                 self.logCritical( traceback.format_exc( ) )
 
+    def _initLogging( self ):
+        syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )
+
     def log( self, msg ):
+        syslog.syslog( syslog.LOG_INFO, msg )
         msg = '%s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
         print( msg )
 
     def logCritical( self, msg ):
+        syslog.syslog( syslog.LOG_ERR, msg )
         msg = '!!! %s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
         print( msg )
 

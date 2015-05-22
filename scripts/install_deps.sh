@@ -7,5 +7,5 @@ apt-get -y install python-pip
 apt-get -y install python-dev
 apt-get -y install python-gevent
 pip install pyzmq
-pup install netifaces
+pip install netifaces
 pip install pyyaml

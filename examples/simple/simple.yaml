@@ -1,7 +1,3 @@
-# The directory where the pybeach code lives
-# Default: ./
-py_beach_directory: ./
-
 # The number of python process instance per host
 # if it is absent or 0, will default to number of cores
 n_processes: 0
@@ -20,11 +16,6 @@ code_directoriy: ./
 # to request the list of Actor endpoints from the HostManager
 # Default: ipc:///tmp/py_beach_directory_port
 directory_port: ipc:///tmp/py_beach_directory_port
-
-# This ZMQ port is used to query a host from a user
-# perspective for administration purposes
-# Default: ipc:///tmp/py_beach_management_port
-management_port: ipc:///tmp/py_beach_management_port
 
 # This is the TCP port used between the hosts of the cloud
 # to talk to each other
@@ -49,7 +40,7 @@ peer_keepalive_seconds: 60
 # A keepalive request is sent to python instances on the host
 # every X seconds
 # Default: 60
-instance_keepalive_seconds: 60
+instance_keepalive_seconds: 30
 
 # Directories are exchanged between nodes every X seconds
 # Default 60
