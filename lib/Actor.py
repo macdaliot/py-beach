@@ -36,7 +36,6 @@ class Actor( gevent.Greenlet ):
             msg = self._zDir.request( data = { 'realm' : self._realm, 'cat' : self._cat } )
             if isMessageSuccess( msg ) and 'endpoints' in msg:
                 self._endpoints = msg[ 'endpoints' ]
-            print( "VIRTUAL HANDLE rEQ" )
             if 0 == len( self._endpoints ):
                 # No Actors yet, be more agressive to look for some
                 self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
@@ -63,7 +62,6 @@ class Actor( gevent.Greenlet ):
                         if z is None:
                             gevent.sleep( 0.001 )
             except TimeoutException:
-                print( "TIMEOUT GETTING PONGERS" )
                 pass
 
             if z is not None:
