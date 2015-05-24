@@ -61,8 +61,6 @@ def successMessage( data = None ):
     return msg
 
 class ZSocket( object ):
-
-    class TimeoutException(Exception): pass
     
     def __init__( self, socketType, url, isBind = False ):
         self.ctx = zmq.Context()
@@ -92,11 +90,11 @@ class ZSocket( object ):
 
         try:
             if timeout is not None:
-                with gevent.Timeout( timeout, self.TimeoutException ):
+                with gevent.Timeout( timeout, TimeoutException ):
                     self.s.send_json( sanitizeJson( data ) )
             else:
                 self.s.send_json( sanitizeJson( data ) )
-        except self.TimeoutException:
+        except TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
             raise
@@ -110,11 +108,11 @@ class ZSocket( object ):
 
         try:
             if timeout is not None:
-                with gevent.Timeout( timeout, self.TimeoutException ):
+                with gevent.Timeout( timeout, TimeoutException ):
                     data = self.s.recv_json()
             else:
                 data = self.s.recv_json()
-        except self.TimeoutException:
+        except TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
             raise
@@ -130,6 +128,9 @@ class ZSocket( object ):
         if data is not False or not self._isTransactionSocket:
             self._lock.release()
         return data
+
+    def close( self ):
+        self.s.close()
 
 class ZMREQ ( object ):
     def __init__( self, url, isBind ):

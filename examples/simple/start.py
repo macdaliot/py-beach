@@ -37,7 +37,7 @@ a2 = beach.addActor( 'Pong', 'pongers' )
 print( json.dumps( a2, indent = 4 ) )
 
 print( "Idling for a few seconds..." )
-time.sleep( 5 )
+time.sleep( 30 )
 
 print( "Querying for beach directory." )
 d = beach.getDirectory()

@@ -28,25 +28,56 @@ class Actor( gevent.Greenlet ):
             self._mode = mode
             self._endpoints = {}
             self._srcSockets = []
-            self._zDir = ZSocket( zmq.REQ, self._zHostDir )
-            self._svc = gevent.spawn_later( 60, self._svc_refreshDir )
+            self._zDir = ZMREQ( self._zHostDir, isBind = False )
+            self._svc = gevent.spawn_later( 0, self._svc_refreshDir )
 
         def _svc_refreshDir( self ):
-            self._endpoints = self._zDir.request( data = { 'realm' : self._realm, 'cat' : self._cat } )
-            self._svc = gevent.spawn_later( 60, self._svc_refreshDir )
+            msg = self._zDir.request( data = { 'realm' : self._realm, 'cat' : self._cat } )
+            if isMessageSuccess( msg ) and 'endpoints' in msg:
+                self._endpoints = msg[ 'endpoints' ]
 
-        def request( self, data ):
+            if 0 == len( self._endpoints ):
+                # No Actors yet, be more agressive to look for some
+                self._svc = gevent.spawn_later( 2, self._svc_refreshDir )
+            else:
+                self._svc = gevent.spawn_later( 60, self._svc_refreshDir )
+
+        def request( self, requestType, data = {}, timeout = None ):
             z = None
-            ret = None
-            if 0 == len( self._srcSockets ):
-                z = self._srcSockets.pop()
-            elif 'random' == self._mode:
-                endpoints = self._endpoints.values()
-                z = ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+            ret = False
+
+            try:
+                # We use the timeout to wait for an available node if none
+                # exists
+                with gevent.Timeout( timeout, TimeoutException ):
+                    while z is None:
+                        if 0 != len( self._srcSockets ):
+                            # Prioritize existing connections, only create new one
+                            # based on the mode when we have no connections available
+                            z = self._srcSockets.pop()
+                        elif 'random' == self._mode:
+                            endpoints = self._endpoints.values()
+                            if 0 != len( endpoints ):
+                                z = ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+                        if z is None:
+                            gevent.sleep( 0.001 )
+            except TimeoutException:
+                print( "TIMEOUT GETTING PONGERS" )
+                pass
 
             if z is not None:
-                ret = z.request( data )
-                self._srcSockets.append( z )
+
+                if type( data ) is not dict:
+                    data = { 'data' : data }
+                data[ 'req' ] = requestType
+
+                ret = z.request( data, timeout = timeout )
+                # If we hit a timeout we don't take chances
+                # and remove that socket
+                if ret is not False:
+                    self._srcSockets.append( z )
+                else:
+                    z.close()
 
             return ret
 

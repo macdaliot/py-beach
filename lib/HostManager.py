@@ -270,7 +270,7 @@ class HostManager ( object ):
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
-                z.send( successMessage( data = self.directory.get( realm, {} ).get( data[ 'cat' ], {} ) ) )
+                z.send( successMessage( data = { 'endpoints' : self.directory.get( realm, {} ).get( data[ 'cat' ], {} ) } ) )
             else:
                 z.send( errorMessage( 'no category specified' ) )
     
