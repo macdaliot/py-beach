@@ -2,6 +2,7 @@ import yaml
 from Utils import *
 import zmq.green as zmq
 import random
+import gevent
 
 class Beach ( object ):
 
@@ -29,6 +30,14 @@ class Beach ( object ):
         nodeSocket = ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
         self._nodes[ host ] = { 'socket' : nodeSocket }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
+
+    def _updateNodes( self ):
+        toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
+        for k in nodes.keys():
+            if k not in self._nodes:
+                self._connectToNode( k )
+        gevent.spawn_later( 60, self._updateNodes )
 
     def setRealm( self, realm ):
         self._realm = realm

@@ -96,8 +96,7 @@ class HostManager ( object ):
         
         # Bootstrap the seeds
         for s in self.seedNodes:
-            nodeSocket = ZMREQ( 'tcp://%s:%d' % ( s, self.opsPort ), isBind = False )
-            self.nodes[ s ] = { 'socket' : nodeSocket }
+            self._connectToNode( s )
         
         # Start services
         self.log( "Starting services" )
@@ -121,7 +120,11 @@ class HostManager ( object ):
         # Any teardown required
         
         self.log( "Exiting." )
-    
+
+    def _connectToNode( self, ip ):
+        nodeSocket = ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ), isBind = False )
+        self.nodes[ ip ] = { 'socket' : nodeSocket, 'last_seen' : None }
+
     def _removeUidFromDirectory( self, uid ):
         isFound = False
         for r in self.directory.values():
@@ -186,6 +189,9 @@ class HostManager ( object ):
                 action = data[ 'req' ]
                 self.log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
+                    if 'from' in data and data[ 'from' ] not in self.nodes:
+                        self.log( "Discovered new node: %s" % data[ 'from' ] )
+                        self._connectToNode( data[ 'from' ] )
                     z.send( successMessage() )
                 elif 'start_actor' == action:
                     if 'actor_name' not in data or 'cat' not in data:
@@ -244,6 +250,11 @@ class HostManager ( object ):
                                                            'mem' : psutil.virtual_memory()[ 'percent' ] } ) )
                 elif 'get_dir' == action:
                     z.send( successMessage( { 'realms' : self.directory } ) )
+                elif 'get_nodes' == action:
+                    nodeList = {}
+                    for k in self.nodes.keys():
+                        nodeList[ k ] = { 'last_seen' : self.nodes[ k ][ 'last_seen' ] }
+                    z.send( successMessage( { 'nodes' : nodeList } ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
@@ -290,7 +301,8 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 0 ):
             for nodeName, node in self.nodes.iteritems():
                 self.log( "Issuing keepalive for node %s" % nodeName )
-                data = node[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 10 )
+                data = node[ 'socket' ].request( { 'req' : 'keepalive',
+                                                   'from' : self.ifaceIp4 }, timeout = 10 )
                 
                 if isMessageSuccess( data ):
                     node[ 'last_seen' ] = int( time.time() )
