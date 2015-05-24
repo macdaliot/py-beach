@@ -2,7 +2,8 @@ import sys
 import os
 import signal
 import gevent
-from gevent.event import Event
+import gevent.event
+import gevent.pool
 import yaml
 import multiprocessing
 from Utils import *
@@ -14,7 +15,7 @@ import syslog
 import subprocess
 import psutil
 
-timeToStopEvent = Event()
+timeToStopEvent = gevent.event.Event()
 
 def _stop():
     global timeToStopEvent
@@ -74,14 +75,13 @@ class HostManager ( object ):
 
         self.interface = self.configFile.get( 'interface', 'eth0' )
         self.ifaceIp4 = getIpv4ForIface( self.interface )
-        
-        self.directoryPort = ZSocket( zmq.REP,
-                                      self.configFile.get( 'directory_port',
-                                                           'ipc:///tmp/py_beach_directory_port' ),
-                                      isBind = True )
+
+        self.directoryPort = ZMREP( self.configFile.get( 'directory_port',
+                                                         'ipc:///tmp/py_beach_directory_port' ),
+                                    isBind = True )
         
         self.opsPort = self.configFile.get( 'ops_port', 4999 )
-        self.opsSocket = ZSocket( zmq.REP, 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ), isBind = True )
+        self.opsSocket = ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ), isBind = True )
         self.log( "Listening for ops on %s:%d" % ( self.ifaceIp4, self.opsPort ) )
         
         self.port_range = ( self.configFile.get( 'port_range_start', 5000 ), self.configFile.get( 'port_range_end', 6000 ) )
@@ -96,7 +96,7 @@ class HostManager ( object ):
         
         # Bootstrap the seeds
         for s in self.seedNodes:
-            nodeSocket = ZSocket( zmq.REQ, 'tcp://%s:%d' % ( s, self.opsPort ), isBind = False )
+            nodeSocket = ZMREQ( 'tcp://%s:%d' % ( s, self.opsPort ), isBind = False )
             self.nodes[ s ] = { 'socket' : nodeSocket }
         
         # Start services
@@ -110,7 +110,7 @@ class HostManager ( object ):
         
         # Start the instances
         for n in range( self.nProcesses ):
-            procSocket = ZSocket( zmq.REQ, 'ipc:///tmp/py_beach_instance_%d' % n, isBind = False )
+            procSocket = ZMREQ( 'ipc:///tmp/py_beach_instance_%d' % n, isBind = False )
             self.processes.append( { 'socket' : procSocket, 'p' : None } )
             self.log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%d' % n, ) )
         
@@ -179,16 +179,17 @@ class HostManager ( object ):
             gevent.sleep( maxTime - ( currentTime - nextTime ) )
     
     def svc_receiveOpsTasks( self ):
+        z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
-            data = self.opsSocket.recv()
+            data = z.recv()
             if data is not False and 'req' in data:
                 action = data[ 'req' ]
                 self.log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
-                    self.opsSocket.send( successMessage() )
+                    z.send( successMessage() )
                 elif 'start_actor' == action:
                     if 'actor_name' not in data or 'cat' not in data:
-                        self.opsSocket.send( errorMessage( 'missing information to start actor' ) )
+                        z.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
                         category = data[ 'cat' ]
@@ -209,14 +210,14 @@ class HostManager ( object ):
                                                                                                         port )
                         else:
                             self._removeUidFromDirectory( uid )
-                        self.opsSocket.send( newMsg )
+                        z.send( newMsg )
                 elif 'kill_actor' == action:
                     if 'uid' not in data:
-                        self.opsSocket.send( errorMessage( 'missing information to stop actor' ) )
+                        z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uid = data[ 'uid' ]
                         if uid not in self.actorInfo:
-                            self.opsSocket.send( errorMessage( 'actor not found' ) )
+                            z.send( errorMessage( 'actor not found' ) )
                         else:
                             instance = self.actorInfo[ uid ][ 'instance' ]
                             newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',
@@ -226,40 +227,41 @@ class HostManager ( object ):
                                 if not self._removeUidFromDirectory( uid ):
                                     newMsg = errorMessage( 'error removing actor from directory after stop' )
 
-                            self.opsSocket.send( newMsg )
+                            z.send( newMsg )
                 elif 'remove_actor' == action:
                     if 'uid' not in data:
-                        self.opsSocket.send( errorMessage( 'missing information to remove actor' ) )
+                        z.send( errorMessage( 'missing information to remove actor' ) )
                     else:
                         isFound = False
                         uid = data[ 'uid' ]
                         if self._removeUidFromDirectory( uid ):
-                            self.opsSocket.send( successMessage() )
+                            z.send( successMessage() )
                         else:
-                            self.opsSocket.send( errorMessage( 'actor to stop not found' ) )
+                            z.send( errorMessage( 'actor to stop not found' ) )
                 elif 'host_info' == action:
-                    self.opsSocket.send( successMessage( { 'cpu' : psutil.cpu_percent( percpu = True,
+                    z.send( successMessage( { 'cpu' : psutil.cpu_percent( percpu = True,
                                                                                        interval = 2 ),
                                                            'mem' : psutil.virtual_memory()[ 'percent' ] } ) )
                 elif 'get_dir' == action:
-                    self.opsSocket.send( successMessage( { 'realms' : self.directory } ) )
+                    z.send( successMessage( { 'realms' : self.directory } ) )
                 else:
-                    self.opsSocket.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
+                    z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
-                self.opsSocket.send( errorMessage( 'invalid request' ) )
+                z.send( errorMessage( 'invalid request' ) )
                 self.logCritical( "Received completely invalid request" )
     
     def svc_directory_requests( self ):
+        z = self.directoryPort.getChild()
         while not self.stopEvent.wait( 0 ):
-            data = self.directoryPort.recv()
+            data = z.recv()
 
             self.log( "Received directory request" )
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
-                self.directoryPort.send( successMessage( data = self.directory.get( realm, {} ).get( data[ 'cat' ], {} ) ) )
+                z.send( successMessage( data = self.directory.get( realm, {} ).get( data[ 'cat' ], {} ) ) )
             else:
-                self.directoryPort.send( errorMessage( 'no category specified' ) )
+                z.send( errorMessage( 'no category specified' ) )
     
     def svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):

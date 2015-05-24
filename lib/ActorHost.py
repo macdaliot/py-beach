@@ -52,11 +52,11 @@ class ActorHost ( object ):
 
         self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
 
-        self.opsSocket = ZSocket( zmq.REP, 'ipc:///tmp/py_beach_instance_%d' % instanceId, isBind = True )
+        self.opsSocket = ZMREP( 'ipc:///tmp/py_beach_instance_%d' % instanceId, isBind = True )
         self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%d' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
-        self.hostOpsSocket = ZSocket( zmq.REP, 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
+        self.hostOpsSocket = ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
 
         Actor._ActorHandle._zHostDir = self.configFile.get( 'directory_port', 'ipc:///tmp/py_beach_directory_port' )
         
@@ -76,17 +76,18 @@ class ActorHost ( object ):
         self.log( "All Actors exiting, exiting." )
     
     def svc_receiveTasks( self ):
+        z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             self.log( "Waiting for op" )
-            data = self.opsSocket.recv()
+            data = z.recv()
             if data is not False and 'req' in data:
                 action = data[ 'req' ]
                 self.log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
-                    self.opsSocket.send( successMessage() )
+                    z.send( successMessage() )
                 elif 'start_actor' == action:
                     if 'actor_name' not in data or 'port' not in data or 'uid' not in data:
-                        self.opsSocket.send( errorMessage( 'missing information to start actor' ) )
+                        z.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
                         realm = data.get( 'realm', 'global' )
@@ -109,13 +110,13 @@ class ActorHost ( object ):
                             self.log( "Successfully loaded actor %s/%s" % ( realm, actorName ) )
                             self.actors[ uid ] = actor
                             actor.start()
-                            self.opsSocket.send( successMessage() )
+                            z.send( successMessage() )
                         else:
-                            self.opsSocket.send( errorMessage( 'exception',
+                            z.send( errorMessage( 'exception',
                                                                data = { 'st' : traceback.format_exc() } ) )
                 elif 'kill_actor' == action:
                     if 'uid' not in data:
-                        self.opsSocket.send( errorMessage( 'missing information to stop actor' ) )
+                        z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uid = data[ 'uid' ]
                         if uid in self.actors:
@@ -127,22 +128,23 @@ class ActorHost ( object ):
                             if not actor.ready():
                                 actor.kill( timeout = 10 )
                                 info = { 'error' : 'timeout' }
-                            self.opsSocket.send( successMessage( data = info ) )
+                            z.send( successMessage( data = info ) )
                         else:
-                            self.opsSocket.send( errorMessage( 'actor not found' ) )
+                            z.send( errorMessage( 'actor not found' ) )
                 else:
-                    self.opsSocket.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
+                    z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
                 self.logCritical( "Received completely invalid request" )
-                self.opsSocket.send( errorMessage( 'invalid request' ) )
+                z.send( errorMessage( 'invalid request' ) )
 
     def svc_monitorActors( self ):
+        z = self.hostOpsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             self.log( "Culling actors that stopped of themselves" )
             for uid, actor in self.actors.iteritems():
                 if not actor.isRunning():
                     del( self.actors[ uid ] )
-                    self.hostOpsSocket.request( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
+                    z.request( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
 
     def _initLogging( self ):

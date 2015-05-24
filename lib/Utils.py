@@ -5,6 +5,8 @@ import gevent.coros
 import zmq.green as zmq
 import netifaces
 
+class TimeoutException(Exception): pass
+
 def sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):
         if type( value ) is uuid.UUID:
@@ -73,6 +75,7 @@ class ZSocket( object ):
 
     def _buildSocket( self ):
         self.s = self.ctx.socket( self._socketType )
+        self.s.set( zmq.LINGER, 0 )
         if self._isBind:
             self.s.bind( self._url )
         else:
@@ -127,6 +130,120 @@ class ZSocket( object ):
         if data is not False or not self._isTransactionSocket:
             self._lock.release()
         return data
+
+class ZMREQ ( object ):
+    def __init__( self, url, isBind ):
+        self._available = []
+        self._url = url
+        self._isBind = isBind
+        self._ctx = zmq.Context()
+
+    def _newSocket( self ):
+        z = self._ctx.socket( zmq.REQ )
+        z.set( zmq.LINGER, 0 )
+        if self._isBind:
+            z.bind( self._url )
+        else:
+            z.connect( self._url )
+        return z
+
+    def request( self, data, timeout = None ):
+        result = False
+        z = None
+
+        try:
+            z = self._available.pop()
+        except:
+            z = self._newSocket()
+
+        try:
+            with gevent.Timeout( timeout, TimeoutException ):
+                z.send_json( sanitizeJson( data ) )
+                result = z.recv_json()
+        except TimeoutException:
+            z.close( linger = 0 )
+            z = self._newSocket()
+
+        self._available.append( z )
+
+        return result
+
+class ZMREP ( object ):
+    def __init__( self, url, isBind ):
+        self._available = []
+        self._url = url
+        self._isBind = isBind
+        self._ctx = zmq.Context()
+        self._threads = gevent.pool.Group()
+        self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
+
+        zFront = self._ctx.socket( zmq.ROUTER )
+        zBack = self._ctx.socket( zmq.DEALER )
+        zFront.set( zmq.LINGER, 0 )
+        zBack.set( zmq.LINGER, 0 )
+        if self._isBind:
+            zFront.bind( self._url )
+        else:
+            zFront.connect( self._url )
+        zBack.bind( self._intUrl )
+        self._threads.add( gevent.spawn( self._proxy, zFront, zBack ) )
+        self._threads.add( gevent.spawn( self._proxy, zBack, zFront ) )
+
+    def close( self ):
+        self._threads.kill()
+
+    class _childSock( object ):
+        def __init__( self, z ):
+            self._z = z
+
+        def send( self, data, timeout = None ):
+            isSuccess = False
+
+            try:
+                if timeout is not None:
+                    with gevent.Timeout( timeout, TimeoutException ):
+                        self._z.send_json( sanitizeJson( data ) )
+                else:
+                    self._z.send_json( sanitizeJson( data ) )
+            except TimeoutException:
+                isSuccess = False
+            except zmq.ZMQError, e:
+                raise
+            else:
+                isSuccess = True
+
+            return isSuccess
+
+        def recv( self, timeout = None ):
+            data = False
+
+            try:
+                if timeout is not None:
+                    with gevent.Timeout( timeout, TimeoutException ):
+                        data = self._z.recv_json()
+                else:
+                    data = self._z.recv_json()
+            except TimeoutException:
+                data = False
+            except zmq.ZMQError, e:
+                raise
+
+            return data
+
+    def getChild( self ):
+        return self._childSock( self._newSocket() )
+
+    def _newSocket( self ):
+        z = self._ctx.socket( zmq.REP )
+        z.set( zmq.LINGER, 0 )
+        z.connect( self._intUrl )
+        return z
+
+    def _proxy( self, zFrom, zTo ):
+        while True:
+            msg = zFrom.recv_multipart()
+            zTo.send_multipart( msg )
+
 
 def getIpv4ForIface( iface ):
     ip = None

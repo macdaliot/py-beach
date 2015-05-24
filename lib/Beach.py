@@ -26,7 +26,7 @@ class Beach ( object ):
             self._connectToNode( s )
 
     def _connectToNode( self, host ):
-        nodeSocket = ZSocket( zmq.REQ, 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
+        nodeSocket = ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
         self._nodes[ host ] = { 'socket' : nodeSocket }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 
@@ -50,7 +50,7 @@ class Beach ( object ):
     def getDirectory( self ):
         # We pick a random node to query since all directories should be synced
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        return node.request( { 'req' : 'get_dir' } )
+        return node.request( { 'req' : 'get_dir' }, timeout = 10 )
 
     def flush( self ):
         isFlushed = True

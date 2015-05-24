@@ -64,17 +64,17 @@ class Actor( gevent.Greenlet ):
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
 
+        # All user generated threads
         self._threads = gevent.pool.Group()
-        self._coreThreads = gevent.pool.Group()
+
+        # This socket receives all taskings for the actor and dispatch
+        # the messages as requested by user
+        self._opsSocket = ZMREP( 'tcp://*:%d' % self._port, isBind = True )
 
     def _run( self ):
 
         if hasattr( self, 'init' ):
             self.init()
-
-        # This socket receives all taskings for the actor and dispatch
-        # the messages as requested by user
-        self._multiplexRep( 'tcp://*:%d' % self._port, 'inproc://%s' % ( self.name, ) )
 
         # We support up to n concurrent requests
         for n in range( 5 ):
@@ -82,7 +82,7 @@ class Actor( gevent.Greenlet ):
 
         self.stopEvent.wait()
 
-        self._coreThreads.kill( timeout = 10 )
+        self._opsSocket.close()
 
         # Before we break the party, we ask gently to exit
         self.log( "Waiting for threads to finish" )
@@ -96,24 +96,8 @@ class Actor( gevent.Greenlet ):
         if hasattr( self, 'deinit' ):
             self.deinit()
 
-    def _multiplexRep( self, frontEnd, backEnd ):
-        zCtx = zmq.Context()
-        zFront = zCtx.socket( zmq.ROUTER )
-        zBack = zCtx.socket( zmq.DEALER )
-        zFront.bind( frontEnd )
-        zBack.bind( backEnd )
-
-        self._coreThreads.add( gevent.spawn( self._proxy, zFront, zBack ) )
-        self._coreThreads.add( gevent.spawn( self._proxy, zBack, zFront ) )
-
-    def _proxy( self, zFrom, zTo ):
-        while not self.stopEvent.wait( 0 ):
-            msg = zFrom.recv_multipart()
-            if not self.stopEvent.wait( 0 ):
-                zTo.send_multipart( msg )
-
     def _opsHandler( self ):
-        z = ZSocket( zmq.REP, 'inproc://%s' % ( self.name, ), isBind = False )
+        z = self._opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
             self.log( "Received: %s" % str( msg ) )
