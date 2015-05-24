@@ -29,18 +29,19 @@ class Actor( gevent.Greenlet ):
             self._endpoints = {}
             self._srcSockets = []
             self._zDir = ZMREQ( self._zHostDir, isBind = False )
-            self._svc = gevent.spawn_later( 0, self._svc_refreshDir )
+            self._threads = gevent.pool.Group()
+            self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
 
         def _svc_refreshDir( self ):
             msg = self._zDir.request( data = { 'realm' : self._realm, 'cat' : self._cat } )
             if isMessageSuccess( msg ) and 'endpoints' in msg:
                 self._endpoints = msg[ 'endpoints' ]
-
+            print( "VIRTUAL HANDLE rEQ" )
             if 0 == len( self._endpoints ):
                 # No Actors yet, be more agressive to look for some
-                self._svc = gevent.spawn_later( 2, self._svc_refreshDir )
+                self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
             else:
-                self._svc = gevent.spawn_later( 60, self._svc_refreshDir )
+                self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
 
         def request( self, requestType, data = {}, timeout = None ):
             z = None
@@ -81,6 +82,9 @@ class Actor( gevent.Greenlet ):
 
             return ret
 
+        def close( self ):
+            self._threads.kill()
+
     def __init__( self, host, realm, port, uid ):
         gevent.Greenlet.__init__( self )
 
@@ -101,6 +105,8 @@ class Actor( gevent.Greenlet ):
         # This socket receives all taskings for the actor and dispatch
         # the messages as requested by user
         self._opsSocket = ZMREP( 'tcp://*:%d' % self._port, isBind = True )
+
+        self._vHandles = []
 
     def _run( self ):
 
@@ -124,6 +130,9 @@ class Actor( gevent.Greenlet ):
         self.log( "Killing any remaining threads" )
         self._threads.kill( timeout = 10 )
 
+        for v in self._vHandles:
+            v.close()
+
         if hasattr( self, 'deinit' ):
             self.deinit()
 
@@ -131,9 +140,9 @@ class Actor( gevent.Greenlet ):
         z = self._opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
-            self.log( "Received: %s" % str( msg ) )
             if msg is not None and 'req' in msg and not self.stopEvent.wait( 0 ):
                 action = msg[ 'req' ]
+                self.log( "Received: %s" % action )
                 handler = self._handlers.get( action, self._defaultHandler )
                 try:
                     ret = handler( msg )
@@ -177,7 +186,8 @@ class Actor( gevent.Greenlet ):
                 self.logCritical( traceback.format_exc( ) )
 
     def _initLogging( self ):
-        syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )
+        #syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )
+        pass
 
     def log( self, msg ):
         syslog.syslog( syslog.LOG_INFO, msg )
@@ -190,7 +200,9 @@ class Actor( gevent.Greenlet ):
         print( msg )
 
     def getActorHandle( self, category, mode = 'random' ):
-        return self._ActorHandle( self._realm, category, mode )
+        v = self._ActorHandle( self._realm, category, mode )
+        self._vHandles.append( v )
+        return v
 
 
 
