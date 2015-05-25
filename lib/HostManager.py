@@ -24,7 +24,7 @@ def _stop():
 class HostManager ( object ):
     
     # The actorList is a list( actorNames, configFile )
-    def __init__( self, configFile ):
+    def __init__( self, configFile, iface = None ):
         
         # Setting the signal handler to trigger the stop event
         global timeToStopEvent
@@ -73,7 +73,10 @@ class HostManager ( object ):
         for s in self.seedNodes:
             self.log( "Using seed node: %s" % s )
 
-        self.interface = self.configFile.get( 'interface', 'eth0' )
+        if iface is not None:
+            self.interface = iface
+        else:
+            self.interface = self.configFile.get( 'interface', 'eth0' )
         self.ifaceIp4 = getIpv4ForIface( self.interface )
 
         self.directoryPort = ZMREP( self.configFile.get( 'directory_port',
@@ -293,8 +296,10 @@ class HostManager ( object ):
                         self.logCritical( "Instance %d died, restarting it, pid %d" % ( n, proc.pid ) )
                     else:
                         self.log( "Initial instance %d created with pid %d" % ( n, proc.pid ) )
-                        self.initialProcesses = True
-            
+
+            if not self.initialProcesses:
+                self.initialProcesses = True
+
             gevent.sleep( self.instance_keepalive_seconds )
     
     def svc_host_keepalive( self ):
@@ -340,4 +345,15 @@ class HostManager ( object ):
     
 
 if __name__ == '__main__':
-    hostManager = HostManager( sys.argv[ 1 ] )
+    import argparse
+    parser = argparse.ArgumentParser( prog = 'HostManager' )
+    parser.add_argument( 'configFile',
+                         type = str,
+                         help = 'the main config file defining the beach cluster' )
+    parser.add_argument( '--iface', '-i',
+                         type = str,
+                         required = False,
+                         dest = 'iface',
+                         help = 'override the interface used for comms found in the config file' )
+    args = parser.parse_args()
+    hostManager = HostManager( args.configFile, iface = args.iface )
