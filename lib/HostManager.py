@@ -14,6 +14,7 @@ from sets import Set
 import syslog
 import subprocess
 import psutil
+import collections
 
 timeToStopEvent = gevent.event.Event()
 
@@ -55,6 +56,7 @@ class HostManager ( object ):
         self.peer_keepalive_seconds = 0
         self.instance_keepalive_seconds = 0
         self.tombstone_culling_seconds = 0
+        self.isActorChanged = gevent.event.Event()
 
         # Load default configs
         with open( self.configFilePath, 'r' ) as f:
@@ -109,6 +111,7 @@ class HostManager ( object ):
         gevent.spawn( self.svc_directory_sync )
         gevent.spawn( self.svc_cullTombstones )
         gevent.spawn( self.svc_receiveOpsTasks )
+        gevent.spawn( self.svc_pushDirChanges )
         
         # Start the instances
         for n in range( self.nProcesses ):
@@ -166,7 +169,15 @@ class HostManager ( object ):
             self.actorInfo.setdefault( uid, {} )[ 'instance' ] = instance
         
         return instance
-    
+
+    def _updateDirectoryWith( self, curDir, newDir ):
+        for k, v in newDir.iteritems():
+            if isinstance( v, collections.Mapping ):
+                r = self._updateDirectoryWith( curDir.get( k, {} ), v )
+                curDir[k] = r
+            else:
+                curDir[k] = newDir[k]
+        return curDir
     
     
     def svc_cullTombstones( self ):
@@ -213,10 +224,12 @@ class HostManager ( object ):
                                                                                    'port' : port },
                                                                                  timeout = 10 )
                         if isMessageSuccess( newMsg ):
+                            self.log( "New actor loaded, adding to directory" )
                             self.directory.setdefault( realm,
                                                        {} ).setdefault( category,
                                                                         {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                         port )
+                            self.isActorChanged.set()
                         else:
                             self._removeUidFromDirectory( uid )
                         z.send( newMsg )
@@ -235,16 +248,18 @@ class HostManager ( object ):
                             if isMessageSuccess( newMsg ):
                                 if not self._removeUidFromDirectory( uid ):
                                     newMsg = errorMessage( 'error removing actor from directory after stop' )
+                                else:
+                                    self.isActorChanged.set()
 
                             z.send( newMsg )
                 elif 'remove_actor' == action:
                     if 'uid' not in data:
                         z.send( errorMessage( 'missing information to remove actor' ) )
                     else:
-                        isFound = False
                         uid = data[ 'uid' ]
                         if self._removeUidFromDirectory( uid ):
                             z.send( successMessage() )
+                            self.isActorChanged.set()
                         else:
                             z.send( errorMessage( 'actor to stop not found' ) )
                 elif 'host_info' == action:
@@ -258,6 +273,31 @@ class HostManager ( object ):
                     for k in self.nodes.keys():
                         nodeList[ k ] = { 'last_seen' : self.nodes[ k ][ 'last_seen' ] }
                     z.send( successMessage( { 'nodes' : nodeList } ) )
+                elif 'flush' == action:
+                    resp = successMessage()
+                    for uid, actor in self.actorInfo.items():
+                        instance = actor[ 'instance' ]
+                        newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',
+                                                                                   'uid' : uid },
+                                                                                 timeout = 10 )
+                        if isMessageSuccess( newMsg ):
+                            if not self._removeUidFromDirectory( uid ):
+                                resp = errorMessage( 'error removing actor from directory after stop' )
+
+                    z.send( resp )
+
+                    if isMessageSuccess( resp ):
+                        self.isActorChanged.set()
+                elif 'get_dir_sync' == action:
+                    z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones } ) )
+                elif 'push_dir_sync' == action:
+                    if 'directory' in data and 'tombstones' in data:
+                        self._updateDirectoryWith( self.directory, data[ 'directory' ] )
+                        for uid in data[ 'tombstones' ]:
+                            self._removeUidFromDirectory( uid )
+                        z.send( successMessage() )
+                    else:
+                        z.send( errorMessage( 'missing information to update directory' ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
@@ -281,7 +321,13 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 0 ):
             for n in range( len( self.processes ) ):
                 self.log( "Issuing keepalive for instance %d" % n )
-                data = self.processes[ n ][ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
+
+                if self.initialProcesses:
+                    data = self.processes[ n ][ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
+                else:
+                    # For first instances, immediately trigger the instance creation
+                    data = False
+
                 if not isMessageSuccess( data ):
                     if self.processes[ n ][ 'p' ] is not None:
                         self.processes[ n ][ 'p' ].kill()
@@ -304,31 +350,46 @@ class HostManager ( object ):
     
     def svc_host_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
-            for nodeName, node in self.nodes.iteritems():
-                self.log( "Issuing keepalive for node %s" % nodeName )
-                data = node[ 'socket' ].request( { 'req' : 'keepalive',
-                                                   'from' : self.ifaceIp4 }, timeout = 10 )
-                
-                if isMessageSuccess( data ):
-                    node[ 'last_seen' ] = int( time.time() )
-                else:
-                    self.log( "Removing node %s because of timeout" % nodeName )
-                    del( self.nodes[ nodeName ] )
+            for nodeName, node in self.nodes.items():
+                if nodeName != self.ifaceIp4:
+                    self.log( "Issuing keepalive for node %s" % nodeName )
+                    data = node[ 'socket' ].request( { 'req' : 'keepalive',
+                                                       'from' : self.ifaceIp4 }, timeout = 10 )
+
+                    if isMessageSuccess( data ):
+                        node[ 'last_seen' ] = int( time.time() )
+                    else:
+                        self.log( "Removing node %s because of timeout" % nodeName )
+                        del( self.nodes[ nodeName ] )
             
             gevent.sleep( self.peer_keepalive_seconds )
     
     def svc_directory_sync( self ):
         while not self.stopEvent.wait( 0 ):
-            for nodeName, node in self.nodes.iteritems():
-                self.log( "Issuing directory sync with node %s" % nodeName )
-                data = node[ 'socket' ].request( { 'req' : 'dir_sync' } )
-                
-                if isMessageSuccess( data ):
-                    self.directory.update( data[ 'directory' ] )
-                    for uid in data[ 'tombstones' ]:
-                        self._removeUidFromDirectory( uid )
+            for nodeName, node in self.nodes.items():
+                if nodeName != self.ifaceIp4:
+                    self.log( "Issuing directory sync with node %s" % nodeName )
+                    data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
+
+                    if isMessageSuccess( data ):
+                        self._updateDirectoryWith( self.directory, data[ 'directory' ] )
+                        for uid in data[ 'tombstones' ]:
+                            self._removeUidFromDirectory( uid )
             
             gevent.sleep( self.directory_sync_seconds )
+
+    def svc_pushDirChanges( self ):
+        while not self.stopEvent.wait( 0 ):
+            self.isActorChanged.wait()
+            # We "accumulate" updates for 5 seconds once they occur to limit updates pushed
+            gevent.sleep( 5 )
+            self.isActorChanged.clear()
+            for nodeName, node in self.nodes.items():
+                if nodeName != self.ifaceIp4:
+                    self.log( "Pushing new directory update to %s" % nodeName )
+                    node[ 'socket' ].request( { 'req' : 'push_dir_sync',
+                                                'directory' : self.directory,
+                                                'tombstones' : self.tombstones } )
 
     def _initLogging( self ):
         syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )

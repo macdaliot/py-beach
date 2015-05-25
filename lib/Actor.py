@@ -21,6 +21,30 @@ class Actor( gevent.Greenlet ):
 
     class _ActorHandle ( object ):
         _zHostDir = None
+        _zDir = None
+
+        @classmethod
+        def _getNAvailableInCat( cls, realm, cat ):
+            nAvailable = 0
+            newDir = cls._getDirectory( realm, cat )
+            if newDir is not False:
+                nAvailable = len( newDir )
+            return nAvailable
+
+        @classmethod
+        def _getDirectory( cls, realm, cat ):
+            msg = cls._zDir.request( data = { 'realm' : realm, 'cat' : cat } )
+            if isMessageSuccess( msg ) and 'endpoints' in msg:
+                msg = msg[ 'endpoints' ]
+            else:
+                msg = False
+            return msg
+
+        @classmethod
+        def _setHostDirInfo( cls, zHostDir ):
+            if cls._zHostDir is None:
+                cls._zHostDir = zHostDir
+                cls._zDir = ZMREQ( cls._zHostDir, isBind = False )
 
         def __init__( self, realm, category, mode = 'random' ):
             self._cat = category
@@ -33,9 +57,9 @@ class Actor( gevent.Greenlet ):
             self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
 
         def _svc_refreshDir( self ):
-            msg = self._zDir.request( data = { 'realm' : self._realm, 'cat' : self._cat } )
-            if isMessageSuccess( msg ) and 'endpoints' in msg:
-                self._endpoints = msg[ 'endpoints' ]
+            newDir = self._getDirectory( self._realm, self._cat )
+            if newDir is not False:
+                self._endpoints = newDir
             if 0 == len( self._endpoints ):
                 # No Actors yet, be more agressive to look for some
                 self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
@@ -65,7 +89,6 @@ class Actor( gevent.Greenlet ):
                 pass
 
             if z is not None:
-
                 if type( data ) is not dict:
                     data = { 'data' : data }
                 data[ 'req' ] = requestType
@@ -79,6 +102,9 @@ class Actor( gevent.Greenlet ):
                     z.close()
 
             return ret
+
+        def isAvailable( self ):
+            return ( 0 != len( self._endpoints ) )
 
         def close( self ):
             self._threads.kill()
@@ -155,6 +181,7 @@ class Actor( gevent.Greenlet ):
                 z.send( ret )
             else:
                 z.send( errorMessage( 'invalid request' ) )
+        self.log( "Stopping processing Actor ops requests" )
 
     def _defaultHandler( self, msg ):
         return errorMessage( 'request type not supported by actor' )
@@ -202,5 +229,11 @@ class Actor( gevent.Greenlet ):
         self._vHandles.append( v )
         return v
 
+    def isCategoryAvailable( self, category ):
+        isAvailable = False
 
+        if 0 != self._ActorHandle._getNAvailableInCat( self._realm, category ):
+            isAvailable = True
+
+        return isAvailable
 

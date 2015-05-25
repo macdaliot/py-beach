@@ -2,7 +2,7 @@
 # you should start the HostManager.py on the same host
 # you intend to run this example.
 # To do so simply run:
-# python HostManager.py path/to/py-beach/examples/simple/simple.yaml
+# python HostManager.py path/to/py-beach/examples/multinode/multinode.yaml
 # This will set the host as a beach node.
 
 import sys
@@ -19,14 +19,8 @@ from Beach import Beach
 from Utils import *
 
 print( "Connecting to example beach." )
-# Note that we usually would not need to add the extraTmpSeedNode parameter in production
-# since your config file would be populated. Here to keep the config file simple and
-# portable we add our IP manually to operate in single-node mode.
-beach = Beach( os.path.join( curFileDir, 'simple.yaml' ),
-               realm = 'global',
-               extraTmpSeedNode = getIpv4ForIface( yaml.load( open( os.path.join( curFileDir,
-                                                                                  'simple.yaml' ),
-                                                                    'r' ) ).get( 'interface', 'eth0' ) ) )
+beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
+               realm = 'global' )
 
 print( "Creating ping actor in random beach node." )
 a1 = beach.addActor( 'Ping', 'pingers' )

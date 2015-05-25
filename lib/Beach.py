@@ -3,6 +3,8 @@ from Utils import *
 import zmq.green as zmq
 import random
 import gevent
+import gevent.pool
+import gevent.event
 
 class Beach ( object ):
 
@@ -12,6 +14,7 @@ class Beach ( object ):
         self._nodes = {}
         self._realm = realm
         self._opsPort = None
+        self._isInited = gevent.event.Event()
 
         with open( self._configFile, 'r' ) as f:
             self._configFile = yaml.load( f )
@@ -26,6 +29,11 @@ class Beach ( object ):
         for s in self._seedNodes:
             self._connectToNode( s )
 
+        self._threads = gevent.pool.Group()
+        self._threads.add( gevent.spawn( self._updateNodes ) )
+
+        self._isInited.wait( 5 )
+
     def _connectToNode( self, host ):
         nodeSocket = ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
         self._nodes[ host ] = { 'socket' : nodeSocket }
@@ -34,10 +42,14 @@ class Beach ( object ):
     def _updateNodes( self ):
         toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
-        for k in nodes.keys():
+        for k in nodes[ 'nodes' ].keys():
             if k not in self._nodes:
                 self._connectToNode( k )
+        self._isInited.set()
         gevent.spawn_later( 60, self._updateNodes )
+
+    def close( self ):
+        self._threads.kill()
 
     def setRealm( self, realm ):
         self._realm = realm
@@ -63,21 +75,9 @@ class Beach ( object ):
 
     def flush( self ):
         isFlushed = True
-        d = self.getDirectory()[ 'realms' ]
-        for realm, cats in d.iteritems():
-            for catName, actors in cats.iteritems():
-                for uid, url in actors.iteritems():
-                    isFlushed = False
-                    host = url.split( ':' )[ 1 ][ 2: ]
-                    if host in self._nodes:
-                        resp = self._nodes[ host ][ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                          'uid' : uid },
-                                                                        timeout = 30 )
-                        if isMessageSuccess( resp ):
-                            isFlushed = True
-                        else:
-                            print( "Error: %s" % str( resp ) )
-                    if not isFlushed:
-                        break
+        for node in self._nodes.values():
+            resp = node[ 'socket' ].request( { 'req' : 'flush' }, timeout = 30 )
+            if not isMessageSuccess( resp ):
+                isFlushed = False
 
         return isFlushed

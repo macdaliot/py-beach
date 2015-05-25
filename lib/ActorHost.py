@@ -58,7 +58,8 @@ class ActorHost ( object ):
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
         self.hostOpsSocket = ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
 
-        Actor._ActorHandle._zHostDir = self.configFile.get( 'directory_port', 'ipc:///tmp/py_beach_directory_port' )
+        Actor._ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
+                                                                 'ipc:///tmp/py_beach_directory_port' ) )
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )

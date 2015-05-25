@@ -187,11 +187,15 @@ class ZMREP ( object ):
         else:
             zFront.connect( self._url )
         zBack.bind( self._intUrl )
+        self._proxySocks = ( zFront, zBack )
         self._threads.add( gevent.spawn( self._proxy, zFront, zBack ) )
         self._threads.add( gevent.spawn( self._proxy, zBack, zFront ) )
 
     def close( self ):
         self._threads.kill()
+        self._proxySocks[ 0 ].close()
+        self._proxySocks[ 1 ].close()
+        self._proxySocks = ( None, None )
 
     class _childSock( object ):
         def __init__( self, z ):
