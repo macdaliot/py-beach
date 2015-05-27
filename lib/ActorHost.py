@@ -7,7 +7,7 @@ from gevent.event import Event
 from Utils import *
 import imp
 import zmq.green as zmq
-from Actor import Actor
+from Actor import *
 import yaml
 import time
 import syslog
@@ -58,8 +58,8 @@ class ActorHost ( object ):
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
         self.hostOpsSocket = ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
 
-        Actor._ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
-                                                                 'ipc:///tmp/py_beach_directory_port' ) )
+        ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
+                                                          'ipc:///tmp/py_beach_directory_port' ) )
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
@@ -92,6 +92,7 @@ class ActorHost ( object ):
                     else:
                         actorName = data[ 'actor_name' ]
                         realm = data.get( 'realm', 'global' )
+                        ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
                         self.log( "Starting actor %s/%s at %s/%s.py" % ( realm,
@@ -103,7 +104,7 @@ class ActorHost ( object ):
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             actorName )( self, realm, port, uid )
+                                             actorName )( self, realm, ip, port, uid )
                         except:
                             actor = None
 

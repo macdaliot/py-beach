@@ -5,6 +5,7 @@ import random
 import gevent
 import gevent.pool
 import gevent.event
+from Actor import ActorHandle
 
 class Beach ( object ):
 
@@ -15,6 +16,7 @@ class Beach ( object ):
         self._realm = realm
         self._opsPort = None
         self._isInited = gevent.event.Event()
+        self._vHandles = []
 
         with open( self._configFile, 'r' ) as f:
             self._configFile = yaml.load( f )
@@ -33,6 +35,8 @@ class Beach ( object ):
         self._threads.add( gevent.spawn( self._updateNodes ) )
 
         self._isInited.wait( 5 )
+
+        ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
 
     def _connectToNode( self, host ):
         nodeSocket = ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
@@ -71,7 +75,7 @@ class Beach ( object ):
     def getDirectory( self ):
         # We pick a random node to query since all directories should be synced
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        return node.request( { 'req' : 'get_dir' }, timeout = 10 )
+        return node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
 
     def flush( self ):
         isFlushed = True
@@ -81,3 +85,8 @@ class Beach ( object ):
                 isFlushed = False
 
         return isFlushed
+
+    def getActorHandle( self, category, mode = 'random' ):
+        v = ActorHandle( self._realm, category, mode )
+        self._vHandles.append( v )
+        return v

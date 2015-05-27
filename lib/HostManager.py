@@ -178,7 +178,9 @@ class HostManager ( object ):
             else:
                 curDir[k] = newDir[k]
         return curDir
-    
+
+    def _getDirectoryEntriesFor( self, realm, category ):
+        return self.directory.get( realm, {} ).get( category, {} )
     
     def svc_cullTombstones( self ):
         while not self.stopEvent.wait( 0 ):
@@ -221,6 +223,7 @@ class HostManager ( object ):
                                                                                    'actor_name' : actorName,
                                                                                    'realm' : realm,
                                                                                    'uid' : uid,
+                                                                                   'ip' : self.ifaceIp4,
                                                                                    'port' : port },
                                                                                  timeout = 10 )
                         if isMessageSuccess( newMsg ):
@@ -266,8 +269,14 @@ class HostManager ( object ):
                     z.send( successMessage( { 'cpu' : psutil.cpu_percent( percpu = True,
                                                                                        interval = 2 ),
                                                            'mem' : psutil.virtual_memory()[ 'percent' ] } ) )
-                elif 'get_dir' == action:
+                elif 'get_full_dir' == action:
                     z.send( successMessage( { 'realms' : self.directory } ) )
+                elif 'get_dir' == action:
+                    realm = data.get( 'realm', 'global' )
+                    if 'cat' in data:
+                        z.send( successMessage( data = { 'endpoints' : self._getDirectoryEntriesFor( realm, data[ 'cat' ] ) } ) )
+                    else:
+                        z.send( errorMessage( 'no category specified' ) )
                 elif 'get_nodes' == action:
                     nodeList = {}
                     for k in self.nodes.keys():
@@ -313,7 +322,7 @@ class HostManager ( object ):
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
-                z.send( successMessage( data = { 'endpoints' : self.directory.get( realm, {} ).get( data[ 'cat' ], {} ) } ) )
+                z.send( successMessage( data = { 'endpoints' : self._getDirectoryEntriesFor( realm, data[ 'cat' ] ) } ) )
             else:
                 z.send( errorMessage( 'no category specified' ) )
     
