@@ -31,11 +31,17 @@ a2 = beach.addActor( 'Pong', 'pongers' )
 print( json.dumps( a2, indent = 4 ) )
 
 print( "Idling for a few seconds..." )
-time.sleep( 30 )
+time.sleep( 15 )
 
 print( "Querying for beach directory." )
 d = beach.getDirectory()
 print( json.dumps( d, indent = 4 ) )
+
+print( "Trying some queries to the cluster." )
+vHandle = beach.getActorHandle( 'pongers' )
+print( "Issuing ping" )
+resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
+print( "Received: %s" % str( resp ) )
 
 time.sleep( 2 )
 print( "Flushing beach." )
