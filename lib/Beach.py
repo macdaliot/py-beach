@@ -56,14 +56,16 @@ class Beach ( object ):
         self._threads.kill()
 
     def setRealm( self, realm ):
+        old = self._realm
         self._realm = realm
+        return old
 
     def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
         resp = None
 
         thisRealm = realm if realm is not None else self._realm
 
-        if 'random' == strategy:
+        if 'random' == strategy or strategy is None:
             node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
             resp = node.request( { 'req' : 'start_actor',
                                    'actor_name' : actorName,
