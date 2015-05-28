@@ -118,7 +118,7 @@ class BeachShell ( cmd.Cmd ):
 
         if arguments is None:
             return
-        
+
         resp = 'Please confirm ( see command help )'
         if arguments.confirm:
             resp = self.beach.flush()

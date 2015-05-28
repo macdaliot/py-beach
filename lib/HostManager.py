@@ -189,7 +189,7 @@ class HostManager ( object ):
             maxTime = self.tombstone_culling_seconds
             nextTime = currentTime
             
-            for uid, ts in self.tombstones.itervalues():
+            for uid, ts in self.tombstones.items():
                 if ts < currentTime - maxTime:
                     del( self.tombstones[ uid ] )
                 elif ts < nextTime:
