@@ -1,4 +1,4 @@
-from Actor import Actor
+from actor import Actor
 import time
 
 class Ping ( Actor ):

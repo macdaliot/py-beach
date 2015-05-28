@@ -15,8 +15,8 @@ import time
 curFileDir = os.path.dirname( os.path.abspath( __file__ ) )
 sys.path.append( os.path.join( curFileDir, '..', '..', 'lib' ) )
 
-from Beach import Beach
-from Utils import *
+from beach.beach import Beach
+from beach.utils import *
 
 print( "Connecting to example beach." )
 beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
