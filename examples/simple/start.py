@@ -15,7 +15,7 @@ import time
 curFileDir = os.path.dirname( os.path.abspath( __file__ ) )
 sys.path.append( os.path.join( curFileDir, '..', '..', 'lib' ) )
 
-from beach.beach import Beach
+from beach.beach_api import Beach
 from beach.utils import *
 
 print( "Connecting to example beach." )

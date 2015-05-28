@@ -1,11 +1,11 @@
 import yaml
-from Utils import *
+from beach.utils import *
 import zmq.green as zmq
 import random
 import gevent
 import gevent.pool
 import gevent.event
-from Actor import ActorHandle
+from beach.actor import ActorHandle
 
 class Beach ( object ):
 

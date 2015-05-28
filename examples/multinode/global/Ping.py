@@ -1,4 +1,4 @@
-from actor import Actor
+from beach.actor import Actor
 import time
 import gevent
 

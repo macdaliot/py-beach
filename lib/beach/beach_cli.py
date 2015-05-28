@@ -11,8 +11,8 @@ import urllib
 import json
 import traceback
 import os
-from Beach import Beach
-from Utils import *
+from beach.beach import Beach
+from beach.utils import *
 
 def report_errors( func ):
     def silenceit( *args, **kwargs ):
@@ -161,7 +161,7 @@ class BeachShell ( cmd.Cmd ):
 
 if __name__ == '__main__':
     if 2 != len( sys.argv ):
-        print( "Usage: beachcli.py pathToBeachConfigFile" )
+        print( "Usage: beach_cli.py pathToBeachConfigFile" )
     else:
         app = BeachShell( sys.argv[ 1 ] )
         app.cmdloop()

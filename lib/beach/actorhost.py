@@ -4,10 +4,10 @@ import signal
 import gevent
 from gevent import Greenlet
 from gevent.event import Event
-from Utils import *
+from beach.utils import *
 import imp
 import zmq.green as zmq
-from Actor import *
+from beach.actor import *
 import yaml
 import time
 import syslog

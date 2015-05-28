@@ -5,7 +5,7 @@ import gevent.pool
 import zmq.green as zmq
 import traceback
 import time
-from Utils import *
+from beach.utils import *
 import random
 import syslog
 

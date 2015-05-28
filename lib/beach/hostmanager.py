@@ -6,7 +6,7 @@ import gevent.event
 import gevent.pool
 import yaml
 import multiprocessing
-from Utils import *
+from beach.utils import *
 import time
 import uuid
 import random
