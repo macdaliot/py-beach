@@ -1,5 +1,6 @@
 import yaml
 from beach.utils import *
+from beach.utils import _ZMREQ
 import zmq.green as zmq
 import random
 import operator
@@ -12,6 +13,7 @@ class Beach ( object ):
 
     def __init__( self, configFile, realm = 'global', extraTmpSeedNode = None ):
         '''Create a new interface to a beach cluster.
+
         :param configFile: the path to the config file of the cluster
         :param realm: the realm within the cluster you want to deal with, defaults to global
         :param extraTmpSeedNode: manually specify a seed node to interface with, only use
@@ -46,7 +48,7 @@ class Beach ( object ):
         ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
 
     def _connectToNode( self, host ):
-        nodeSocket = ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
+        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
         self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 
@@ -81,6 +83,7 @@ class Beach ( object ):
 
     def setRealm( self, realm ):
         '''Change the realm to interface with.
+
         :param realm: the new realm to use
         :returns: the old realm used or None if none were specified
         '''
@@ -90,10 +93,11 @@ class Beach ( object ):
 
     def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
         '''Spawn a new actor in the cluster.
+
         :param actorName: the name of the actor to spawn
         :param category: the category associated with this new actor
-        :param strategy: the strategy to use to decide where to spawn the new actor, currently
-            supports: random
+        :param strategy: the strategy to use to decide where to spawn the new actor,
+            currently supports: random
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
         :returns: returns the reply from the node indicating if the actor was created successfully,
@@ -136,7 +140,8 @@ class Beach ( object ):
 
     def getDirectory( self ):
         '''Retrieve the directory from a random node, all nodes have a directory that
-        is eventually-consistent.
+            is eventually-consistent.
+
         :returns: the realm directory of the cluster
         '''
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -147,6 +152,7 @@ class Beach ( object ):
 
     def flush( self ):
         '''Unload all actors from the cluster, major operation, be careful.
+
         :returns: True if all actors were removed normally
         '''
         isFlushed = True

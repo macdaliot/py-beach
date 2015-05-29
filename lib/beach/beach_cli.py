@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+'''A Command Line Interface to manage the beach cluster. Instantiate like:
+    python -m beach.beach_cli -h
+'''
 
 import cmd
 import readline

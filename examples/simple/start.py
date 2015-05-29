@@ -24,7 +24,7 @@ print( "Connecting to example beach." )
 # portable we add our IP manually to operate in single-node mode.
 beach = Beach( os.path.join( curFileDir, 'simple.yaml' ),
                realm = 'global',
-               extraTmpSeedNode = getIpv4ForIface( yaml.load( open( os.path.join( curFileDir,
+               extraTmpSeedNode = _getIpv4ForIface( yaml.load( open( os.path.join( curFileDir,
                                                                                   'simple.yaml' ),
                                                                     'r' ) ).get( 'interface', 'eth0' ) ) )
 

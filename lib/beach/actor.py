@@ -6,10 +6,15 @@ import zmq.green as zmq
 import traceback
 import time
 from beach.utils import *
+from beach.utils import _TimeoutException
+from beach.utils import _ZMREQ
+from beach.utils import _ZMREP
+from beach.utils import _ZSocket
 import random
 import logging
 
 class Actor( gevent.Greenlet ):
+    '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
     def __init__( self, host, realm, ip, port, uid ):
         gevent.Greenlet.__init__( self )
 
@@ -30,7 +35,7 @@ class Actor( gevent.Greenlet ):
 
         # This socket receives all taskings for the actor and dispatch
         # the messages as requested by user
-        self._opsSocket = ZMREP( 'tcp://%s:%d' % ( self._ip, self._port ), isBind = True )
+        self._opsSocket = _ZMREP( 'tcp://%s:%d' % ( self._ip, self._port ), isBind = True )
 
         self._vHandles = []
 
@@ -167,6 +172,7 @@ class Actor( gevent.Greenlet ):
 
     def isCategoryAvailable( self, category ):
         '''Checks if actors are available in the category.
+
         :param category: the category to look for actors in
         :returns: True if actors are available
         '''
@@ -218,7 +224,7 @@ class ActorHandle ( object ):
             if cls._zHostDir is None:
                 cls._zHostDir = zHostDir
                 for h in zHostDir:
-                    cls._zDir.append( ZMREQ( h, isBind = False ) )
+                    cls._zDir.append( _ZMREQ( h, isBind = False ) )
 
         def __init__( self, realm, category, mode = 'random' ):
             self._cat = category
@@ -241,11 +247,12 @@ class ActorHandle ( object ):
 
         def request( self, requestType, data = {}, timeout = None ):
             '''Issue a request to the actor category of this handle.
+
             :param requestType: the type of request to issue
             :param data: a dict of the data associated with the request
             :param timeout: the number of seconds to wait for a response
-            :returns: the response to the request as a dict, or False in
-                the event the request failed or timed out
+            :returns: the response to the request as a dict, or False in the event
+                the request failed or timed out
             '''
             z = None
             ret = False
@@ -253,7 +260,7 @@ class ActorHandle ( object ):
             try:
                 # We use the timeout to wait for an available node if none
                 # exists
-                with gevent.Timeout( timeout, TimeoutException ):
+                with gevent.Timeout( timeout, _TimeoutException ):
                     while z is None:
                         if 0 != len( self._srcSockets ):
                             # Prioritize existing connections, only create new one
@@ -262,10 +269,10 @@ class ActorHandle ( object ):
                         elif 'random' == self._mode:
                             endpoints = self._endpoints.values()
                             if 0 != len( endpoints ):
-                                z = ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+                                z = _ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
                         if z is None:
                             gevent.sleep( 0.001 )
-            except TimeoutException:
+            except _TimeoutException:
                 pass
 
             if z is not None:
@@ -285,6 +292,7 @@ class ActorHandle ( object ):
 
         def isAvailable( self ):
             '''Checks to see if any actors are available to respond to a query of this handle.
+
             :returns: True if at least one actor is available
             '''
             return ( 0 != len( self._endpoints ) )

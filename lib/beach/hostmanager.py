@@ -1,3 +1,7 @@
+'''The main script to run on a beach cluster node, it takes care of everything. Instantiate like:
+    python -m beach.hostmanager -h
+'''
+
 import sys
 import os
 import signal
@@ -7,6 +11,8 @@ import gevent.pool
 import yaml
 import multiprocessing
 from beach.utils import *
+from beach.utils import _ZMREQ
+from beach.utils import _ZMREP
 import time
 import uuid
 import random
@@ -70,25 +76,25 @@ class HostManager ( object ):
         self.nProcesses = self.configFile.get( 'n_processes', 0 )
         if self.nProcesses == 0:
             self.nProcesses = multiprocessing.cpu_count()
-        self.log( "Using %d instances per node" % self.nProcesses )
+        self._log( "Using %d instances per node" % self.nProcesses )
         
         self.seedNodes = self.configFile.get( 'seed_nodes', [] )
         for s in self.seedNodes:
-            self.log( "Using seed node: %s" % s )
+            self._log( "Using seed node: %s" % s )
 
         if iface is not None:
             self.interface = iface
         else:
             self.interface = self.configFile.get( 'interface', 'eth0' )
-        self.ifaceIp4 = getIpv4ForIface( self.interface )
+        self.ifaceIp4 = _getIpv4ForIface( self.interface )
 
-        self.directoryPort = ZMREP( self.configFile.get( 'directory_port',
+        self.directoryPort = _ZMREP( self.configFile.get( 'directory_port',
                                                          'ipc:///tmp/py_beach_directory_port' ),
                                     isBind = True )
         
         self.opsPort = self.configFile.get( 'ops_port', 4999 )
-        self.opsSocket = ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ), isBind = True )
-        self.log( "Listening for ops on %s:%d" % ( self.ifaceIp4, self.opsPort ) )
+        self.opsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ), isBind = True )
+        self._log( "Listening for ops on %s:%d" % ( self.ifaceIp4, self.opsPort ) )
         
         self.port_range = ( self.configFile.get( 'port_range_start', 5000 ), self.configFile.get( 'port_range_end', 6000 ) )
         self.ports_available.update( xrange( self.port_range[ 0 ], self.port_range[ 1 ] + 1 ) )
@@ -105,31 +111,31 @@ class HostManager ( object ):
             self._connectToNode( s )
         
         # Start services
-        self.log( "Starting services" )
-        gevent.spawn( self.svc_directory_requests )
-        gevent.spawn( self.svc_instance_keepalive )
-        gevent.spawn( self.svc_host_keepalive )
-        gevent.spawn( self.svc_directory_sync )
-        gevent.spawn( self.svc_cullTombstones )
-        gevent.spawn( self.svc_receiveOpsTasks )
-        gevent.spawn( self.svc_pushDirChanges )
+        self._log( "Starting services" )
+        gevent.spawn( self._svc_directory_requests )
+        gevent.spawn( self._svc_instance_keepalive )
+        gevent.spawn( self._svc_host_keepalive )
+        gevent.spawn( self._svc_directory_sync )
+        gevent.spawn( self._svc_cullTombstones )
+        gevent.spawn( self._svc_receiveOpsTasks )
+        gevent.spawn( self._svc_pushDirChanges )
         
         # Start the instances
         for n in range( self.nProcesses ):
-            procSocket = ZMREQ( 'ipc:///tmp/py_beach_instance_%d' % n, isBind = False )
+            procSocket = _ZMREQ( 'ipc:///tmp/py_beach_instance_%d' % n, isBind = False )
             self.processes.append( { 'socket' : procSocket, 'p' : None } )
-            self.log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%d' % n, ) )
+            self._log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%d' % n, ) )
         
         # Wait to be signaled to exit
-        self.log( "Up and running" )
+        self._log( "Up and running" )
         timeToStopEvent.wait()
         
         # Any teardown required
         
-        self.log( "Exiting." )
+        self._log( "Exiting." )
 
     def _connectToNode( self, ip ):
-        nodeSocket = ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ), isBind = False )
+        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ), isBind = False )
         self.nodes[ ip ] = { 'socket' : nodeSocket, 'last_seen' : None }
 
     def _removeUidFromDirectory( self, uid ):
@@ -183,9 +189,9 @@ class HostManager ( object ):
     def _getDirectoryEntriesFor( self, realm, category ):
         return self.directory.get( realm, {} ).get( category, {} )
     
-    def svc_cullTombstones( self ):
+    def _svc_cullTombstones( self ):
         while not self.stopEvent.wait( 0 ):
-            self.log( "Culling tombstones" )
+            self._log( "Culling tombstones" )
             currentTime = int( time.time() )
             maxTime = self.tombstone_culling_seconds
             nextTime = currentTime
@@ -198,16 +204,16 @@ class HostManager ( object ):
 
             gevent.sleep( maxTime - ( currentTime - nextTime ) )
     
-    def svc_receiveOpsTasks( self ):
+    def _svc_receiveOpsTasks( self ):
         z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             data = z.recv()
             if data is not False and 'req' in data:
                 action = data[ 'req' ]
-                self.log( "Received new ops request: %s" % action )
+                self._log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
                     if 'from' in data and data[ 'from' ] not in self.nodes:
-                        self.log( "Discovered new node: %s" % data[ 'from' ] )
+                        self._log( "Discovered new node: %s" % data[ 'from' ] )
                         self._connectToNode( data[ 'from' ] )
                     z.send( successMessage() )
                 elif 'start_actor' == action:
@@ -228,7 +234,7 @@ class HostManager ( object ):
                                                                                    'port' : port },
                                                                                  timeout = 10 )
                         if isMessageSuccess( newMsg ):
-                            self.log( "New actor loaded, adding to directory" )
+                            self._log( "New actor loaded, adding to directory" )
                             self.directory.setdefault( realm,
                                                        {} ).setdefault( category,
                                                                         {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
@@ -312,14 +318,14 @@ class HostManager ( object ):
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
                 z.send( errorMessage( 'invalid request' ) )
-                self.logCritical( "Received completely invalid request" )
+                self._logCritical( "Received completely invalid request" )
     
-    def svc_directory_requests( self ):
+    def _svc_directory_requests( self ):
         z = self.directoryPort.getChild()
         while not self.stopEvent.wait( 0 ):
             data = z.recv()
 
-            self.log( "Received directory request" )
+            self._log( "Received directory request" )
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
@@ -327,10 +333,10 @@ class HostManager ( object ):
             else:
                 z.send( errorMessage( 'no category specified' ) )
     
-    def svc_instance_keepalive( self ):
+    def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
             for n in range( len( self.processes ) ):
-                self.log( "Issuing keepalive for instance %d" % n )
+                self._log( "Issuing keepalive for instance %d" % n )
 
                 if self.initialProcesses:
                     data = self.processes[ n ][ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
@@ -349,36 +355,36 @@ class HostManager ( object ):
                     self.processes[ n ][ 'p' ] = proc
 
                     if self.initialProcesses:
-                        self.logCritical( "Instance %d died, restarting it, pid %d" % ( n, proc.pid ) )
+                        self._logCritical( "Instance %d died, restarting it, pid %d" % ( n, proc.pid ) )
                     else:
-                        self.log( "Initial instance %d created with pid %d" % ( n, proc.pid ) )
+                        self._log( "Initial instance %d created with pid %d" % ( n, proc.pid ) )
 
             if not self.initialProcesses:
                 self.initialProcesses = True
 
             gevent.sleep( self.instance_keepalive_seconds )
     
-    def svc_host_keepalive( self ):
+    def _svc_host_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
-                    self.log( "Issuing keepalive for node %s" % nodeName )
+                    self._log( "Issuing keepalive for node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'keepalive',
                                                        'from' : self.ifaceIp4 }, timeout = 10 )
 
                     if isMessageSuccess( data ):
                         node[ 'last_seen' ] = int( time.time() )
                     else:
-                        self.log( "Removing node %s because of timeout" % nodeName )
+                        self._log( "Removing node %s because of timeout" % nodeName )
                         del( self.nodes[ nodeName ] )
             
             gevent.sleep( self.peer_keepalive_seconds )
     
-    def svc_directory_sync( self ):
+    def _svc_directory_sync( self ):
         while not self.stopEvent.wait( 0 ):
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
-                    self.log( "Issuing directory sync with node %s" % nodeName )
+                    self._log( "Issuing directory sync with node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
 
                     if isMessageSuccess( data ):
@@ -388,7 +394,7 @@ class HostManager ( object ):
             
             gevent.sleep( self.directory_sync_seconds )
 
-    def svc_pushDirChanges( self ):
+    def _svc_pushDirChanges( self ):
         while not self.stopEvent.wait( 0 ):
             self.isActorChanged.wait()
             # We "accumulate" updates for 5 seconds once they occur to limit updates pushed
@@ -396,7 +402,7 @@ class HostManager ( object ):
             self.isActorChanged.clear()
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
-                    self.log( "Pushing new directory update to %s" % nodeName )
+                    self._log( "Pushing new directory update to %s" % nodeName )
                     node[ 'socket' ].request( { 'req' : 'push_dir_sync',
                                                 'directory' : self.directory,
                                                 'tombstones' : self.tombstones } )
@@ -406,10 +412,10 @@ class HostManager ( object ):
         self._logger = logging.getLogger()
         self._logger.setLevel( logging.INFO )
 
-    def log( self, msg ):
+    def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
 
-    def logCritical( self, msg ):
+    def _logCritical( self, msg ):
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
     
 

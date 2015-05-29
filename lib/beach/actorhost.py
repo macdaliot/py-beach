@@ -5,6 +5,7 @@ import gevent
 from gevent import Greenlet
 from gevent.event import Event
 from beach.utils import *
+from beach.utils import _ZMREP
 import imp
 import zmq.green as zmq
 from beach.actor import *
@@ -52,11 +53,11 @@ class ActorHost ( object ):
 
         self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
 
-        self.opsSocket = ZMREP( 'ipc:///tmp/py_beach_instance_%d' % instanceId, isBind = True )
+        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%d' % instanceId, isBind = True )
         self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%d' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
-        self.hostOpsSocket = ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
+        self.hostOpsSocket = _ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
 
         ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
                                                           'ipc:///tmp/py_beach_directory_port' ) )
