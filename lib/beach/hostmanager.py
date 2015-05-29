@@ -266,9 +266,9 @@ class HostManager ( object ):
                         else:
                             z.send( errorMessage( 'actor to stop not found' ) )
                 elif 'host_info' == action:
-                    z.send( successMessage( { 'cpu' : psutil.cpu_percent( percpu = True,
-                                                                                       interval = 2 ),
-                                                           'mem' : psutil.virtual_memory()[ 'percent' ] } ) )
+                    z.send( successMessage( { 'info' : { 'cpu' : psutil.cpu_percent( percpu = True,
+                                                                                     interval = 2 ),
+                                                         'mem' : psutil.virtual_memory().percent } } ) )
                 elif 'get_full_dir' == action:
                     z.send( successMessage( { 'realms' : self.directory } ) )
                 elif 'get_dir' == action:

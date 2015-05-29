@@ -40,8 +40,15 @@ class Beach ( object ):
 
     def _connectToNode( self, host ):
         nodeSocket = ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
-        self._nodes[ host ] = { 'socket' : nodeSocket }
+        self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
+
+    def _getHostInfo( self, zSock ):
+        info = None
+        resp = zSock.request( { 'req' : 'host_info' } )
+        if isMessageSuccess( resp ):
+            info = resp[ 'info' ]
+        return info
 
     def _updateNodes( self ):
         toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -49,8 +56,12 @@ class Beach ( object ):
         for k in nodes[ 'nodes' ].keys():
             if k not in self._nodes:
                 self._connectToNode( k )
+
+        for nodeName, node in self._nodes.items():
+            self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
+
         self._isInited.set()
-        gevent.spawn_later( 60, self._updateNodes )
+        gevent.spawn_later( 30, self._updateNodes )
 
     def close( self ):
         self._threads.kill()
@@ -62,11 +73,19 @@ class Beach ( object ):
 
     def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
         resp = None
+        node = None
 
         thisRealm = realm if realm is not None else self._realm
 
         if 'random' == strategy or strategy is None:
             node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        elif 'resource' == strategy:
+            # For now the simple version of this strategy is to just average the CPU and MEM %.
+            node = min( self._nodes.values(), key = lambda x: ( sum( x[ 'info' ][ 'cpu' ] ) /
+                                                                len( x[ 'info' ][ 'cpu' ] ) +
+                                                                x[ 'info' ][ 'mem' ] ) / 2 )[ 'socket' ]
+
+        if node is not None:
             resp = node.request( { 'req' : 'start_actor',
                                    'actor_name' : actorName,
                                    'realm' : thisRealm,

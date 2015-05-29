@@ -140,6 +140,9 @@ class Actor( gevent.Greenlet ):
         return isAvailable
 
 
+# ActorHandle is not meant to be created manually.
+# They are returned by either the Beach.getActorHandle()
+# or Actor.getActorHandle().
 class ActorHandle ( object ):
         _zHostDir = None
         _zDir = []
