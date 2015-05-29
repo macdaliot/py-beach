@@ -8,6 +8,11 @@ import netifaces
 class TimeoutException(Exception): pass
 
 def sanitizeJson( obj ):
+    '''Takes a more-or-less JSON object and sanitizes it
+    into valid JSON format.
+    :param obj: the object to sanitize
+    :returns: a valid JSON object
+    '''
     def _sanitizeJsonValue( value ):
         if type( value ) is uuid.UUID:
             value = str( value )
@@ -24,14 +29,14 @@ def sanitizeJson( obj ):
                 try:
                     data[ key ] = _sanitizeJsonValue( value )
                 except AttributeError:
-                    data[ key ] = _sanitizeValue( value )
+                    data[ key ] = _sanitizeJsonValue( value )
         elif issubclass( type( obj ), list ):
             data = []
             for value in obj:
                 try:
                     data.append( _sanitizeJsonValue( value ) )
                 except AttributeError:
-                    data.append( _sanitizeValue( value ) )
+                    data.append( _sanitizeJsonValue( value ) )
         elif type( obj ) is bool:
             data = obj
         else:
@@ -42,6 +47,10 @@ def sanitizeJson( obj ):
     return _sanitizeJsonStruct( obj )
 
 def isMessageSuccess( msg ):
+    '''Checks if request was a success.
+    :param msg: the message to check for success
+    :returns: True if it was a success
+    '''
     isSuccess = False
     if msg is not False and msg is not None:
         if msg.get( 'status', {} ).get( 'success', False ) is not False:
@@ -49,12 +58,21 @@ def isMessageSuccess( msg ):
     return isSuccess
 
 def errorMessage( errorString, data = None ):
+    '''Create a generic error message.
+    :param errorString: the error message to associate
+    :param data: specific data to contextualize the error
+    :returns: an error message that can be sent back to any actor
+    '''
     msg = { 'status' : { 'success' : False, 'error' : errorString } }
     if data is not None:
         msg[ 'data' ] = data
     return msg
 
 def successMessage( data = None ):
+    '''Create a generic success message.
+    :param data: specific data returned in the success message
+    :returns: the success message
+    '''
     msg = { 'status' : { 'success' : True } }
     if data is not None:
         msg.update( data )

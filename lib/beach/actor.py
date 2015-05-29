@@ -89,13 +89,28 @@ class Actor( gevent.Greenlet ):
         return errorMessage( 'request type not supported by actor' )
 
     def stop( self ):
+        '''Stop the actor and its threads.'''
         self.log( "Stopping" )
         self.stopEvent.set()
 
     def isRunning( self ):
+        '''Checks if the actor is currently running.
+
+        :returns: True if the actor is running
+        '''
         return not self.ready()
 
     def handle( self, requestType, handlerFunction ):
+        '''Initiates a callback for a specific type of request.
+
+        :param requestType: the string representing the type of request to handle
+        :param handlerFunction: the function that will handle those requests, this
+            function receives a single parameter (the message) and returns a message
+            to reply to the message. If it returns True, a generic success message will
+            be replied, and if it returns a simple string, it will reply a generic error
+            message where the string is the error message. To return data, return a dict.
+        :returns: the previous handler for the request type or None if None existed
+        '''
         old = None
         if requestType in self._handlers:
             old = self._handlers[ requestType ]
@@ -103,6 +118,13 @@ class Actor( gevent.Greenlet ):
         return old
 
     def schedule( self, delay, func, *args, **kw_args ):
+        '''Schedule a recurring function.
+
+        :param delay: the number of seconds interval between calls
+        :param func: the function to call at interval
+        :param args: positional arguments to the function
+        :param kw_args: keyword arguments to the function
+        '''
         if not self.stopEvent.wait( 0 ):
             self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
             try:
@@ -118,17 +140,36 @@ class Actor( gevent.Greenlet ):
         self._logger.setLevel( logging.INFO )
 
     def log( self, msg ):
+        '''Log debug statements.
+
+        :param msg: the message to log
+        '''
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
 
     def logCritical( self, msg ):
+        '''Log errors.
+
+        :param msg: the message to log
+        '''
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
 
     def getActorHandle( self, category, mode = 'random' ):
+        '''Get a virtual handle to actors in the cluster.
+
+        :param category: the name of the category holding actors to get the handle to
+        :param mode: the method actors are queried by the handle, currently
+            handles: random
+        :returns: an ActorHandle
+        '''
         v = ActorHandle( self._realm, category, mode )
         self._vHandles.append( v )
         return v
 
     def isCategoryAvailable( self, category ):
+        '''Checks if actors are available in the category.
+        :param category: the category to look for actors in
+        :returns: True if actors are available
+        '''
         isAvailable = False
 
         if 0 != ActorHandle._getNAvailableInCat( self._realm, category ):
@@ -199,6 +240,13 @@ class ActorHandle ( object ):
                 self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
 
         def request( self, requestType, data = {}, timeout = None ):
+            '''Issue a request to the actor category of this handle.
+            :param requestType: the type of request to issue
+            :param data: a dict of the data associated with the request
+            :param timeout: the number of seconds to wait for a response
+            :returns: the response to the request as a dict, or False in
+                the event the request failed or timed out
+            '''
             z = None
             ret = False
 
@@ -236,7 +284,12 @@ class ActorHandle ( object ):
             return ret
 
         def isAvailable( self ):
+            '''Checks to see if any actors are available to respond to a query of this handle.
+            :returns: True if at least one actor is available
+            '''
             return ( 0 != len( self._endpoints ) )
 
         def close( self ):
+            '''Close all threads and resources associated with this handle.
+            '''
             self._threads.kill()

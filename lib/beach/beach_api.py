@@ -11,7 +11,12 @@ from beach.actor import ActorHandle
 class Beach ( object ):
 
     def __init__( self, configFile, realm = 'global', extraTmpSeedNode = None ):
-
+        '''Create a new interface to a beach cluster.
+        :param configFile: the path to the config file of the cluster
+        :param realm: the realm within the cluster you want to deal with, defaults to global
+        :param extraTmpSeedNode: manually specify a seed node to interface with, only use
+            if you know why you need it
+        '''
         self._configFile = configFile
         self._nodes = {}
         self._realm = realm
@@ -70,14 +75,31 @@ class Beach ( object ):
         gevent.spawn_later( 30, self._updateNodes )
 
     def close( self ):
+        '''Close all threads and resources of the interface.
+        '''
         self._threads.kill()
 
     def setRealm( self, realm ):
+        '''Change the realm to interface with.
+        :param realm: the new realm to use
+        :returns: the old realm used or None if none were specified
+        '''
         old = self._realm
         self._realm = realm
         return old
 
     def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
+        '''Spawn a new actor in the cluster.
+        :param actorName: the name of the actor to spawn
+        :param category: the category associated with this new actor
+        :param strategy: the strategy to use to decide where to spawn the new actor, currently
+            supports: random
+        :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
+        :param realm: the realm to add the actor in, if different than main realm set
+        :returns: returns the reply from the node indicating if the actor was created successfully,
+            use beach.utils.isMessageSuccess( response ) to check for success
+        '''
+
         resp = None
         node = None
 
@@ -113,7 +135,10 @@ class Beach ( object ):
         return resp
 
     def getDirectory( self ):
-        # We pick a random node to query since all directories should be synced
+        '''Retrieve the directory from a random node, all nodes have a directory that
+        is eventually-consistent.
+        :returns: the realm directory of the cluster
+        '''
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         resp = node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
         if resp is not None:
@@ -121,6 +146,9 @@ class Beach ( object ):
         return resp
 
     def flush( self ):
+        '''Unload all actors from the cluster, major operation, be careful.
+        :returns: True if all actors were removed normally
+        '''
         isFlushed = True
         for node in self._nodes.values():
             resp = node[ 'socket' ].request( { 'req' : 'flush' }, timeout = 30 )
@@ -130,6 +158,13 @@ class Beach ( object ):
         return isFlushed
 
     def getActorHandle( self, category, mode = 'random' ):
+        '''Get a virtual handle to actors in the cluster.
+
+        :param category: the name of the category holding actors to get the handle to
+        :param mode: the method actors are queried by the handle, currently
+            handles: random
+        :returns: an ActorHandle
+        '''
         v = ActorHandle( self._realm, category, mode )
         self._vHandles.append( v )
         return v
