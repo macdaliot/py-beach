@@ -2,6 +2,7 @@ import yaml
 from beach.utils import *
 import zmq.green as zmq
 import random
+import operator
 import gevent
 import gevent.pool
 import gevent.event
@@ -17,6 +18,7 @@ class Beach ( object ):
         self._opsPort = None
         self._isInited = gevent.event.Event()
         self._vHandles = []
+        self._dirCache = {}
 
         with open( self._configFile, 'r' ) as f:
             self._configFile = yaml.load( f )
@@ -60,6 +62,10 @@ class Beach ( object ):
         for nodeName, node in self._nodes.items():
             self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
 
+        tmpDir = self.getDirectory()
+        if isMessageSuccess( tmpDir ):
+            self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
+
         self._isInited.set()
         gevent.spawn_later( 30, self._updateNodes )
 
@@ -84,6 +90,19 @@ class Beach ( object ):
             node = min( self._nodes.values(), key = lambda x: ( sum( x[ 'info' ][ 'cpu' ] ) /
                                                                 len( x[ 'info' ][ 'cpu' ] ) +
                                                                 x[ 'info' ][ 'mem' ] ) / 2 )[ 'socket' ]
+        elif 'affinity' == strategy:
+            nodeList = self._dirCache.get( strategy_hint, {} ).values()
+            population = {}
+            for n in nodeList:
+                name = n.split( ':' )[ 1 ][ 2 : ]
+                population.setdefault( name, 0 )
+                population[ name ] += 1
+            if 0 != len( population ):
+                affinityNode = max( population.iteritems(), key = operator.itemgetter( 1 ) )[ 0 ]
+                node = self._nodes[ affinityNode ].get( 'socket', None )
+            else:
+                # There is nothing in play, fall back to random
+                node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
 
         if node is not None:
             resp = node.request( { 'req' : 'start_actor',
@@ -96,7 +115,10 @@ class Beach ( object ):
     def getDirectory( self ):
         # We pick a random node to query since all directories should be synced
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        return node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
+        resp = node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
+        if resp is not None:
+            self._dirCache = resp
+        return resp
 
     def flush( self ):
         isFlushed = True

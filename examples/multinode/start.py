@@ -27,7 +27,7 @@ a1 = beach.addActor( 'Ping', 'pingers', strategy = 'resource' )
 print( json.dumps( a1, indent = 4 ) )
 
 print( "Creating pong actor in random beach node." )
-a2 = beach.addActor( 'Pong', 'pongers', strategy = 'resource' )
+a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers' )
 print( json.dumps( a2, indent = 4 ) )
 
 print( "Idling for a few seconds..." )

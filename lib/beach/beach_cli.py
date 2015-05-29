@@ -11,7 +11,7 @@ import urllib
 import json
 import traceback
 import os
-from beach.beach import Beach
+from beach.beach_api import Beach
 from beach.utils import *
 
 def report_errors( func ):
