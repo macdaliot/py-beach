@@ -1,0 +1,366 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>beach.utils &mdash; beach  documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="beach  documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" />
+   
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">beach  documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for beach.utils</h1><div class="highlight"><pre>
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">gevent</span>
+<span class="kn">import</span> <span class="nn">gevent.coros</span>
+<span class="kn">import</span> <span class="nn">zmq.green</span> <span class="kn">as</span> <span class="nn">zmq</span>
+<span class="kn">import</span> <span class="nn">netifaces</span>
+
+<span class="k">class</span> <span class="nc">_TimeoutException</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span> <span class="k">pass</span>
+
+<span class="k">def</span> <span class="nf">_sanitizeJson</span><span class="p">(</span> <span class="n">obj</span> <span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_sanitizeJsonValue</span><span class="p">(</span> <span class="n">value</span> <span class="p">):</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span> <span class="ow">is</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span> <span class="ow">is</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span> <span class="s">&#39;%Y-%m-</span><span class="si">%d</span><span class="s"> %H:%M:%S&#39;</span> <span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span>
+    
+    <span class="k">def</span> <span class="nf">_sanitizeJsonStruct</span><span class="p">(</span> <span class="n">obj</span> <span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">None</span>
+        
+        <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span> <span class="nb">type</span><span class="p">(</span> <span class="n">obj</span> <span class="p">),</span> <span class="nb">dict</span> <span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obj</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">data</span><span class="p">[</span> <span class="n">key</span> <span class="p">]</span> <span class="o">=</span> <span class="n">_sanitizeJsonValue</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                    <span class="n">data</span><span class="p">[</span> <span class="n">key</span> <span class="p">]</span> <span class="o">=</span> <span class="n">_sanitizeJsonValue</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">issubclass</span><span class="p">(</span> <span class="nb">type</span><span class="p">(</span> <span class="n">obj</span> <span class="p">),</span> <span class="nb">list</span> <span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obj</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">_sanitizeJsonValue</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span> <span class="p">)</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                    <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">_sanitizeJsonValue</span><span class="p">(</span> <span class="n">value</span> <span class="p">)</span> <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span> <span class="n">obj</span> <span class="p">)</span> <span class="ow">is</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">obj</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span>
+                    
+        <span class="k">return</span> <span class="n">data</span>
+    
+    <span class="k">return</span> <span class="n">_sanitizeJsonStruct</span><span class="p">(</span> <span class="n">obj</span> <span class="p">)</span>
+
+<div class="viewcode-block" id="isMessageSuccess"><a class="viewcode-back" href="../../beach.html#beach.utils.isMessageSuccess">[docs]</a><span class="k">def</span> <span class="nf">isMessageSuccess</span><span class="p">(</span> <span class="n">msg</span> <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Checks if request was a success.</span>
+<span class="sd">    </span>
+<span class="sd">    :param msg: the message to check for success</span>
+<span class="sd">    :returns: True if it was a success</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="k">if</span> <span class="n">msg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">False</span> <span class="ow">and</span> <span class="n">msg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">msg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span> <span class="s">&#39;status&#39;</span><span class="p">,</span> <span class="p">{}</span> <span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span> <span class="s">&#39;success&#39;</span><span class="p">,</span> <span class="bp">False</span> <span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="n">isSuccess</span>
+</div>
+<div class="viewcode-block" id="errorMessage"><a class="viewcode-back" href="../../beach.html#beach.utils.errorMessage">[docs]</a><span class="k">def</span> <span class="nf">errorMessage</span><span class="p">(</span> <span class="n">errorString</span><span class="p">,</span> <span class="n">data</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Create a generic error message.</span>
+
+<span class="sd">    :param errorString: the error message to associate</span>
+<span class="sd">    :param data: specific data to contextualize the error</span>
+<span class="sd">    :returns: an error message that can be sent back to any actor</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">msg</span> <span class="o">=</span> <span class="p">{</span> <span class="s">&#39;status&#39;</span> <span class="p">:</span> <span class="p">{</span> <span class="s">&#39;success&#39;</span> <span class="p">:</span> <span class="bp">False</span><span class="p">,</span> <span class="s">&#39;error&#39;</span> <span class="p">:</span> <span class="n">errorString</span> <span class="p">}</span> <span class="p">}</span>
+    <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">msg</span><span class="p">[</span> <span class="s">&#39;data&#39;</span> <span class="p">]</span> <span class="o">=</span> <span class="n">data</span>
+    <span class="k">return</span> <span class="n">msg</span>
+</div>
+<div class="viewcode-block" id="successMessage"><a class="viewcode-back" href="../../beach.html#beach.utils.successMessage">[docs]</a><span class="k">def</span> <span class="nf">successMessage</span><span class="p">(</span> <span class="n">data</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Create a generic success message.</span>
+
+<span class="sd">    :param data: specific data returned in the success message</span>
+<span class="sd">    :returns: the success message</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">msg</span> <span class="o">=</span> <span class="p">{</span> <span class="s">&#39;status&#39;</span> <span class="p">:</span> <span class="p">{</span> <span class="s">&#39;success&#39;</span> <span class="p">:</span> <span class="bp">True</span> <span class="p">}</span> <span class="p">}</span>
+    <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">msg</span><span class="o">.</span><span class="n">update</span><span class="p">(</span> <span class="n">data</span> <span class="p">)</span>
+    <span class="k">return</span> <span class="n">msg</span>
+</div>
+<span class="k">class</span> <span class="nc">_ZSocket</span><span class="p">(</span> <span class="nb">object</span> <span class="p">):</span>
+    
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">socketType</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">isBind</span> <span class="o">=</span> <span class="bp">False</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="n">zmq</span><span class="o">.</span><span class="n">Context</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_socketType</span> <span class="o">=</span> <span class="n">socketType</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="o">=</span> <span class="n">url</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_isBind</span> <span class="o">=</span> <span class="n">isBind</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_isTransactionSocket</span> <span class="o">=</span> <span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_socketType</span> <span class="o">==</span> <span class="n">zmq</span><span class="o">.</span><span class="n">REQ</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_socketType</span> <span class="o">==</span> <span class="n">zmq</span><span class="o">.</span><span class="n">REP</span> <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buildSocket</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_buildSocket</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_socketType</span> <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">set</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">LINGER</span><span class="p">,</span> <span class="mi">0</span> <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isBind</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isTransactionSocket</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">gevent</span><span class="o">.</span><span class="n">coros</span><span class="o">.</span><span class="n">BoundedSemaphore</span><span class="p">(</span> <span class="mi">1</span> <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_rebuildIfNecessary</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isTransactionSocket</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buildSocket</span><span class="p">()</span>
+    
+    <span class="k">def</span> <span class="nf">send</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">timeout</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+        <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">False</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">gevent</span><span class="o">.</span><span class="n">Timeout</span><span class="p">(</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">_TimeoutException</span> <span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">send_json</span><span class="p">(</span> <span class="n">_sanitizeJson</span><span class="p">(</span> <span class="n">data</span> <span class="p">)</span> <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">send_json</span><span class="p">(</span> <span class="n">_sanitizeJson</span><span class="p">(</span> <span class="n">data</span> <span class="p">)</span> <span class="p">)</span>
+        <span class="k">except</span> <span class="n">_TimeoutException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rebuildIfNecessary</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">zmq</span><span class="o">.</span><span class="n">ZMQError</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="k">return</span> <span class="n">isSuccess</span>
+    
+    <span class="k">def</span> <span class="nf">recv</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">False</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">gevent</span><span class="o">.</span><span class="n">Timeout</span><span class="p">(</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">_TimeoutException</span> <span class="p">):</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">recv_json</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">recv_json</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">_TimeoutException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rebuildIfNecessary</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">zmq</span><span class="o">.</span><span class="n">ZMQError</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span>
+
+        <span class="k">return</span> <span class="n">data</span>
+    
+    <span class="k">def</span> <span class="nf">request</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">timeout</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send</span><span class="p">(</span> <span class="n">data</span><span class="p">,</span> <span class="n">timeout</span> <span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span> <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="p">)</span>
+        <span class="c"># False indicates a timeout or failure, where the socket</span>
+        <span class="c"># would have been rebuilt</span>
+        <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">False</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isTransactionSocket</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">data</span>
+
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">_ZMREQ</span> <span class="p">(</span> <span class="nb">object</span> <span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">isBind</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_available</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="o">=</span> <span class="n">url</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_isBind</span> <span class="o">=</span> <span class="n">isBind</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span> <span class="o">=</span> <span class="n">zmq</span><span class="o">.</span><span class="n">Context</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_newSocket</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">REQ</span> <span class="p">)</span>
+        <span class="n">z</span><span class="o">.</span><span class="n">set</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">LINGER</span><span class="p">,</span> <span class="mi">0</span> <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isBind</span><span class="p">:</span>
+            <span class="n">z</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">z</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="p">)</span>
+        <span class="k">return</span> <span class="n">z</span>
+
+    <span class="k">def</span> <span class="nf">request</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">timeout</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_available</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_newSocket</span><span class="p">()</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">gevent</span><span class="o">.</span><span class="n">Timeout</span><span class="p">(</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">_TimeoutException</span> <span class="p">):</span>
+                <span class="n">z</span><span class="o">.</span><span class="n">send_json</span><span class="p">(</span> <span class="n">_sanitizeJson</span><span class="p">(</span> <span class="n">data</span> <span class="p">)</span> <span class="p">)</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">z</span><span class="o">.</span><span class="n">recv_json</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">_TimeoutException</span><span class="p">:</span>
+            <span class="n">z</span><span class="o">.</span><span class="n">close</span><span class="p">(</span> <span class="n">linger</span> <span class="o">=</span> <span class="mi">0</span> <span class="p">)</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_newSocket</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_available</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">z</span> <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+<span class="k">class</span> <span class="nc">_ZMREP</span> <span class="p">(</span> <span class="nb">object</span> <span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">isBind</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_available</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="o">=</span> <span class="n">url</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_isBind</span> <span class="o">=</span> <span class="n">isBind</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span> <span class="o">=</span> <span class="n">zmq</span><span class="o">.</span><span class="n">Context</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_threads</span> <span class="o">=</span> <span class="n">gevent</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">Group</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_intUrl</span> <span class="o">=</span> <span class="s">&#39;inproc://</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span> <span class="p">)</span>
+
+        <span class="n">zFront</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">ROUTER</span> <span class="p">)</span>
+        <span class="n">zBack</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">DEALER</span> <span class="p">)</span>
+        <span class="n">zFront</span><span class="o">.</span><span class="n">set</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">LINGER</span><span class="p">,</span> <span class="mi">0</span> <span class="p">)</span>
+        <span class="n">zBack</span><span class="o">.</span><span class="n">set</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">LINGER</span><span class="p">,</span> <span class="mi">0</span> <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isBind</span><span class="p">:</span>
+            <span class="n">zFront</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">zFront</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_url</span> <span class="p">)</span>
+        <span class="n">zBack</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_intUrl</span> <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_proxySocks</span> <span class="o">=</span> <span class="p">(</span> <span class="n">zFront</span><span class="p">,</span> <span class="n">zBack</span> <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_threads</span><span class="o">.</span><span class="n">add</span><span class="p">(</span> <span class="n">gevent</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_proxy</span><span class="p">,</span> <span class="n">zFront</span><span class="p">,</span> <span class="n">zBack</span> <span class="p">)</span> <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_threads</span><span class="o">.</span><span class="n">add</span><span class="p">(</span> <span class="n">gevent</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_proxy</span><span class="p">,</span> <span class="n">zBack</span><span class="p">,</span> <span class="n">zFront</span> <span class="p">)</span> <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_threads</span><span class="o">.</span><span class="n">kill</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_proxySocks</span><span class="p">[</span> <span class="mi">0</span> <span class="p">]</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_proxySocks</span><span class="p">[</span> <span class="mi">1</span> <span class="p">]</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_proxySocks</span> <span class="o">=</span> <span class="p">(</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span> <span class="p">)</span>
+
+    <span class="k">class</span> <span class="nc">_childSock</span><span class="p">(</span> <span class="nb">object</span> <span class="p">):</span>
+        <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">z</span> <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_z</span> <span class="o">=</span> <span class="n">z</span>
+
+        <span class="k">def</span> <span class="nf">send</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">timeout</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+            <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">False</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="n">gevent</span><span class="o">.</span><span class="n">Timeout</span><span class="p">(</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">_TimeoutException</span> <span class="p">):</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_z</span><span class="o">.</span><span class="n">send_json</span><span class="p">(</span> <span class="n">_sanitizeJson</span><span class="p">(</span> <span class="n">data</span> <span class="p">)</span> <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_z</span><span class="o">.</span><span class="n">send_json</span><span class="p">(</span> <span class="n">_sanitizeJson</span><span class="p">(</span> <span class="n">data</span> <span class="p">)</span> <span class="p">)</span>
+            <span class="k">except</span> <span class="n">_TimeoutException</span><span class="p">:</span>
+                <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="k">except</span> <span class="n">zmq</span><span class="o">.</span><span class="n">ZMQError</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">isSuccess</span> <span class="o">=</span> <span class="bp">True</span>
+
+            <span class="k">return</span> <span class="n">isSuccess</span>
+
+        <span class="k">def</span> <span class="nf">recv</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span> <span class="o">=</span> <span class="bp">None</span> <span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">False</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="n">gevent</span><span class="o">.</span><span class="n">Timeout</span><span class="p">(</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">_TimeoutException</span> <span class="p">):</span>
+                        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_z</span><span class="o">.</span><span class="n">recv_json</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_z</span><span class="o">.</span><span class="n">recv_json</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">_TimeoutException</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="k">except</span> <span class="n">zmq</span><span class="o">.</span><span class="n">ZMQError</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span>
+
+            <span class="k">return</span> <span class="n">data</span>
+
+    <span class="k">def</span> <span class="nf">getChild</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_childSock</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_newSocket</span><span class="p">()</span> <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_newSocket</span><span class="p">(</span> <span class="bp">self</span> <span class="p">):</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">REP</span> <span class="p">)</span>
+        <span class="n">z</span><span class="o">.</span><span class="n">set</span><span class="p">(</span> <span class="n">zmq</span><span class="o">.</span><span class="n">LINGER</span><span class="p">,</span> <span class="mi">0</span> <span class="p">)</span>
+        <span class="n">z</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">_intUrl</span> <span class="p">)</span>
+        <span class="k">return</span> <span class="n">z</span>
+
+    <span class="k">def</span> <span class="nf">_proxy</span><span class="p">(</span> <span class="bp">self</span><span class="p">,</span> <span class="n">zFrom</span><span class="p">,</span> <span class="n">zTo</span> <span class="p">):</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">zFrom</span><span class="o">.</span><span class="n">recv_multipart</span><span class="p">()</span>
+            <span class="n">zTo</span><span class="o">.</span><span class="n">send_multipart</span><span class="p">(</span> <span class="n">msg</span> <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_getIpv4ForIface</span><span class="p">(</span> <span class="n">iface</span> <span class="p">):</span>
+    <span class="n">ip</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">netifaces</span><span class="o">.</span><span class="n">ifaddresses</span><span class="p">(</span> <span class="n">iface</span> <span class="p">)[</span> <span class="n">netifaces</span><span class="o">.</span><span class="n">AF_INET</span> <span class="p">][</span> <span class="mi">0</span> <span class="p">][</span> <span class="s">&#39;addr&#39;</span> <span class="p">]</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">return</span> <span class="n">ip</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2015, refractionPOINT.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.3.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.4</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
