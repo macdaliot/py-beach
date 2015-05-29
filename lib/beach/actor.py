@@ -7,7 +7,7 @@ import traceback
 import time
 from beach.utils import *
 import random
-import syslog
+import logging
 
 class Actor( gevent.Greenlet ):
     def __init__( self, host, realm, ip, port, uid ):
@@ -113,18 +113,15 @@ class Actor( gevent.Greenlet ):
                 self.logCritical( traceback.format_exc( ) )
 
     def _initLogging( self ):
-        #syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )
-        pass
+        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
+        self._logger = logging.getLogger()
+        self._logger.setLevel( logging.INFO )
 
     def log( self, msg ):
-        syslog.syslog( syslog.LOG_INFO, msg )
-        msg = '%s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
-        print( msg )
+        self._logger.info( '%s : %s', self.__class__.__name__, msg )
 
     def logCritical( self, msg ):
-        syslog.syslog( syslog.LOG_ERR, msg )
-        msg = '!!! %s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
-        print( msg )
+        self._logger.error( '%s : %s', self.__class__.__name__, msg )
 
     def getActorHandle( self, category, mode = 'random' ):
         v = ActorHandle( self._realm, category, mode )

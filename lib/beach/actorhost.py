@@ -10,7 +10,7 @@ import zmq.green as zmq
 from beach.actor import *
 import yaml
 import time
-import syslog
+import logging
 import traceback
 
 timeToStopEvent = Event()
@@ -150,17 +150,15 @@ class ActorHost ( object ):
             gevent.sleep( 30 )
 
     def _initLogging( self ):
-        syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )
+        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
+        self._logger = logging.getLogger()
+        self._logger.setLevel( logging.INFO )
 
     def log( self, msg ):
-        syslog.syslog( syslog.LOG_INFO, msg )
-        msg = '%s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
-        print( msg )
+        self._logger.info( '%s : %s', self.__class__.__name__, msg )
 
     def logCritical( self, msg ):
-        syslog.syslog( syslog.LOG_ERR, msg )
-        msg = '!!! %s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
-        print( msg )
+        self._logger.error( '%s : %s', self.__class__.__name__, msg )
 
 if __name__ == '__main__':
     host = ActorHost( sys.argv[ 1 ], int( sys.argv[ 2 ] ) )

@@ -22,11 +22,11 @@ print( "Connecting to example beach." )
 beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
                realm = 'global' )
 
-print( "Creating ping actor in random beach node." )
+print( "Creating ping actor in resource beach node." )
 a1 = beach.addActor( 'Ping', 'pingers', strategy = 'resource' )
 print( json.dumps( a1, indent = 4 ) )
 
-print( "Creating pong actor in random beach node." )
+print( "Creating pong actor in affinity( pingers ) beach node." )
 a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers' )
 print( json.dumps( a2, indent = 4 ) )
 

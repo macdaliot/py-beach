@@ -11,7 +11,7 @@ import time
 import uuid
 import random
 from sets import Set
-import syslog
+import logging
 import subprocess
 import psutil
 import collections
@@ -32,6 +32,7 @@ class HostManager ( object ):
         gevent.signal( signal.SIGQUIT, _stop )
         gevent.signal( signal.SIGINT, _stop )
 
+        self._logger = None
         self._initLogging()
         
         self.stopEvent = timeToStopEvent
@@ -401,17 +402,15 @@ class HostManager ( object ):
                                                 'tombstones' : self.tombstones } )
 
     def _initLogging( self ):
-        syslog.openlog( '%s-%d' % ( self.__class__.__name__, os.getpid() ), facility = syslog.LOG_USER )
+        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
+        self._logger = logging.getLogger()
+        self._logger.setLevel( logging.INFO )
 
     def log( self, msg ):
-        syslog.syslog( syslog.LOG_INFO, msg )
-        msg = '%s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
-        print( msg )
+        self._logger.info( '%s : %s', self.__class__.__name__, msg )
 
     def logCritical( self, msg ):
-        syslog.syslog( syslog.LOG_ERR, msg )
-        msg = '!!! %s - %s : %s' % ( int( time.time() ), self.__class__.__name__, msg )
-        print( msg )
+        self._logger.error( '%s : %s', self.__class__.__name__, msg )
     
 
 if __name__ == '__main__':
