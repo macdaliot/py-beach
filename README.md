@@ -47,13 +47,15 @@ code for your Actors that you want made available (not necessarily actually load
 
 So a typical cluster in a shared cooperative work environment would have a shared directory (let's say NFS)
 on the LAN, accessible to the devs and cluster nodes. It might look something like:
-    /cluster.yaml
-    /global/
-    /project1/IngestActor.py
-    /project1/ComputeActor.py
-    /project1/WriterActor.py
-    /project2/....
-    /project3/....
+```
+/cluster.yaml
+/global/
+/project1/IngestActor.py
+/project1/ComputeActor.py
+/project1/WriterActor.py
+/project2/....
+/project3/....
+```
 
 ### Bootstraping the cluster
 The main API to the cluster is beach.beach_api.Beach. By instantiating the Beach() and pointing it to the 
