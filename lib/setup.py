@@ -1,5 +1,11 @@
-import os
-import sys
+###############################################################################
+#   REQUIREMENTS:
+#   build-essentials
+#   python-dev
+#   python-setuptools
+#   apt-get install build-essentials python-dev python-setuptools
+###############################################################################
+
 from setuptools import setup
 import beach
 
@@ -12,8 +18,7 @@ setup( name = 'beach',
        license = 'GPLv2',
        packages = [ 'beach' ],
        zip_safe = False,
-       install_requires = [ 'libzmq',
-                            'python-gevent',
+       install_requires = [ 'gevent',
                             'pyzmq',
                             'netifaces',
                             'pyyaml',
