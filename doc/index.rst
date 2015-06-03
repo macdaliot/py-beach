@@ -5,7 +5,6 @@
 
 Welcome to beach's documentation!
 =================================
-.. include:: ../README.rst
 
 Contents:
 
