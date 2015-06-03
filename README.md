@@ -71,3 +71,77 @@ contain any topographical information. This means it will run the same whether y
 You can start a Command Line Interface into the cluster like so:
     python -m beach.beach_cli /path/to/configFile
 The documentation for the CLI is built into the interface.
+
+### Some samples
+
+#### Sample directory
+```
+/start.py
+/multinode.yaml
+/global
+/global/Ping.py
+/global/Pong.py
+```
+
+#### Ping Actor
+```
+from beach.actor import Actor
+import time
+
+class Ping ( Actor ):
+
+    def init( self ):
+        print( "Called init of actor." )
+        self.zPong = self.getActorHandle( category = 'pongers' )
+        self.schedule( 5, self.pinger )
+
+    def deinit( self ):
+        print( "Called deinit of actor." )
+
+    def pinger( self ):
+        print( "Sending ping" )
+        data = self.zPong.request( 'ping', data = { 'time' : time.time() }, timeout = 10 )
+        print( "Received pong: %s" % str( data ) )
+```
+
+#### Pong Actor
+```
+from beach.actor import Actor
+import time
+
+
+class Pong ( Actor ):
+
+    def init( self ):
+        print( "Called init of actor." )
+        self.handle( 'ping', self.ponger )
+
+    def deinit( self ):
+        print( "Called deinit of actor." )
+
+    def ponger( self, msg ):
+        print( "Received ping: %s" % str( msg ) )
+        return { 'time' : time.time() }
+```
+
+#### Startup script
+```
+from beach.beach_api import Beach
+beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
+               realm = 'global' )
+a1 = beach.addActor( 'Ping', 'pingers', strategy = 'resource' )
+a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers' )
+
+beach.close()
+```
+
+#### Python interface into beach
+```
+from beach.beach_api import Beach
+beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
+               realm = 'global' )
+vHandle = beach.getActorHandle( 'pongers' )
+resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
+
+beach.close()
+```
