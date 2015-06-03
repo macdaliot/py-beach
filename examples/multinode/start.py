@@ -13,10 +13,9 @@ import time
 
 # Adding the beach lib directory relatively for this example
 curFileDir = os.path.dirname( os.path.abspath( __file__ ) )
-sys.path.append( os.path.join( curFileDir, '..', '..', 'lib' ) )
+sys.path.append( os.path.join( curFileDir, '..', '..' ) )
 
 from beach.beach_api import Beach
-from beach.utils import *
 
 print( "Connecting to example beach." )
 beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
