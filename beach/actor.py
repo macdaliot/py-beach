@@ -44,9 +44,10 @@ class Actor( gevent.Greenlet ):
         if hasattr( self, 'init' ):
             self.init()
 
-        # We support up to n concurrent requests
-        for n in range( 5 ):
-            self._threads.add( gevent.spawn( self._opsHandler ) )
+        # Initially Actors handle one concurrent request to avoid bad surprises
+        # by users not thinking about concurrency. This can be bumped up by calling
+        # Actor.AddConcurrentHandler()
+        self.AddConcurrentHandler()
 
         self.stopEvent.wait()
 
@@ -66,6 +67,10 @@ class Actor( gevent.Greenlet ):
 
         if hasattr( self, 'deinit' ):
             self.deinit()
+
+    '''Add a new thread handling requests to the Actor.'''
+    def AddConcurrentHandler( self ):
+        self._threads.add( gevent.spawn( self._opsHandler ) )
 
     def _opsHandler( self ):
         z = self._opsSocket.getChild()
