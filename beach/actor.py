@@ -44,9 +44,10 @@ class Actor( gevent.Greenlet ):
         if hasattr( self, 'init' ):
             self.init()
 
-        # We support up to n concurrent requests
-        for n in range( 5 ):
-            self._threads.add( gevent.spawn( self._opsHandler ) )
+        # Initially Actors handle one concurrent request to avoid bad surprises
+        # by users not thinking about concurrency. This can be bumped up by calling
+        # Actor.AddConcurrentHandler()
+        self.AddConcurrentHandler()
 
         self.stopEvent.wait()
 
@@ -66,6 +67,10 @@ class Actor( gevent.Greenlet ):
 
         if hasattr( self, 'deinit' ):
             self.deinit()
+
+    def AddConcurrentHandler( self ):
+        '''Add a new thread handling requests to the actor.'''
+        self._threads.add( gevent.spawn( self._opsHandler ) )
 
     def _opsHandler( self ):
         z = self._opsSocket.getChild()
@@ -245,12 +250,15 @@ class ActorHandle ( object ):
             else:
                 self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
 
-        def request( self, requestType, data = {}, timeout = None ):
+        def request( self, requestType, data = {}, timeout = None, key = None ):
             '''Issue a request to the actor category of this handle.
 
             :param requestType: the type of request to issue
             :param data: a dict of the data associated with the request
             :param timeout: the number of seconds to wait for a response
+            :param key: when used in 'affinity' mode, the key is the main parameter
+                to evaluate to determine which Actor to send the request to, in effect
+                it is the key to the hash map of Actors
             :returns: the response to the request as a dict, or False in the event
                 the request failed or timed out
             '''
@@ -262,7 +270,16 @@ class ActorHandle ( object ):
                 # exists
                 with gevent.Timeout( timeout, _TimeoutException ):
                     while z is None:
-                        if 0 != len( self._srcSockets ):
+                        if 'affinity' == self._mode and key is not None:
+                            # Affinity is currently a soft affinity, meaning the set of Actors
+                            # is not locked, if it changes, affinity is re-computed without migrating
+                            # any previous affinities. Therefore, I suggest a good cooldown before
+                            # starting to process with affinity after the Actors have been spawned.
+                            sortedActors = [ x[ 1 ] for x in  sorted( self._endpoints.items(),
+                                                                      key = lambda x: x.__getitem__( 0 ) ) ]
+                            z = sortedActors[ hash( key ) % len( sortedActors ) ]
+                            z = _ZSocket( zmq.REQ, z )
+                        elif 0 != len( self._srcSockets ):
                             # Prioritize existing connections, only create new one
                             # based on the mode when we have no connections available
                             z = self._srcSockets.pop()

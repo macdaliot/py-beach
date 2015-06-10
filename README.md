@@ -72,6 +72,18 @@ You can start a Command Line Interface into the cluster like so:
     python -m beach.beach_cli /path/to/configFile
 The documentation for the CLI is built into the interface.
 
+## Operating modes
+### Actor spawning
+- random: this will spawn a new actor somewhere randomly in the cluster
+- affinity: this will try to spawn the actor on the same node as the actors of the category specified in
+    by strategy_hint
+
+### Actor requests
+- random: will issue the request to a random actors, prioritizing actors we already have a connection to
+- affinity: will always issue the request to the actor identified by a hash of the key parameter of the 
+    request, allowing you to do stateful processing on a certain characteristic, but also making you more
+    prone to failure if a node or an actor goes down
+
 ### Some samples
 
 #### Sample directory

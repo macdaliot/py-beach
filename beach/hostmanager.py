@@ -11,6 +11,7 @@ import gevent.pool
 import yaml
 import multiprocessing
 from beach.utils import *
+from beach.utils import _getIpv4ForIface
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 import time
@@ -131,6 +132,12 @@ class HostManager ( object ):
         timeToStopEvent.wait()
         
         # Any teardown required
+        for proc in self.processes:
+            if proc[ 'p' ] is not None:
+                proc[ 'p' ].send_signal( signal.SIGQUIT )
+                errorCode = proc[ 'p' ].wait()
+                if 0 != errorCode:
+                    self._logCritical( 'actor host exited with error code: %d' % errorCode )
         
         self._log( "Exiting." )
 
@@ -247,21 +254,32 @@ class HostManager ( object ):
                     if 'uid' not in data:
                         z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
-                        uid = data[ 'uid' ]
-                        if uid not in self.actorInfo:
-                            z.send( errorMessage( 'actor not found' ) )
-                        else:
-                            instance = self.actorInfo[ uid ][ 'instance' ]
-                            newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                                       'uid' : uid },
-                                                                                     timeout = 10 )
-                            if isMessageSuccess( newMsg ):
-                                if not self._removeUidFromDirectory( uid ):
-                                    newMsg = errorMessage( 'error removing actor from directory after stop' )
-                                else:
-                                    self.isActorChanged.set()
+                        uids = data[ 'uid' ]
+                        if not isinstance( uids, collections.Iterable ):
+                            uids = ( uids, )
 
-                            z.send( newMsg )
+                        failed = []
+
+                        for uid in uids:
+                            if uid not in self.actorInfo:
+                                failed.append( errorMessage( 'actor not found' ) )
+                            else:
+                                instance = self.actorInfo[ uid ][ 'instance' ]
+                                newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',
+                                                                                           'uid' : uid },
+                                                                                         timeout = 10 )
+                                if not isMessageSuccess( newMsg ):
+                                    failed.append( newMsg )
+                                else:
+                                    if not self._removeUidFromDirectory( uid ):
+                                        failed.append( errorMessage( 'error removing actor from directory after stop' ) )
+                                    else:
+                                        self.isActorChanged.set()
+
+                        if 0 != len( failed ):
+                            z.send( errorMessage( 'some actors failed to stop', failed ) )
+                        else:
+                            z.send( successMessage() )
                 elif 'remove_actor' == action:
                     if 'uid' not in data:
                         z.send( errorMessage( 'missing information to remove actor' ) )

@@ -6,8 +6,22 @@
 #   apt-get install build-essentials python-dev python-setuptools
 ###############################################################################
 
-from setuptools import setup
+from setuptools import setup, Command
 import beach
+
+class PyTest( Command ):
+    user_options = []
+    def initialize_options( self ):
+        pass
+
+    def finalize_options( self ):
+        pass
+
+    def run( self ):
+        import subprocess
+        import sys
+        errno = subprocess.call( [ sys.executable, 'runtests.py', '-v', 'tests/' ] )
+        raise SystemExit( errno )
 
 setup( name = 'beach',
        version = beach.__version__,
@@ -18,6 +32,7 @@ setup( name = 'beach',
        license = 'GPLv2',
        packages = [ 'beach' ],
        zip_safe = False,
+       cmdclass = {'test': PyTest},
        install_requires = [ 'gevent',
                             'pyzmq',
                             'netifaces',
