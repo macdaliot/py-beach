@@ -3,6 +3,7 @@ from beach.utils import *
 from beach.utils import _ZMREQ
 import zmq.green as zmq
 import random
+import collections
 import operator
 import gevent
 import gevent.pool
@@ -85,6 +86,7 @@ class Beach ( object ):
         '''Change the realm to interface with.
 
         :param realm: the new realm to use
+
         :returns: the old realm used or None if none were specified
         '''
         old = self._realm
@@ -100,6 +102,7 @@ class Beach ( object ):
             currently supports: random
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
+
         :returns: returns the reply from the node indicating if the actor was created successfully,
             use beach.utils.isMessageSuccess( response ) to check for success
         '''
@@ -146,8 +149,10 @@ class Beach ( object ):
         '''
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         resp = node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
-        if resp is not None:
+        if isMessageSuccess( resp ):
             self._dirCache = resp
+        else:
+            resp = False
         return resp
 
     def flush( self ):
@@ -169,8 +174,45 @@ class Beach ( object ):
         :param category: the name of the category holding actors to get the handle to
         :param mode: the method actors are queried by the handle, currently
             handles: random
+
         :returns: an ActorHandle
         '''
         v = ActorHandle( self._realm, category, mode )
         self._vHandles.append( v )
         return v
+
+    def stopActors( self, withId = None, withCategory = None ):
+        '''Stop specific actors based on a criteria.
+
+        :param withId: a single, or list of actor IDs to be stopped
+        :param withCategory: a category name to be stopped
+
+        :returns: True if the actors were stopped normally
+        '''
+        isSuccess = False
+        toRemove = []
+
+        if withId is not None:
+            if not isinstance( withId, collections.Iterable ):
+                toRemove.append( withId )
+            else:
+                for _ in withId:
+                    toRemove.append( _ )
+
+        tmpDir = self.getDirectory()
+
+        if tmpDir is not False:
+            if withCategory is not None:
+                if not isinstance( withCategory, collections.Iterable ):
+                    withCategory = ( withCategory, )
+                for cat in withCategory:
+                    toRemove.update( tmpDir.get( cat, {} ).keys() )
+
+            # We take the easy way out for now by just spamming the kill to every node.
+            isSuccess = True
+            for node in self._nodes.values():
+                resp = node[ 'socket' ].request( { 'req' : 'kill_actor', 'uid' : toRemove }, timeout = 30 )
+                if not isMessageSuccess( resp ):
+                    isSuccess = resp
+
+            return isSuccess

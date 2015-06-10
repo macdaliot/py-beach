@@ -68,8 +68,8 @@ class Actor( gevent.Greenlet ):
         if hasattr( self, 'deinit' ):
             self.deinit()
 
-    '''Add a new thread handling requests to the Actor.'''
     def AddConcurrentHandler( self ):
+        '''Add a new thread handling requests to the actor.'''
         self._threads.add( gevent.spawn( self._opsHandler ) )
 
     def _opsHandler( self ):
