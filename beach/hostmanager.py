@@ -132,6 +132,12 @@ class HostManager ( object ):
         timeToStopEvent.wait()
         
         # Any teardown required
+        for proc in self.processes:
+            if proc[ 'p' ] is not None:
+                proc[ 'p' ].send_signal( signal.SIGQUIT )
+                errorCode = proc[ 'p' ].wait()
+                if 0 != errorCode:
+                    self._logCritical( 'actor host exited with error code: %d' % errorCode )
         
         self._log( "Exiting." )
 

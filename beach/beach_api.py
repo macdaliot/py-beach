@@ -93,6 +93,13 @@ class Beach ( object ):
         self._realm = realm
         return old
 
+    def getNodeCount( self ):
+        '''Get the number of nodes we are connected to.
+
+        :returns: the number of nodes in the cluster we are connected to
+        '''
+        return len( self._nodes )
+
     def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
         '''Spawn a new actor in the cluster.
 
@@ -196,8 +203,7 @@ class Beach ( object ):
             if not isinstance( withId, collections.Iterable ):
                 toRemove.append( withId )
             else:
-                for _ in withId:
-                    toRemove.append( _ )
+                toRemove += withId
 
         tmpDir = self.getDirectory()
 

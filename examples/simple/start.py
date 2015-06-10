@@ -16,7 +16,7 @@ curFileDir = os.path.dirname( os.path.abspath( __file__ ) )
 sys.path.append( os.path.join( curFileDir, '..', '..' ) )
 
 from beach.beach_api import Beach
-from beach.utils import *
+from beach.utils import _getIpv4ForIface
 
 print( "Connecting to example beach." )
 # Note that we usually would not need to add the extraTmpSeedNode parameter in production
