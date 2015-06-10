@@ -256,7 +256,7 @@ class HostManager ( object ):
 
                         for uid in uids:
                             if uid not in self.actorInfo:
-                                z.send( errorMessage( 'actor not found' ) )
+                                failed.append( errorMessage( 'actor not found' ) )
                             else:
                                 instance = self.actorInfo[ uid ][ 'instance' ]
                                 newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',

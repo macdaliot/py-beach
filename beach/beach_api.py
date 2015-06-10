@@ -201,12 +201,12 @@ class Beach ( object ):
 
         tmpDir = self.getDirectory()
 
-        if tmpDir is not False:
+        if tmpDir is not False and isMessageSuccess( tmpDir ):
             if withCategory is not None:
                 if not isinstance( withCategory, collections.Iterable ):
                     withCategory = ( withCategory, )
                 for cat in withCategory:
-                    toRemove.update( tmpDir.get( cat, {} ).keys() )
+                    toRemove += tmpDir[ 'realms' ].get( self._realm, {} ).get( cat, {} ).keys()
 
             # We take the easy way out for now by just spamming the kill to every node.
             isSuccess = True
@@ -215,4 +215,4 @@ class Beach ( object ):
                 if not isMessageSuccess( resp ):
                     isSuccess = resp
 
-            return isSuccess
+        return isSuccess
