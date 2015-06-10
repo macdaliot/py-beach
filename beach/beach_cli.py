@@ -52,6 +52,10 @@ class BeachShell ( cmd.Cmd ):
         self.beach.close()
         return True
 
+    def do_quit( self, s ):
+        self.beach.close()
+        return True
+
     def emptyline( self ):
         pass
 
@@ -161,6 +165,33 @@ class BeachShell ( cmd.Cmd ):
 
         self.printOut( resp )
 
+    @report_errors
+    def do_stop_actor( self, s ):
+        '''Stop a specific set of actors.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        parser.add_argument( '-i', '--id',
+                             type = str,
+                             dest = 'id',
+                             required = False,
+                             nargs = '+',
+                             help = 'the IDs of actors to stop.' )
+        parser.add_argument( '-c', '--category',
+                             type = str,
+                             dest = 'cat',
+                             required = False,
+                             nargs = '+',
+                             help = 'the categories of actors to stop.' )
+
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+        if arguments.id is None and arguments.cat is None:
+            argparse.error( 'Must specify one of -i or -c.' )
+
+        resp = self.beach.stopActors( withId = arguments.id, withCategory = arguments.cat )
+
+        self.printOut( resp )
 
 if __name__ == '__main__':
     if 2 != len( sys.argv ):
