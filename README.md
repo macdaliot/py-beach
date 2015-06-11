@@ -21,9 +21,9 @@ Security and strong segregation of Actors are NOT goals of this project. Rather,
 a private, secure environment and non-malicious users.
 
 ## Repo Structure
-The distributable package is in /lib/beach.
+The distributable package is in /beach.
 
-Small tests / examples can be found in /examples.
+Small tests / examples can be found in /examples and /tests.
 
 Useful scripts, like installing dependancies on a simple Debian system without a package can be found
 in /scripts/
@@ -75,7 +75,7 @@ The documentation for the CLI is built into the interface.
 ## Operating modes
 ### Actor spawning
 - random: this will spawn a new actor somewhere randomly in the cluster
-- affinity: this will try to spawn the actor on the same node as the actors of the category specified in
+- affinity: this will try to spawn the actor on a node with actors in the category specified in
     by strategy_hint
 
 ### Actor requests

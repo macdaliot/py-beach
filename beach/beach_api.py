@@ -134,7 +134,7 @@ class Beach ( object ):
                 population.setdefault( name, 0 )
                 population[ name ] += 1
             if 0 != len( population ):
-                affinityNode = max( population.iteritems(), key = operator.itemgetter( 1 ) )[ 0 ]
+                affinityNode = population.keys()[ random.randint( 0, len( population ) - 1 ) ]
                 node = self._nodes[ affinityNode ].get( 'socket', None )
             else:
                 # There is nothing in play, fall back to random

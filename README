@@ -21,9 +21,9 @@ Security and strong segregation of Actors are NOT goals of this project. Rather,
 a private, secure environment and non-malicious users.
 
 ## Repo Structure
-The distributable package is in /lib/beach.
+The distributable package is in /beach.
 
-Small tests / examples can be found in /examples.
+Small tests / examples can be found in /examples and /tests.
 
 Useful scripts, like installing dependancies on a simple Debian system without a package can be found
 in /scripts/
@@ -71,6 +71,18 @@ contain any topographical information. This means it will run the same whether y
 You can start a Command Line Interface into the cluster like so:
     python -m beach.beach_cli /path/to/configFile
 The documentation for the CLI is built into the interface.
+
+## Operating modes
+### Actor spawning
+- random: this will spawn a new actor somewhere randomly in the cluster
+- affinity: this will try to spawn the actor on a node with actors in the category specified in
+    by strategy_hint
+
+### Actor requests
+- random: will issue the request to a random actors, prioritizing actors we already have a connection to
+- affinity: will always issue the request to the actor identified by a hash of the key parameter of the 
+    request, allowing you to do stateful processing on a certain characteristic, but also making you more
+    prone to failure if a node or an actor goes down
 
 ### Some samples
 
