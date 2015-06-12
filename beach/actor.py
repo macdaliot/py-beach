@@ -12,8 +12,33 @@ from beach.utils import _ZMREP
 from beach.utils import _ZSocket
 import random
 import logging
+import imp
+import hashlib
+import inspect
 
 class Actor( gevent.Greenlet ):
+
+    @classmethod
+    def importLib( cls, libName, className = None ):
+        '''Import a user-defined lib from the proper realm.
+        :param libName: the name of the file (module) located in the code_directry
+            and realm directory
+        :param className: the name of the attribute (class, func or whatever) from
+            the module to be loaded
+
+        :returns: the module or element of the module loaded
+        '''
+
+        fileName = '%s/%s.py' % ( os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) ), libName )
+        with open( fileName, 'r' ) as hFile:
+            fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+        mod = imp.load_source( '%s_%s' % ( libName, fileHash ), fileName )
+
+        if className is not None:
+            mod = getattr( mod, className )
+
+        return mod
+
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
     def __init__( self, host, realm, ip, port, uid ):
         gevent.Greenlet.__init__( self )

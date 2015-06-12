@@ -96,12 +96,16 @@ class ActorHost ( object ):
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
-                        self.log( "Starting actor %s/%s at %s/%s.py" % ( realm,
-                                                                         actorName,
-                                                                         self.codeDirectory,
-                                                                         actorName ) )
+                        fileName = '%s/%s/%s.py' % ( self.codeDirectory, realm, actorName )
+                        with open( fileName, 'r' ) as hFile:
+                            fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+                        self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
+                                                                            actorName,
+                                                                            self.codeDirectory,
+                                                                            realm,
+                                                                            actorName ) )
                         try:
-                            actor = getattr( imp.load_source( '%s_%s' % ( realm, actorName ),
+                            actor = getattr( imp.load_source( '%s_%s_%s' % ( realm, actorName, fileHash ),
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
