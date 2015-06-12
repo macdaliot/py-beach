@@ -23,10 +23,7 @@ print( "Connecting to example beach." )
 # since your config file would be populated. Here to keep the config file simple and
 # portable we add our IP manually to operate in single-node mode.
 beach = Beach( os.path.join( curFileDir, 'simple.yaml' ),
-               realm = 'global',
-               extraTmpSeedNode = _getIpv4ForIface( yaml.load( open( os.path.join( curFileDir,
-                                                                                  'simple.yaml' ),
-                                                                    'r' ) ).get( 'interface', 'eth0' ) ) )
+               realm = 'global' )
 
 print( "Creating ping actor in random beach node." )
 a1 = beach.addActor( 'Ping', 'pingers' )

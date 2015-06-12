@@ -9,10 +9,11 @@ import gevent
 import gevent.pool
 import gevent.event
 from beach.actor import ActorHandle
+from beach.utils import _getIpv4ForIface
 
 class Beach ( object ):
 
-    def __init__( self, configFile, realm = 'global', extraTmpSeedNode = None ):
+    def __init__( self, configFile, realm = 'global' ):
         '''Create a new interface to a beach cluster.
 
         :param configFile: the path to the config file of the cluster
@@ -33,10 +34,10 @@ class Beach ( object ):
 
         self._seedNodes = self._configFile.get( 'seed_nodes', [] )
 
-        if extraTmpSeedNode is not None:
-            self._seedNodes.append( extraTmpSeedNode )
-
         self._opsPort = self._configFile.get( 'ops_port', 4999 )
+
+        if 0 == len( self._seedNodes ):
+            self._seedNodes.append( _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) ) )
 
         for s in self._seedNodes:
             self._connectToNode( s )
@@ -139,6 +140,20 @@ class Beach ( object ):
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        # elif 'repulsion' == strategy:
+        #     nodeList = self._dirCache.get( strategy_hint, {} ).values()
+        #     ,,,,,,,
+        #     population = {}
+        #     for n in nodeList:
+        #         name = n.split( ':' )[ 1 ][ 2 : ]
+        #         population.setdefault( name, 0 )
+        #         population[ name ] += 1
+        #     if 0 != len( population ):
+        #         affinityNode = population.keys()[ random.randint( 0, len( population ) - 1 ) ]
+        #         node = self._nodes[ affinityNode ].get( 'socket', None )
+        #     else:
+        #         # There is nothing in play, fall back to random
+        #         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
 
         if node is not None:
             resp = node.request( { 'req' : 'start_actor',

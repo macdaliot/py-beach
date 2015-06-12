@@ -30,10 +30,7 @@ def test_beach_connection():
     global beach
 
     beach = Beach( os.path.join( curFileDir, 'simple.yaml' ),
-               realm = 'global',
-               extraTmpSeedNode = _getIpv4ForIface( yaml.load( open( os.path.join( curFileDir,
-                                                                                  'simple.yaml' ),
-                                                                    'r' ) ).get( 'interface', 'eth0' ) ) )
+                   realm = 'global' )
     time.sleep( 1 )
     assert( 1 == beach.getNodeCount() )
 

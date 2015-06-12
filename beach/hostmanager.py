@@ -78,16 +78,20 @@ class HostManager ( object ):
         if self.nProcesses == 0:
             self.nProcesses = multiprocessing.cpu_count()
         self._log( "Using %d instances per node" % self.nProcesses )
-        
-        self.seedNodes = self.configFile.get( 'seed_nodes', [] )
-        for s in self.seedNodes:
-            self._log( "Using seed node: %s" % s )
 
         if iface is not None:
             self.interface = iface
         else:
             self.interface = self.configFile.get( 'interface', 'eth0' )
         self.ifaceIp4 = _getIpv4ForIface( self.interface )
+
+        self.seedNodes = self.configFile.get( 'seed_nodes', [] )
+
+        if 0 == len( self.seedNodes ):
+            self.seedNodes.append( self.ifaceIp4 )
+
+        for s in self.seedNodes:
+            self._log( "Using seed node: %s" % s )
 
         self.directoryPort = _ZMREP( self.configFile.get( 'directory_port',
                                                          'ipc:///tmp/py_beach_directory_port' ),
