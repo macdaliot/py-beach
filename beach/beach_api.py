@@ -140,20 +140,22 @@ class Beach ( object ):
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        # elif 'repulsion' == strategy:
-        #     nodeList = self._dirCache.get( strategy_hint, {} ).values()
-        #     ,,,,,,,
-        #     population = {}
-        #     for n in nodeList:
-        #         name = n.split( ':' )[ 1 ][ 2 : ]
-        #         population.setdefault( name, 0 )
-        #         population[ name ] += 1
-        #     if 0 != len( population ):
-        #         affinityNode = population.keys()[ random.randint( 0, len( population ) - 1 ) ]
-        #         node = self._nodes[ affinityNode ].get( 'socket', None )
-        #     else:
-        #         # There is nothing in play, fall back to random
-        #         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        elif 'repulsion' == strategy:
+            possibleNodes = self._nodes.keys()
+
+            nodeList = self._dirCache.get( strategy_hint, {} ).values()
+
+            for n in nodeList:
+                name = n.split( ':' )[ 1 ][ 2 : ]
+                if name in possibleNodes:
+                    del( possibleNodes[ name ] )
+
+            if 0 != len( possibleNodes ):
+                affinityNode = possibleNodes[ random.randint( 0, len( possibleNodes ) - 1 ) ]
+                node = self._nodes[ affinityNode ].get( 'socket', None )
+            else:
+                # There is nothing in play, fall back to random
+                node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
 
         if node is not None:
             resp = node.request( { 'req' : 'start_actor',
@@ -237,3 +239,15 @@ class Beach ( object ):
                     isSuccess = resp
 
         return isSuccess
+
+    def getClusterHealth( self ):
+        ''' Get the cached health information of every node in the cluster.
+
+        :returns: dict of all nodes with their health information associated
+        '''
+        health = {}
+
+        for name, node in self._nodes.items():
+            health[ name ] = node[ 'info' ]
+
+        return health

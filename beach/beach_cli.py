@@ -193,6 +193,19 @@ class BeachShell ( cmd.Cmd ):
 
         self.printOut( resp )
 
+    @report_errors
+    def do_get_cluster_health( self, s ):
+        '''Retrieve the health information of all nodes of the cluster.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        resp = self.beach.getClusterHealth()
+
+        self.printOut( resp )
+
 if __name__ == '__main__':
     if 2 != len( sys.argv ):
         print( "Usage: beach_cli.py pathToBeachConfigFile" )
