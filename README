@@ -102,7 +102,7 @@ import time
 
 class Ping ( Actor ):
 
-    def init( self ):
+    def init( self, parameters ):
         print( "Called init of actor." )
         self.zPong = self.getActorHandle( category = 'pongers' )
         self.schedule( 5, self.pinger )
@@ -124,7 +124,7 @@ import time
 
 class Pong ( Actor ):
 
-    def init( self ):
+    def init( self, parameters ):
         print( "Called init of actor." )
         self.handle( 'ping', self.ponger )
 
@@ -141,8 +141,8 @@ class Pong ( Actor ):
 from beach.beach_api import Beach
 beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
                realm = 'global' )
-a1 = beach.addActor( 'Ping', 'pingers', strategy = 'resource' )
-a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers' )
+a1 = beach.addActor( 'Ping', 'pingers', strategy = 'resource', parameters = {} )
+a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers', parameters = {} )
 
 beach.close()
 ```

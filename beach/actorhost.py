@@ -93,6 +93,7 @@ class ActorHost ( object ):
                     else:
                         actorName = data[ 'actor_name' ]
                         realm = data.get( 'realm', 'global' )
+                        parameters = data.get( 'parameters', {} )
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
@@ -109,7 +110,7 @@ class ActorHost ( object ):
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             actorName )( self, realm, ip, port, uid )
+                                             actorName )( self, realm, ip, port, uid, parameters )
                         except:
                             actor = None
 

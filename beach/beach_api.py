@@ -101,7 +101,7 @@ class Beach ( object ):
         '''
         return len( self._nodes )
 
-    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
+    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None, parameters = None ):
         '''Spawn a new actor in the cluster.
 
         :param actorName: the name of the actor to spawn
@@ -110,6 +110,8 @@ class Beach ( object ):
             currently supports: random
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
+        :param parameters: a dict of parameters that will be given to the actor when it starts,
+            usually used for configurations
 
         :returns: returns the reply from the node indicating if the actor was created successfully,
             use beach.utils.isMessageSuccess( response ) to check for success
@@ -158,10 +160,13 @@ class Beach ( object ):
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
 
         if node is not None:
-            resp = node.request( { 'req' : 'start_actor',
-                                   'actor_name' : actorName,
-                                   'realm' : thisRealm,
-                                   'cat' : category }, timeout = 10 )
+            info = { 'req' : 'start_actor',
+                     'actor_name' : actorName,
+                     'realm' : thisRealm,
+                     'cat' : category }
+            if parameters is not None:
+                info[ 'parameters' ] = parameters
+            resp = node.request( info, timeout = 10 )
 
         return resp
 

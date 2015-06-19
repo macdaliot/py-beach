@@ -234,6 +234,7 @@ class HostManager ( object ):
                         actorName = data[ 'actor_name' ]
                         category = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
+                        parameters = data.get( 'parameters', {} )
                         uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
                         instance = self._getInstanceForActor( uid, actorName, realm )
@@ -242,7 +243,8 @@ class HostManager ( object ):
                                                                                    'realm' : realm,
                                                                                    'uid' : uid,
                                                                                    'ip' : self.ifaceIp4,
-                                                                                   'port' : port },
+                                                                                   'port' : port,
+                                                                                   'parameters' : parameters },
                                                                                  timeout = 10 )
                         if isMessageSuccess( newMsg ):
                             self._log( "New actor loaded, adding to directory" )
