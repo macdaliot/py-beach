@@ -1,3 +1,9 @@
+import sys
+if 'threading' in sys.modules:
+        raise Exception('threading module loaded before patching!')
+import gevent.monkey
+gevent.monkey.patch_all()
+
 import yaml
 from beach.utils import *
 from beach.utils import _ZMREQ
@@ -64,9 +70,10 @@ class Beach ( object ):
     def _updateNodes( self ):
         toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
-        for k in nodes[ 'nodes' ].keys():
-            if k not in self._nodes:
-                self._connectToNode( k )
+        if nodes is not False:
+            for k in nodes[ 'nodes' ].keys():
+                if k not in self._nodes:
+                    self._connectToNode( k )
 
         for nodeName, node in self._nodes.items():
             self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )

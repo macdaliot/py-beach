@@ -276,7 +276,7 @@ class ActorHandle ( object ):
             else:
                 self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
 
-        def request( self, requestType, data = {}, timeout = None, key = None ):
+        def request( self, requestType, data = {}, timeout = None, key = None, nRetries = 0 ):
             '''Issue a request to the actor category of this handle.
 
             :param requestType: the type of request to issue
@@ -285,51 +285,62 @@ class ActorHandle ( object ):
             :param key: when used in 'affinity' mode, the key is the main parameter
                 to evaluate to determine which Actor to send the request to, in effect
                 it is the key to the hash map of Actors
+            :param nRetries: the number of times the request will be re-sent if it
+                times out, meaning a timeout of 5 and a retry of 3 could result in
+                a request taking 15 seconds to return
             :returns: the response to the request as a dict, or False in the event
                 the request failed or timed out
             '''
             z = None
             ret = False
+            curRetry = 0
 
-            try:
-                # We use the timeout to wait for an available node if none
-                # exists
-                with gevent.Timeout( timeout, _TimeoutException ):
-                    while z is None:
-                        if 'affinity' == self._mode and key is not None:
-                            # Affinity is currently a soft affinity, meaning the set of Actors
-                            # is not locked, if it changes, affinity is re-computed without migrating
-                            # any previous affinities. Therefore, I suggest a good cooldown before
-                            # starting to process with affinity after the Actors have been spawned.
-                            sortedActors = [ x[ 1 ] for x in  sorted( self._endpoints.items(),
-                                                                      key = lambda x: x.__getitem__( 0 ) ) ]
-                            z = sortedActors[ hash( key ) % len( sortedActors ) ]
-                            z = _ZSocket( zmq.REQ, z )
-                        elif 0 != len( self._srcSockets ):
-                            # Prioritize existing connections, only create new one
-                            # based on the mode when we have no connections available
-                            z = self._srcSockets.pop()
-                        elif 'random' == self._mode:
-                            endpoints = self._endpoints.values()
-                            if 0 != len( endpoints ):
-                                z = _ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
-                        if z is None:
-                            gevent.sleep( 0.001 )
-            except _TimeoutException:
-                pass
+            while curRetry <= nRetries:
+                try:
+                    # We use the timeout to wait for an available node if none
+                    # exists
+                    with gevent.Timeout( timeout, _TimeoutException ):
+                        while z is None:
+                            if 'affinity' == self._mode and key is not None:
+                                # Affinity is currently a soft affinity, meaning the set of Actors
+                                # is not locked, if it changes, affinity is re-computed without migrating
+                                # any previous affinities. Therefore, I suggest a good cooldown before
+                                # starting to process with affinity after the Actors have been spawned.
+                                sortedActors = [ x[ 1 ] for x in  sorted( self._endpoints.items(),
+                                                                          key = lambda x: x.__getitem__( 0 ) ) ]
+                                z = sortedActors[ hash( key ) % len( sortedActors ) ]
+                                z = _ZSocket( zmq.REQ, z )
+                            elif 0 != len( self._srcSockets ):
+                                # Prioritize existing connections, only create new one
+                                # based on the mode when we have no connections available
+                                z = self._srcSockets.pop()
+                            elif 'random' == self._mode:
+                                endpoints = self._endpoints.values()
+                                if 0 != len( endpoints ):
+                                    z = _ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+                            if z is None:
+                                gevent.sleep( 0.001 )
+                except _TimeoutException:
+                    curRetry += 1
+
+                if z is not None and curRetry <= nRetries:
+                    if type( data ) is not dict:
+                        data = { 'data' : data }
+                    data[ 'req' ] = requestType
+
+                    ret = z.request( data, timeout = timeout )
+                    # If we hit a timeout we don't take chances
+                    # and remove that socket
+                    if ret is not False:
+                        self._srcSockets.append( z )
+                        break
+                    else:
+                        z.close()
+                        z = None
+                        curRetry += 1
 
             if z is not None:
-                if type( data ) is not dict:
-                    data = { 'data' : data }
-                data[ 'req' ] = requestType
-
-                ret = z.request( data, timeout = timeout )
-                # If we hit a timeout we don't take chances
-                # and remove that socket
-                if ret is not False:
-                    self._srcSockets.append( z )
-                else:
-                    z.close()
+                self._srcSockets.append( z )
 
             return ret
 
