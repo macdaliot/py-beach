@@ -405,8 +405,19 @@ class HostManager ( object ):
             gevent.sleep( self.peer_keepalive_seconds )
     
     def _svc_directory_sync( self ):
-        while not self.stopEvent.wait( 0 ):
-            for nodeName, node in self.nodes.items():
+        nextWait = 0
+        nextNode = 0
+        while not self.stopEvent.wait( nextWait ):
+            nNodes = len( self.nodes )
+            if nNodes != 0:
+                if nextNode > nNodes:
+                    nextNode = 0
+                # We aim to manually fully sync with the directories
+                # of all the nodes in the cluster over directory_sync_seconds seconds.
+                nextWait = self.directory_sync_seconds / nNodes
+
+                nodeName = self.nodes.keys()[ nextNode ]
+                node = self.nodes[ nodeName ]
                 if nodeName != self.ifaceIp4:
                     self._log( "Issuing directory sync with node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
@@ -415,8 +426,8 @@ class HostManager ( object ):
                         self._updateDirectoryWith( self.directory, data[ 'directory' ] )
                         for uid in data[ 'tombstones' ]:
                             self._removeUidFromDirectory( uid )
-            
-            gevent.sleep( self.directory_sync_seconds )
+            else:
+                nextWait = 1
 
     def _svc_pushDirChanges( self ):
         while not self.stopEvent.wait( 0 ):
