@@ -344,6 +344,29 @@ class ActorHandle ( object ):
 
             return ret
 
+        def broadcast( self, requestType, data = {} ):
+            '''Issue a request to the all actors in the category of this handle.
+
+            :param requestType: the type of request to issue
+            :param data: a dict of the data associated with the request
+            :returns: True since no validation on the reception or reply from any
+                specific endpoint is made
+            '''
+            ret = True
+
+            if type( data ) is not dict:
+                data = { 'data' : data }
+            data[ 'req' ] = requestType
+
+            for endpoint in self._endpoints.values():
+                z = _ZSocket( zmq.REQ, endpoint )
+                if z is not None:
+                    gevent.spawn( z.request, data )
+
+            gevent.sleep( 0 )
+
+            return ret
+
         def isAvailable( self ):
             '''Checks to see if any actors are available to respond to a query of this handle.
 
