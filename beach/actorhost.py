@@ -48,6 +48,7 @@ class ActorHost ( object ):
         gevent.signal( signal.SIGINT, _stopAllActors )
 
         self._initLogging()
+        self.instanceId = instanceId
 
         self.log( "Initializing" )
         
@@ -69,8 +70,8 @@ class ActorHost ( object ):
 
         self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
 
-        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%d' % instanceId, isBind = True )
-        self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%d' % instanceId, ) )
+        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%s' % instanceId, isBind = True )
+        self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
         self.hostOpsSocket = _ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
@@ -177,10 +178,10 @@ class ActorHost ( object ):
         self._logger.setLevel( logging.INFO )
 
     def log( self, msg ):
-        self._logger.info( '%s : %s', self.__class__.__name__, msg )
+        self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
 
     def logCritical( self, msg ):
-        self._logger.error( '%s : %s', self.__class__.__name__, msg )
+        self._logger.error( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
 
 if __name__ == '__main__':
-    host = ActorHost( sys.argv[ 1 ], int( sys.argv[ 2 ] ) )
+    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ] )

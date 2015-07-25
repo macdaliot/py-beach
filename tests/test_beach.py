@@ -51,6 +51,18 @@ def test_actor_creation():
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
+def test_isolated_actor_creation():
+    global beach
+
+    a1 = beach.addActor( 'Ping', 'pingers', isIsolated = True )
+    assert( isMessageSuccess( a1 ) )
+
+    time.sleep( 2 )
+
+    d = beach.getDirectory()
+    assert( isMessageSuccess( d ) )
+    assert( 2 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
 def test_virtual_handles():
     global beach

@@ -124,7 +124,7 @@ class Beach ( object ):
         '''
         return len( self._nodes )
 
-    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None, parameters = None ):
+    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None, parameters = None, isIsolated = False ):
         '''Spawn a new actor in the cluster.
 
         :param actorName: the name of the actor to spawn
@@ -135,6 +135,8 @@ class Beach ( object ):
         :param realm: the realm to add the actor in, if different than main realm set
         :param parameters: a dict of parameters that will be given to the actor when it starts,
             usually used for configurations
+        :param isIsolated: if True the Actor will be spawned in its own process space to further
+            isolate it from potential crashes of other Actors
 
         :returns: returns the reply from the node indicating if the actor was created successfully,
             use beach.utils.isMessageSuccess( response ) to check for success
@@ -186,7 +188,8 @@ class Beach ( object ):
             info = { 'req' : 'start_actor',
                      'actor_name' : actorName,
                      'realm' : thisRealm,
-                     'cat' : category }
+                     'cat' : category,
+                     'isolated' : isIsolated }
             if parameters is not None:
                 info[ 'parameters' ] = parameters
             resp = node.request( info, timeout = 10 )
