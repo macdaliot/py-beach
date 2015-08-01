@@ -4,7 +4,7 @@ import time
 
 class Pong ( Actor ):
 
-    def init( self ):
+    def init( self, parameters ):
         print( "Called init of actor." )
         self.handle( 'ping', self.ponger )
 

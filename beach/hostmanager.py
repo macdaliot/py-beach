@@ -1,3 +1,19 @@
+# Copyright (C) 2015  refractionPOINT
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 '''The main script to run on a beach cluster node, it takes care of everything. Instantiate like:
     python -m beach.hostmanager -h
 '''
@@ -22,6 +38,7 @@ import logging
 import subprocess
 import psutil
 import collections
+import uuid
 
 timeToStopEvent = gevent.event.Event()
 
@@ -65,6 +82,7 @@ class HostManager ( object ):
         self.instance_keepalive_seconds = 0
         self.tombstone_culling_seconds = 0
         self.isActorChanged = gevent.event.Event()
+        self.isInstanceChanged = gevent.event.Event()
 
         # Load default configs
         with open( self.configFilePath, 'r' ) as f:
@@ -78,16 +96,20 @@ class HostManager ( object ):
         if self.nProcesses == 0:
             self.nProcesses = multiprocessing.cpu_count()
         self._log( "Using %d instances per node" % self.nProcesses )
-        
-        self.seedNodes = self.configFile.get( 'seed_nodes', [] )
-        for s in self.seedNodes:
-            self._log( "Using seed node: %s" % s )
 
         if iface is not None:
             self.interface = iface
         else:
             self.interface = self.configFile.get( 'interface', 'eth0' )
         self.ifaceIp4 = _getIpv4ForIface( self.interface )
+
+        self.seedNodes = self.configFile.get( 'seed_nodes', [] )
+
+        if 0 == len( self.seedNodes ):
+            self.seedNodes.append( self.ifaceIp4 )
+
+        for s in self.seedNodes:
+            self._log( "Using seed node: %s" % s )
 
         self.directoryPort = _ZMREP( self.configFile.get( 'directory_port',
                                                          'ipc:///tmp/py_beach_directory_port' ),
@@ -123,9 +145,7 @@ class HostManager ( object ):
         
         # Start the instances
         for n in range( self.nProcesses ):
-            procSocket = _ZMREQ( 'ipc:///tmp/py_beach_instance_%d' % n, isBind = False )
-            self.processes.append( { 'socket' : procSocket, 'p' : None } )
-            self._log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%d' % n, ) )
+            self._startInstance( isIsolated = False )
         
         # Wait to be signaled to exit
         self._log( "Up and running" )
@@ -133,13 +153,32 @@ class HostManager ( object ):
         
         # Any teardown required
         for proc in self.processes:
-            if proc[ 'p' ] is not None:
-                proc[ 'p' ].send_signal( signal.SIGQUIT )
-                errorCode = proc[ 'p' ].wait()
-                if 0 != errorCode:
-                    self._logCritical( 'actor host exited with error code: %d' % errorCode )
+            self._sendQuitToInstance( proc )
         
         self._log( "Exiting." )
+
+    def _sendQuitToInstance( self, instance ):
+        if instance[ 'p' ] is not None:
+            instance[ 'p' ].send_signal( signal.SIGQUIT )
+            errorCode = instance[ 'p' ].wait()
+            if 0 != errorCode:
+                self._logCritical( 'actor host exited with error code: %d' % errorCode )
+
+    def _startInstance( self, isIsolated = False ):
+        instanceId = str( uuid.uuid4() )
+        procSocket = _ZMREQ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, isBind = False )
+        instance = { 'socket' : procSocket, 'p' : None, 'isolated' : isIsolated, 'id' : instanceId }
+        self.processes.append( instance )
+        self._log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
+        return instance
+
+    def _removeInstanceIfIsolated( self, instance ):
+        if instance[ 'isolated' ]:
+            # Isolated instances only have one Actor loaded
+            # so this means we can remove this instance
+            self._log( "Removing isolated host instance: %s" % instance[ 'id' ] )
+            self.processes.remove( instance )
+            self._sendQuitToInstance( instance )
 
     def _connectToNode( self, ip ):
         nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ), isBind = False )
@@ -163,6 +202,11 @@ class HostManager ( object ):
             del( self.actorInfo[ uid ] )
 
         return isFound
+
+    def _removeInstanceActorsFromDirectory( self, instance ):
+        for uid, actor in self.actorInfo.items():
+            if actor[ 'instance' ] == instance:
+                self._removeUidFromDirectory( uid )
     
     def _getAvailablePortForUid( self, uid ):
         port = None
@@ -173,11 +217,15 @@ class HostManager ( object ):
         
         return port
     
-    def _getInstanceForActor( self, uid, actorName, realm ):
+    def _getInstanceForActor( self, uid, actorName, realm, isIsolated = False ):
         instance = None
-        
-        if self.instance_strategy == 'random':
-            instance = random.randint( 0, self.nProcesses - 1 )
+
+        if isIsolated:
+            self.nProcesses += 1
+            instance = self._startInstance( isIsolated = True )
+            self.isInstanceChanged.set()
+        elif self.instance_strategy == 'random':
+            instance = random.choice( [ x for x in self.processes if x[ 'isolated' ] is False ] )
         
         if instance is not None:
             self.actorInfo.setdefault( uid, {} )[ 'instance' ] = instance
@@ -230,18 +278,22 @@ class HostManager ( object ):
                         actorName = data[ 'actor_name' ]
                         category = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
+                        parameters = data.get( 'parameters', {} )
+                        isIsolated = data.get( 'isolated', False )
                         uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
-                        instance = self._getInstanceForActor( uid, actorName, realm )
-                        newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'start_actor',
-                                                                                   'actor_name' : actorName,
-                                                                                   'realm' : realm,
-                                                                                   'uid' : uid,
-                                                                                   'ip' : self.ifaceIp4,
-                                                                                   'port' : port },
-                                                                                 timeout = 10 )
+                        instance = self._getInstanceForActor( uid, actorName, realm, isIsolated )
+                        newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
+                                                                 'actor_name' : actorName,
+                                                                 'realm' : realm,
+                                                                 'uid' : uid,
+                                                                 'ip' : self.ifaceIp4,
+                                                                 'port' : port,
+                                                                 'parameters' : parameters,
+                                                                 'isolated' : isIsolated },
+                                                               timeout = 10 )
                         if isMessageSuccess( newMsg ):
-                            self._log( "New actor loaded, adding to directory" )
+                            self._log( "New actor loaded (isolation = %s), adding to directory" % isIsolated )
                             self.directory.setdefault( realm,
                                                        {} ).setdefault( category,
                                                                         {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
@@ -265,9 +317,9 @@ class HostManager ( object ):
                                 failed.append( errorMessage( 'actor not found' ) )
                             else:
                                 instance = self.actorInfo[ uid ][ 'instance' ]
-                                newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                                           'uid' : uid },
-                                                                                         timeout = 10 )
+                                newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
+                                                                         'uid' : uid },
+                                                                       timeout = 10 )
                                 if not isMessageSuccess( newMsg ):
                                     failed.append( newMsg )
                                 else:
@@ -275,6 +327,8 @@ class HostManager ( object ):
                                         failed.append( errorMessage( 'error removing actor from directory after stop' ) )
                                     else:
                                         self.isActorChanged.set()
+
+                                self._removeInstanceIfIsolated( instance )
 
                         if 0 != len( failed ):
                             z.send( errorMessage( 'some actors failed to stop', failed ) )
@@ -285,9 +339,11 @@ class HostManager ( object ):
                         z.send( errorMessage( 'missing information to remove actor' ) )
                     else:
                         uid = data[ 'uid' ]
-                        if self._removeUidFromDirectory( uid ):
+                        instance = self.actorInfo.get( uid, {} ).get( 'instance', None )
+                        if instance is not None and self._removeUidFromDirectory( uid ):
                             z.send( successMessage() )
                             self.isActorChanged.set()
+                            self._removeInstanceIfIsolated( instance )
                         else:
                             z.send( errorMessage( 'actor to stop not found' ) )
                 elif 'host_info' == action:
@@ -311,12 +367,14 @@ class HostManager ( object ):
                     resp = successMessage()
                     for uid, actor in self.actorInfo.items():
                         instance = actor[ 'instance' ]
-                        newMsg = self.processes[ instance ][ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                                   'uid' : uid },
-                                                                                 timeout = 10 )
+                        newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
+                                                                 'uid' : uid },
+                                                               timeout = 10 )
                         if isMessageSuccess( newMsg ):
                             if not self._removeUidFromDirectory( uid ):
                                 resp = errorMessage( 'error removing actor from directory after stop' )
+
+                        self._removeInstanceIfIsolated( instance )
 
                     z.send( resp )
 
@@ -353,34 +411,48 @@ class HostManager ( object ):
     
     def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
-            for n in range( len( self.processes ) ):
-                self._log( "Issuing keepalive for instance %d" % n )
+            for instance in self.processes:
+                self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
 
-                if self.initialProcesses:
-                    data = self.processes[ n ][ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
+                if self.initialProcesses and instance[ 'p' ] is not None:
+                    # Only attempt keepalive if we know of a pid for it, otherwise it must be new
+                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
                 else:
                     # For first instances, immediately trigger the instance creation
                     data = False
 
                 if not isMessageSuccess( data ):
-                    if self.processes[ n ][ 'p' ] is not None:
-                        self.processes[ n ][ 'p' ].kill()
-                    proc = subprocess.Popen( [ 'python',
-                                               '%s/ActorHost.py' % self.py_beach_dir,
-                                                self.configFilePath,
-                                                str( n ) ] )
+                    isBrandNew = True
+                    if instance[ 'p' ] is not None:
+                        instance[ 'p' ].kill()
+                        # Instance died, it means all Actors within are no longer reachable
+                        self._removeInstanceActorsFromDirectory( instance )
+                        self.isActorChanged.set()
+                        isBrandNew = False
 
-                    self.processes[ n ][ 'p' ] = proc
+                    if isBrandNew or not instance[ 'isolated' ]:
+                        proc = subprocess.Popen( [ 'python',
+                                                   '%s/ActorHost.py' % self.py_beach_dir,
+                                                    self.configFilePath,
+                                                    instance[ 'id' ] ] )
 
-                    if self.initialProcesses:
-                        self._logCritical( "Instance %d died, restarting it, pid %d" % ( n, proc.pid ) )
+                        instance[ 'p' ] = proc
+
+                        if not isBrandNew:
+                            self._logCritical( "Instance %s died, restarting it, pid %d" % ( instance[ 'id' ], proc.pid ) )
+                        else:
+                            self._log( "Initial instance %s created with pid %d (isolation = %s)" % ( instance[ 'id' ], proc.pid, instance[ 'isolated' ] ) )
                     else:
-                        self._log( "Initial instance %d created with pid %d" % ( n, proc.pid ) )
+                        # This means it's an isolated Actor that died, in this case
+                        # we don't restart it, we leave it to higher layers to restarts it
+                        # if they want.
+                        self.processes.remove( instance )
 
             if not self.initialProcesses:
                 self.initialProcesses = True
 
-            gevent.sleep( self.instance_keepalive_seconds )
+            self.isInstanceChanged.wait( self.instance_keepalive_seconds )
+            self.isInstanceChanged.clear()
     
     def _svc_host_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
@@ -399,8 +471,19 @@ class HostManager ( object ):
             gevent.sleep( self.peer_keepalive_seconds )
     
     def _svc_directory_sync( self ):
-        while not self.stopEvent.wait( 0 ):
-            for nodeName, node in self.nodes.items():
+        nextWait = 0
+        nextNode = 0
+        while not self.stopEvent.wait( nextWait ):
+            nNodes = len( self.nodes )
+            if nNodes != 0:
+                if nextNode > nNodes:
+                    nextNode = 0
+                # We aim to manually fully sync with the directories
+                # of all the nodes in the cluster over directory_sync_seconds seconds.
+                nextWait = self.directory_sync_seconds / nNodes
+
+                nodeName = self.nodes.keys()[ nextNode ]
+                node = self.nodes[ nodeName ]
                 if nodeName != self.ifaceIp4:
                     self._log( "Issuing directory sync with node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
@@ -409,8 +492,8 @@ class HostManager ( object ):
                         self._updateDirectoryWith( self.directory, data[ 'directory' ] )
                         for uid in data[ 'tombstones' ]:
                             self._removeUidFromDirectory( uid )
-            
-            gevent.sleep( self.directory_sync_seconds )
+            else:
+                nextWait = 1
 
     def _svc_pushDirChanges( self ):
         while not self.stopEvent.wait( 0 ):

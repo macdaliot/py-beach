@@ -4,11 +4,12 @@ n_processes: 0
 
 # The directory that contain the python code
 # for the cloud
-code_directoriy: ./
+code_directory: ./
 
 # The nodes that should be used as seeds in your
 # environment, they should be somewhat stable but
 # more is better
+# If not set, a single node cluster on localhost is assumed
 #seed_nodes:
 #    - 1.2.3.4
 

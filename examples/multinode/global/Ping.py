@@ -4,7 +4,7 @@ import gevent
 
 class Ping ( Actor ):
 
-    def init( self ):
+    def init( self, parameters ):
         print( "Called init of actor." )
         self.zPong = self.getActorHandle( category = 'pongers' )
         self.schedule( 5, self.pinger )

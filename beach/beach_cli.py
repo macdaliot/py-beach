@@ -1,4 +1,21 @@
 #!/usr/bin/env python
+
+# Copyright (C) 2015  refractionPOINT
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 '''A Command Line Interface to manage the beach cluster. Instantiate like:
     python -m beach.beach_cli -h
 '''
@@ -190,6 +207,19 @@ class BeachShell ( cmd.Cmd ):
             argparse.error( 'Must specify one of -i or -c.' )
 
         resp = self.beach.stopActors( withId = arguments.id, withCategory = arguments.cat )
+
+        self.printOut( resp )
+
+    @report_errors
+    def do_get_cluster_health( self, s ):
+        '''Retrieve the health information of all nodes of the cluster.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        resp = self.beach.getClusterHealth()
 
         self.printOut( resp )
 

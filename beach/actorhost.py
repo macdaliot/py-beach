@@ -1,3 +1,19 @@
+# Copyright (C) 2015  refractionPOINT
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 import sys
 import os
 import signal
@@ -32,6 +48,7 @@ class ActorHost ( object ):
         gevent.signal( signal.SIGINT, _stopAllActors )
 
         self._initLogging()
+        self.instanceId = instanceId
 
         self.log( "Initializing" )
         
@@ -53,8 +70,8 @@ class ActorHost ( object ):
 
         self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
 
-        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%d' % instanceId, isBind = True )
-        self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%d' % instanceId, ) )
+        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%s' % instanceId, isBind = True )
+        self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
         self.hostOpsSocket = _ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
@@ -93,19 +110,24 @@ class ActorHost ( object ):
                     else:
                         actorName = data[ 'actor_name' ]
                         realm = data.get( 'realm', 'global' )
+                        parameters = data.get( 'parameters', {} )
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
-                        self.log( "Starting actor %s/%s at %s/%s.py" % ( realm,
-                                                                         actorName,
-                                                                         self.codeDirectory,
-                                                                         actorName ) )
+                        fileName = '%s/%s/%s.py' % ( self.codeDirectory, realm, actorName )
+                        with open( fileName, 'r' ) as hFile:
+                            fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+                        self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
+                                                                            actorName,
+                                                                            self.codeDirectory,
+                                                                            realm,
+                                                                            actorName ) )
                         try:
-                            actor = getattr( imp.load_source( '%s_%s' % ( realm, actorName ),
+                            actor = getattr( imp.load_source( '%s_%s_%s' % ( realm, actorName, fileHash ),
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             actorName )( self, realm, ip, port, uid )
+                                             actorName )( self, realm, ip, port, uid, parameters )
                         except:
                             actor = None
 
@@ -156,10 +178,10 @@ class ActorHost ( object ):
         self._logger.setLevel( logging.INFO )
 
     def log( self, msg ):
-        self._logger.info( '%s : %s', self.__class__.__name__, msg )
+        self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
 
     def logCritical( self, msg ):
-        self._logger.error( '%s : %s', self.__class__.__name__, msg )
+        self._logger.error( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
 
 if __name__ == '__main__':
-    host = ActorHost( sys.argv[ 1 ], int( sys.argv[ 2 ] ) )
+    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ] )

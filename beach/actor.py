@@ -1,3 +1,19 @@
+# Copyright (C) 2015  refractionPOINT
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 import os
 import gevent
 import gevent.event
@@ -12,10 +28,36 @@ from beach.utils import _ZMREP
 from beach.utils import _ZSocket
 import random
 import logging
+import imp
+import hashlib
+import inspect
 
 class Actor( gevent.Greenlet ):
+
+    @classmethod
+    def importLib( cls, libName, className = None ):
+        '''Import a user-defined lib from the proper realm.
+
+        :param libName: the name of the file (module) located in the code_directry
+            and realm directory
+        :param className: the name of the attribute (class, func or whatever) from
+            the module to be loaded
+
+        :returns: the module or element of the module loaded
+        '''
+
+        fileName = '%s/%s.py' % ( os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) ), libName )
+        with open( fileName, 'r' ) as hFile:
+            fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+        mod = imp.load_source( '%s_%s' % ( libName, fileHash ), fileName )
+
+        if className is not None:
+            mod = getattr( mod, className )
+
+        return mod
+
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
-    def __init__( self, host, realm, ip, port, uid ):
+    def __init__( self, host, realm, ip, port, uid, parameters = {} ):
         gevent.Greenlet.__init__( self )
 
         self._initLogging()
@@ -26,6 +68,7 @@ class Actor( gevent.Greenlet ):
         self._port = port
         self.name = uid
         self._host = host
+        self._parameters = parameters
 
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
@@ -42,7 +85,7 @@ class Actor( gevent.Greenlet ):
     def _run( self ):
 
         if hasattr( self, 'init' ):
-            self.init()
+            self.init( self._parameters )
 
         # Initially Actors handle one concurrent request to avoid bad surprises
         # by users not thinking about concurrency. This can be bumped up by calling
@@ -149,6 +192,9 @@ class Actor( gevent.Greenlet ):
         self._logger = logging.getLogger()
         self._logger.setLevel( logging.INFO )
 
+    def sleep( self, seconds ):
+        gevent.sleep( seconds )
+
     def log( self, msg ):
         '''Log debug statements.
 
@@ -250,7 +296,7 @@ class ActorHandle ( object ):
             else:
                 self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
 
-        def request( self, requestType, data = {}, timeout = None, key = None ):
+        def request( self, requestType, data = {}, timeout = None, key = None, nRetries = 0 ):
             '''Issue a request to the actor category of this handle.
 
             :param requestType: the type of request to issue
@@ -259,51 +305,85 @@ class ActorHandle ( object ):
             :param key: when used in 'affinity' mode, the key is the main parameter
                 to evaluate to determine which Actor to send the request to, in effect
                 it is the key to the hash map of Actors
+            :param nRetries: the number of times the request will be re-sent if it
+                times out, meaning a timeout of 5 and a retry of 3 could result in
+                a request taking 15 seconds to return
             :returns: the response to the request as a dict, or False in the event
                 the request failed or timed out
             '''
             z = None
             ret = False
+            curRetry = 0
 
-            try:
-                # We use the timeout to wait for an available node if none
-                # exists
-                with gevent.Timeout( timeout, _TimeoutException ):
-                    while z is None:
-                        if 'affinity' == self._mode and key is not None:
-                            # Affinity is currently a soft affinity, meaning the set of Actors
-                            # is not locked, if it changes, affinity is re-computed without migrating
-                            # any previous affinities. Therefore, I suggest a good cooldown before
-                            # starting to process with affinity after the Actors have been spawned.
-                            sortedActors = [ x[ 1 ] for x in  sorted( self._endpoints.items(),
-                                                                      key = lambda x: x.__getitem__( 0 ) ) ]
-                            z = sortedActors[ hash( key ) % len( sortedActors ) ]
-                            z = _ZSocket( zmq.REQ, z )
-                        elif 0 != len( self._srcSockets ):
-                            # Prioritize existing connections, only create new one
-                            # based on the mode when we have no connections available
-                            z = self._srcSockets.pop()
-                        elif 'random' == self._mode:
-                            endpoints = self._endpoints.values()
-                            if 0 != len( endpoints ):
-                                z = _ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
-                        if z is None:
-                            gevent.sleep( 0.001 )
-            except _TimeoutException:
-                pass
+            while curRetry <= nRetries:
+                try:
+                    # We use the timeout to wait for an available node if none
+                    # exists
+                    with gevent.Timeout( timeout, _TimeoutException ):
+                        while z is None:
+                            if 'affinity' == self._mode and key is not None:
+                                # Affinity is currently a soft affinity, meaning the set of Actors
+                                # is not locked, if it changes, affinity is re-computed without migrating
+                                # any previous affinities. Therefore, I suggest a good cooldown before
+                                # starting to process with affinity after the Actors have been spawned.
+                                sortedActors = [ x[ 1 ] for x in  sorted( self._endpoints.items(),
+                                                                          key = lambda x: x.__getitem__( 0 ) ) ]
+                                z = sortedActors[ hash( key ) % len( sortedActors ) ]
+                                z = _ZSocket( zmq.REQ, z )
+                            elif 0 != len( self._srcSockets ):
+                                # Prioritize existing connections, only create new one
+                                # based on the mode when we have no connections available
+                                z = self._srcSockets.pop()
+                            elif 'random' == self._mode:
+                                endpoints = self._endpoints.values()
+                                if 0 != len( endpoints ):
+                                    z = _ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+                            if z is None:
+                                gevent.sleep( 0.001 )
+                except _TimeoutException:
+                    curRetry += 1
+
+                if z is not None and curRetry <= nRetries:
+                    if type( data ) is not dict:
+                        data = { 'data' : data }
+                    data[ 'req' ] = requestType
+
+                    ret = z.request( data, timeout = timeout )
+                    # If we hit a timeout we don't take chances
+                    # and remove that socket
+                    if ret is not False:
+                        self._srcSockets.append( z )
+                        break
+                    else:
+                        z.close()
+                        z = None
+                        curRetry += 1
 
             if z is not None:
-                if type( data ) is not dict:
-                    data = { 'data' : data }
-                data[ 'req' ] = requestType
+                self._srcSockets.append( z )
 
-                ret = z.request( data, timeout = timeout )
-                # If we hit a timeout we don't take chances
-                # and remove that socket
-                if ret is not False:
-                    self._srcSockets.append( z )
-                else:
-                    z.close()
+            return ret
+
+        def broadcast( self, requestType, data = {} ):
+            '''Issue a request to the all actors in the category of this handle.
+
+            :param requestType: the type of request to issue
+            :param data: a dict of the data associated with the request
+            :returns: True since no validation on the reception or reply from any
+                specific endpoint is made
+            '''
+            ret = True
+
+            if type( data ) is not dict:
+                data = { 'data' : data }
+            data[ 'req' ] = requestType
+
+            for endpoint in self._endpoints.values():
+                z = _ZSocket( zmq.REQ, endpoint )
+                if z is not None:
+                    gevent.spawn( z.request, data )
+
+            gevent.sleep( 0 )
 
             return ret
 

@@ -29,6 +29,10 @@ print( "Creating pong actor in affinity( pingers ) beach node." )
 a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers' )
 print( json.dumps( a2, indent = 4 ) )
 
+print( "Creating pong actor in isolation." )
+a3 = beach.addActor( 'Pong', 'pongers', isIsolated = True )
+print( json.dumps( a3, indent = 4 ) )
+
 print( "Idling for a few seconds..." )
 time.sleep( 15 )
 

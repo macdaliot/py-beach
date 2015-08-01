@@ -1,3 +1,25 @@
+# Copyright (C) 2015  refractionPOINT
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+import sys
+if 'threading' in sys.modules and 'sphinx' not in sys.modules:
+        raise Exception('threading module loaded before patching!')
+import gevent.monkey
+gevent.monkey.patch_all()
+
 import yaml
 from beach.utils import *
 from beach.utils import _ZMREQ
@@ -9,10 +31,11 @@ import gevent
 import gevent.pool
 import gevent.event
 from beach.actor import ActorHandle
+from beach.utils import _getIpv4ForIface
 
 class Beach ( object ):
 
-    def __init__( self, configFile, realm = 'global', extraTmpSeedNode = None ):
+    def __init__( self, configFile, realm = 'global' ):
         '''Create a new interface to a beach cluster.
 
         :param configFile: the path to the config file of the cluster
@@ -33,10 +56,10 @@ class Beach ( object ):
 
         self._seedNodes = self._configFile.get( 'seed_nodes', [] )
 
-        if extraTmpSeedNode is not None:
-            self._seedNodes.append( extraTmpSeedNode )
-
         self._opsPort = self._configFile.get( 'ops_port', 4999 )
+
+        if 0 == len( self._seedNodes ):
+            self._seedNodes.append( _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) ) )
 
         for s in self._seedNodes:
             self._connectToNode( s )
@@ -63,9 +86,10 @@ class Beach ( object ):
     def _updateNodes( self ):
         toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
-        for k in nodes[ 'nodes' ].keys():
-            if k not in self._nodes:
-                self._connectToNode( k )
+        if nodes is not False:
+            for k in nodes[ 'nodes' ].keys():
+                if k not in self._nodes:
+                    self._connectToNode( k )
 
         for nodeName, node in self._nodes.items():
             self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
@@ -100,7 +124,7 @@ class Beach ( object ):
         '''
         return len( self._nodes )
 
-    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None ):
+    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None, parameters = None, isIsolated = False ):
         '''Spawn a new actor in the cluster.
 
         :param actorName: the name of the actor to spawn
@@ -109,6 +133,10 @@ class Beach ( object ):
             currently supports: random
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
+        :param parameters: a dict of parameters that will be given to the actor when it starts,
+            usually used for configurations
+        :param isIsolated: if True the Actor will be spawned in its own process space to further
+            isolate it from potential crashes of other Actors
 
         :returns: returns the reply from the node indicating if the actor was created successfully,
             use beach.utils.isMessageSuccess( response ) to check for success
@@ -134,17 +162,37 @@ class Beach ( object ):
                 population.setdefault( name, 0 )
                 population[ name ] += 1
             if 0 != len( population ):
-                affinityNode = max( population.iteritems(), key = operator.itemgetter( 1 ) )[ 0 ]
+                affinityNode = population.keys()[ random.randint( 0, len( population ) - 1 ) ]
+                node = self._nodes[ affinityNode ].get( 'socket', None )
+            else:
+                # There is nothing in play, fall back to random
+                node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        elif 'repulsion' == strategy:
+            possibleNodes = self._nodes.keys()
+
+            nodeList = self._dirCache.get( strategy_hint, {} ).values()
+
+            for n in nodeList:
+                name = n.split( ':' )[ 1 ][ 2 : ]
+                if name in possibleNodes:
+                    del( possibleNodes[ name ] )
+
+            if 0 != len( possibleNodes ):
+                affinityNode = possibleNodes[ random.randint( 0, len( possibleNodes ) - 1 ) ]
                 node = self._nodes[ affinityNode ].get( 'socket', None )
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
 
         if node is not None:
-            resp = node.request( { 'req' : 'start_actor',
-                                   'actor_name' : actorName,
-                                   'realm' : thisRealm,
-                                   'cat' : category }, timeout = 10 )
+            info = { 'req' : 'start_actor',
+                     'actor_name' : actorName,
+                     'realm' : thisRealm,
+                     'cat' : category,
+                     'isolated' : isIsolated }
+            if parameters is not None:
+                info[ 'parameters' ] = parameters
+            resp = node.request( info, timeout = 10 )
 
         return resp
 
@@ -222,3 +270,15 @@ class Beach ( object ):
                     isSuccess = resp
 
         return isSuccess
+
+    def getClusterHealth( self ):
+        ''' Get the cached health information of every node in the cluster.
+
+        :returns: dict of all nodes with their health information associated
+        '''
+        health = {}
+
+        for name, node in self._nodes.items():
+            health[ name ] = node[ 'info' ]
+
+        return health
