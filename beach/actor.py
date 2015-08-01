@@ -191,6 +191,9 @@ class Actor( gevent.Greenlet ):
         self._logger = logging.getLogger()
         self._logger.setLevel( logging.INFO )
 
+    def sleep( self, seconds ):
+        gevent.sleep( seconds )
+
     def log( self, msg ):
         '''Log debug statements.
 
