@@ -39,6 +39,7 @@ import subprocess
 import psutil
 import collections
 import uuid
+from prefixtree import PrefixDict
 
 timeToStopEvent = gevent.event.Event()
 
@@ -157,6 +158,9 @@ class HostManager ( object ):
         
         self._log( "Exiting." )
 
+    def _catToList( self, cat ):
+        return [ x for x in str( cat ).split( '/' ) if '' != x ]
+
     def _sendQuitToInstance( self, instance ):
         if instance[ 'p' ] is not None:
             instance[ 'p' ].send_signal( signal.SIGQUIT )
@@ -242,7 +246,11 @@ class HostManager ( object ):
         return curDir
 
     def _getDirectoryEntriesFor( self, realm, category ):
-        return self.directory.get( realm, {} ).get( category, {} )
+        endpoints = {}
+        cats = self.directory.get( realm, PrefixDict() )[ category : category ]
+        for cat in cats:
+            endpoints.update( cat )
+        return endpoints
     
     def _svc_cullTombstones( self ):
         while not self.stopEvent.wait( 0 ):
@@ -295,9 +303,9 @@ class HostManager ( object ):
                         if isMessageSuccess( newMsg ):
                             self._log( "New actor loaded (isolation = %s), adding to directory" % isIsolated )
                             self.directory.setdefault( realm,
-                                                       {} ).setdefault( category,
-                                                                        {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
-                                                                                                        port )
+                                                       PrefixDict() ).setdefault( category,
+                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                  port )
                             self.isActorChanged.set()
                         else:
                             self._removeUidFromDirectory( uid )

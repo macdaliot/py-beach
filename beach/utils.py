@@ -20,6 +20,7 @@ import gevent
 import gevent.coros
 import zmq.green as zmq
 import netifaces
+from prefixtree import PrefixDict
 
 class _TimeoutException(Exception): pass
 
@@ -34,18 +35,18 @@ def _sanitizeJson( obj ):
     def _sanitizeJsonStruct( obj ):
         data = None
         
-        if issubclass( type( obj ), dict ):
+        if issubclass( type( obj ), dict ) or type( obj ) is PrefixDict:
             data = {}
             for key, value in obj.iteritems():
                 try:
-                    data[ key ] = _sanitizeJsonValue( value )
+                    data[ key ] = _sanitizeJsonStruct( value )
                 except AttributeError:
                     data[ key ] = _sanitizeJsonValue( value )
         elif issubclass( type( obj ), list ):
             data = []
             for value in obj:
                 try:
-                    data.append( _sanitizeJsonValue( value ) )
+                    data.append( _sanitizeJsonStruct( value ) )
                 except AttributeError:
                     data.append( _sanitizeJsonValue( value ) )
         elif type( obj ) is bool:

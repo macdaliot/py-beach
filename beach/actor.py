@@ -31,6 +31,7 @@ import logging
 import imp
 import hashlib
 import inspect
+from prefixtree import PrefixDict
 
 class Actor( gevent.Greenlet ):
 
@@ -277,8 +278,9 @@ class ActorHandle ( object ):
                 for h in zHostDir:
                     cls._zDir.append( _ZMREQ( h, isBind = False ) )
 
-        def __init__( self, realm, category, mode = 'random' ):
+        def __init__( self, realm, category, mode = 'random', nRetries = None ):
             self._cat = category
+            self._nRetries = nRetries
             self._realm = realm
             self._mode = mode
             self._endpoints = {}
@@ -296,7 +298,7 @@ class ActorHandle ( object ):
             else:
                 self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
 
-        def request( self, requestType, data = {}, timeout = None, key = None, nRetries = 0 ):
+        def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
             '''Issue a request to the actor category of this handle.
 
             :param requestType: the type of request to issue
@@ -315,6 +317,11 @@ class ActorHandle ( object ):
             ret = False
             curRetry = 0
 
+            if nRetries is None:
+                nRetries = self._nRetries
+                if nRetries is None:
+                    nRetries = 0
+
             while curRetry <= nRetries:
                 try:
                     # We use the timeout to wait for an available node if none
@@ -326,8 +333,8 @@ class ActorHandle ( object ):
                                 # is not locked, if it changes, affinity is re-computed without migrating
                                 # any previous affinities. Therefore, I suggest a good cooldown before
                                 # starting to process with affinity after the Actors have been spawned.
-                                sortedActors = [ x[ 1 ] for x in  sorted( self._endpoints.items(),
-                                                                          key = lambda x: x.__getitem__( 0 ) ) ]
+                                sortedActors = [ x[ 1 ] for x in sorted( self._endpoints.items(),
+                                                                         key = lambda x: x.__getitem__( 0 ) ) ]
                                 z = sortedActors[ hash( key ) % len( sortedActors ) ]
                                 z = _ZSocket( zmq.REQ, z )
                             elif 0 != len( self._srcSockets ):
@@ -393,6 +400,13 @@ class ActorHandle ( object ):
             :returns: True if at least one actor is available
             '''
             return ( 0 != len( self._endpoints ) )
+
+        def getNumAvailable( self ):
+            '''Checks to see the number of actors available to respond to a query of this handle.
+
+            :returns: number of available actors
+            '''
+            return len( self._endpoints )
 
         def close( self ):
             '''Close all threads and resources associated with this handle.
