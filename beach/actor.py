@@ -278,9 +278,10 @@ class ActorHandle ( object ):
                 for h in zHostDir:
                     cls._zDir.append( _ZMREQ( h, isBind = False ) )
 
-        def __init__( self, realm, category, mode = 'random', nRetries = None ):
+        def __init__( self, realm, category, mode = 'random', nRetries = None, timeout = None ):
             self._cat = category
             self._nRetries = nRetries
+            self._timeout = timeout
             self._realm = realm
             self._mode = mode
             self._endpoints = {}
@@ -321,6 +322,11 @@ class ActorHandle ( object ):
                 nRetries = self._nRetries
                 if nRetries is None:
                     nRetries = 0
+
+            if timeout is None:
+                timeout = self._timeout
+            if 0 == timeout:
+                timeout = None
 
             while curRetry <= nRetries:
                 try:

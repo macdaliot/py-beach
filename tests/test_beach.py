@@ -71,6 +71,18 @@ def test_virtual_handles():
     resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
     assert( resp is not None and resp is not False and 'time' in resp )
 
+def test_prefix_virtual_handles():
+    global beach
+
+    vHandles = beach.getActorHandle( 'p' )
+    gevent.sleep( 1 )
+    assert( 3 == vHandles.getNumAvailable() )
+    assert( vHandles.isAvailable() is True )
+
+    vHandles = beach.getActorHandle( 'p/' )
+    gevent.sleep( 1 )
+    assert( 0 == vHandles.getNumAvailable() )
+    assert( vHandles.isAvailable() is False )
 
 def test_flushing_single_node_cluster():
     f = beach.flush()

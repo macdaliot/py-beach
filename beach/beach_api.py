@@ -59,7 +59,10 @@ class Beach ( object ):
         self._opsPort = self._configFile.get( 'ops_port', 4999 )
 
         if 0 == len( self._seedNodes ):
-            self._seedNodes.append( _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) ) )
+            mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )
+            if mainIfaceIp is None:
+                mainIfaceIp = _getIpv4ForIface( 'en0' )
+            self._seedNodes.append( mainIfaceIp )
 
         for s in self._seedNodes:
             self._connectToNode( s )
@@ -223,7 +226,7 @@ class Beach ( object ):
 
         return isFlushed
 
-    def getActorHandle( self, category, mode = 'random' ):
+    def getActorHandle( self, category, mode = 'random', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
 
         :param category: the name of the category holding actors to get the handle to
@@ -232,7 +235,7 @@ class Beach ( object ):
 
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm, category, mode )
+        v = ActorHandle( self._realm, category, mode, nRetries = nRetries, timeout = timeout )
         self._vHandles.append( v )
         return v
 
