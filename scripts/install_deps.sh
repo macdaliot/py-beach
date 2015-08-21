@@ -10,3 +10,4 @@ pip install pyzmq
 pip install netifaces
 pip install pyyaml
 pip install psutil
+apt-get -y install python-msgpack

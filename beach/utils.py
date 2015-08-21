@@ -21,6 +21,7 @@ import gevent.coros
 import zmq.green as zmq
 import netifaces
 from prefixtree import PrefixDict
+import msgpack
 
 class _TimeoutException(Exception): pass
 
@@ -124,9 +125,9 @@ class _ZSocket( object ):
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    self.s.send_json( _sanitizeJson( data ) )
+                    self.s.send( msgpack.packb( _sanitizeJson( data ) ) )
             else:
-                self.s.send_json( _sanitizeJson( data ) )
+                self.s.send( msgpack.packb( _sanitizeJson( data ) ) )
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
@@ -142,9 +143,9 @@ class _ZSocket( object ):
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    data = self.s.recv_json()
+                    data = msgpack.unpackb( self.s.recv() )
             else:
-                data = self.s.recv_json()
+                data = msgpack.unpackb( self.s.recv() )
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
@@ -192,8 +193,8 @@ class _ZMREQ ( object ):
 
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
-                z.send_json( _sanitizeJson( data ) )
-                result = z.recv_json()
+                z.send( msgpack.packb( _sanitizeJson( data ) ) )
+                result = msgpack.unpackb( z.recv() )
         except _TimeoutException:
             z.close( linger = 0 )
             z = self._newSocket()
@@ -240,9 +241,9 @@ class _ZMREP ( object ):
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        self._z.send_json( _sanitizeJson( data ) )
+                        self._z.send( msgpack.packb( _sanitizeJson( data ) ) )
                 else:
-                    self._z.send_json( _sanitizeJson( data ) )
+                    self._z.send( msgpack.packb( _sanitizeJson( data ) ) )
             except _TimeoutException:
                 isSuccess = False
             except zmq.ZMQError, e:
@@ -258,9 +259,9 @@ class _ZMREP ( object ):
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        data = self._z.recv_json()
+                        data = msgpack.unpackb( self._z.recv() )
                 else:
-                    data = self._z.recv_json()
+                    data = msgpack.unpackb( self._z.recv() )
             except _TimeoutException:
                 data = False
             except zmq.ZMQError, e:
