@@ -121,7 +121,7 @@ class BeachShell ( cmd.Cmd ):
 
         wanted = False
 
-        if isMessageSuccess( resp ) and 'realms' in resp:
+        if resp is not False and 'realms' in resp:
             wanted = resp[ 'realms' ].get( self.realm, {} )
 
             if category is not None:
@@ -173,12 +173,40 @@ class BeachShell ( cmd.Cmd ):
                              dest = 'strat_hint',
                              default = None,
                              help = 'hint used as part of some strategies.' )
+        parser.add_argument( '-p', '--params',
+                             type = json.loads,
+                             dest = 'params',
+                             default = None,
+                             help = 'parameters to provide to the Actor, as a JSON string.' )
+        parser.add_argument( '-i', '--isisolated',
+                             dest = 'isIsolated',
+                             default = False,
+                             action = 'store_true',
+                             help = 'if the Actor should be started in isolation mode (standalone process).' )
+        parser.add_argument( '-id', '--ident',
+                             type = str,
+                             dest = 'ident',
+                             default = None,
+                             help = 'identifier secret token used for Actor trust model.' )
+        parser.add_argument( '-t', '--trusted',
+                             type = str,
+                             dest = 'trusted',
+                             default = [],
+                             action = 'append',
+                             help = 'identifier token trusted by the Actor trust model.' )
         arguments = self.parse( parser, s )
 
         if arguments is None:
             return
 
-        resp = self.beach.addActor( arguments.name, arguments.category, arguments.strategy, arguments.strat_hint )
+        resp = self.beach.addActor( arguments.name,
+                                    arguments.category,
+                                    strategy = arguments.strategy,
+                                    strategy_hint = arguments.strat_hint,
+                                    parameters = arguments.params,
+                                    isIsolated = arguments.isIsolated,
+                                    secretIdent = arguments.ident,
+                                    trustedIdents = arguments.trusted )
 
         self.printOut( resp )
 
