@@ -179,7 +179,7 @@ class ActorHost ( object ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger()
         self._logger.setLevel( logging.INFO )
-        self._logger.addHandler( logging.handlers.SysLogHandler( address = '/dev/log' ) )
+        self._logger.addHandler( logging.handlers.SysLogHandler() )
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )

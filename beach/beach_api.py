@@ -98,7 +98,7 @@ class Beach ( object ):
             self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
 
         tmpDir = self.getDirectory()
-        if isMessageSuccess( tmpDir ):
+        if tmpDir is not False and 'realms' in tmpDir:
             self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
 
         self._isInited.set()
@@ -278,7 +278,7 @@ class Beach ( object ):
 
         tmpDir = self.getDirectory()
 
-        if tmpDir is not False and isMessageSuccess( tmpDir ):
+        if tmpDir is not False and 'realms' in tmpDir:
             if withCategory is not None:
                 if not isinstance( withCategory, collections.Iterable ):
                     withCategory = ( withCategory, )

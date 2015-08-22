@@ -191,3 +191,8 @@ limiting it to certain Actors. For example, a web server could have a vHandle to
 the webserver since it's likely to get exploited first). In this situation you could setup a common ident
 for all Actors needing to talk together in your cloud, and a second ident for the untrusted web server to talk
 to the "entry point" Actor in your cloud, limiting exposure.
+
+### Request ID
+Each unique request (so across retries and across broadcast) has a unique UUID ID field. This means it can be
+used to keep changes idempotent in the event of a failure-retry. For a short discussion of this kind of logic
+see http://www.ebaytechblog.com/2012/08/14/cassandra-data-modeling-best-practices-part-2/ (search for idempotent).
