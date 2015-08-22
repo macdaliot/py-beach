@@ -35,6 +35,7 @@ import uuid
 import random
 from sets import Set
 import logging
+import logging.handlers
 import subprocess
 import psutil
 import collections
@@ -287,6 +288,8 @@ class HostManager ( object ):
                         category = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
+                        ident = data.get( 'ident', None )
+                        trusted = data.get( 'trusted', [] )
                         isIsolated = data.get( 'isolated', False )
                         uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
@@ -298,6 +301,8 @@ class HostManager ( object ):
                                                                  'ip' : self.ifaceIp4,
                                                                  'port' : port,
                                                                  'parameters' : parameters,
+                                                                 'ident' : ident,
+                                                                 'trusted' : trusted,
                                                                  'isolated' : isIsolated },
                                                                timeout = 10 )
                         if isMessageSuccess( newMsg ):
@@ -497,8 +502,8 @@ class HostManager ( object ):
                     data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
 
                     if isMessageSuccess( data ):
-                        self._updateDirectoryWith( self.directory, data[ 'directory' ] )
-                        for uid in data[ 'tombstones' ]:
+                        self._updateDirectoryWith( self.directory, data[ 'data' ][ 'directory' ] )
+                        for uid in data[ 'data' ][ 'tombstones' ]:
                             self._removeUidFromDirectory( uid )
             else:
                 nextWait = 1
@@ -520,6 +525,7 @@ class HostManager ( object ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger()
         self._logger.setLevel( logging.INFO )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = '/dev/log' ) )
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )

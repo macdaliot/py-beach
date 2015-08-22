@@ -91,7 +91,7 @@ def successMessage( data = None ):
     '''
     msg = { 'status' : { 'success' : True } }
     if data is not None:
-        msg.update( data )
+        msg[ 'data' ] = data
     return msg
 
 class _ZSocket( object ):

@@ -5,12 +5,12 @@ import time
 class Pong ( Actor ):
 
     def init( self, parameters ):
-        print( "Called init of actor." )
+        self.log( "Called init of actor." )
         self.handle( 'ping', self.ponger )
 
     def deinit( self ):
-        print( "Called deinit of actor." )
+        self.log( "Called deinit of actor." )
 
     def ponger( self, msg ):
-        print( "Received ping: %s" % str( msg ) )
+        self.log( "Received ping: %s" % str( msg ) )
         return { 'time' : time.time() }

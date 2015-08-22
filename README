@@ -182,3 +182,12 @@ This new nRetries parameter allows the caller to let the vHandle retry the reque
 N different Actors). This means it's critical for those requests to be idempotent. This is much nicer
 for Actor programming (not worrying about failures, it's what beach was developed for after all) but
 the idempotent requirement can be demanding which is why it defaults to 0 retries.
+
+### Trust
+An Actor can be created with a list of trusted tokens (ident). If the list is empty, all idents are trusted
+(or no ident at all). A virtual handle can be created with an ident (either through the beach_api or
+through an Actor). This mechanism is used to provide access to a vHandle from an untrusted environment while
+limiting it to certain Actors. For example, a web server could have a vHandle to the cloud, we may not trust
+the webserver since it's likely to get exploited first). In this situation you could setup a common ident
+for all Actors needing to talk together in your cloud, and a second ident for the untrusted web server to talk
+to the "entry point" Actor in your cloud, limiting exposure.
