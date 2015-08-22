@@ -13,4 +13,4 @@ class Pong ( Actor ):
 
     def ponger( self, msg ):
         self.log( "Received ping: %s" % str( msg ) )
-        return { 'time' : time.time() }
+        return ( True, { 'time' : time.time() } )

@@ -34,6 +34,31 @@ import hashlib
 import inspect
 from prefixtree import PrefixDict
 
+class ActorRequest( object ):
+    '''Wrapper for requests to Actors. Not created directly.
+    Attributes:
+    ident: the identity of the requestor, if provided (as in trust)
+    id: the unique identifier per request, same across retries, used for idempotent requests
+    req: the action of the request
+    data: data sent in the request
+    '''
+    def __init__( self, msg ):
+        self.ident = msg[ 'mtd' ].get( 'ident', None )
+        self.id = msg[ 'mtd' ][ 'id' ]
+        self.req = msg[ 'mtd' ][ 'req' ]
+        self.data = msg[ 'data' ]
+
+    def __str__(self):
+        return 'ActorRequest( req: %s, id: %s, ident: %s, data: %s )' % ( self.req,
+                                                                          self.id,
+                                                                          self.ident,
+                                                                          self.data )
+    def __repr__(self):
+        return 'ActorRequest( req: %s, id: %s, ident: %s, data: %s )' % ( self.req,
+                                                                          self.id,
+                                                                          self.ident,
+                                                                          self.data )
+
 class Actor( gevent.Greenlet ):
 
     @classmethod
@@ -123,28 +148,37 @@ class Actor( gevent.Greenlet ):
         z = self._opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
-            if msg is not None and 'mtd' in msg and 'req' in msg[ 'mtd' ] and 'ident' in msg[ 'mtd' ] and not self.stopEvent.wait( 0 ):
-                action = msg[ 'mtd' ][ 'req' ]
-                ident = msg[ 'mtd' ][ 'ident' ]
+            try:
+                request = ActorRequest( msg )
+            except:
+                request = None
+            if request is not None and not self.stopEvent.wait( 0 ):
+                self.log( "Received: %s" % request.req )
 
-                self.log( "Received: %s" % action )
-
-                if 0 != len( self._trusted ) and ident not in self._trusted:
+                if 0 != len( self._trusted ) and request.ident not in self._trusted:
                     ret = errorMessage( 'unauthorized' )
                 else:
-                    handler = self._handlers.get( action, self._defaultHandler )
+                    handler = self._handlers.get( request.req, self._defaultHandler )
                     try:
-                        ret = handler( msg )
+                        ret = handler( request )
                     except gevent.GreenletExit:
                         raise
                     except:
                         ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
-                    if ret is True:
-                        ret = successMessage()
-                    elif ret is False:
-                        ret = errorMessage( 'error' )
                     else:
-                        ret = successMessage( ret )
+                        if ( not hasattr( ret, '__iter__' ) or
+                             0 == len( ret ) or
+                             type( ret[ 0 ] ) is not bool ):
+                            ret = errorMessage( 'invalid response format', data = ret )
+                        else:
+                            status = ret[ 0 ]
+                            if status is True:
+                                data = ret[ 1 ] if 2 == len( ret ) else None
+                                ret = successMessage( data )
+                            else:
+                                err = ret[ 1 ] if 2 <= len( ret ) else 'error'
+                                data = ret[ 2 ] if 3 == len( ret ) else None
+                                ret = errorMessage( err, data = data )
                 z.send( ret )
             else:
                 self.logCritical( 'invalid request: %s' % str( msg ) )
@@ -171,10 +205,10 @@ class Actor( gevent.Greenlet ):
 
         :param requestType: the string representing the type of request to handle
         :param handlerFunction: the function that will handle those requests, this
-            function receives a single parameter (the message) and returns a message
-            to reply to the message. If it returns True, a generic success message will
-            be replied, and if it returns a simple string, it will reply a generic error
-            message where the string is the error message. To return data, return a dict.
+            function receives a single parameter (the message, ActorRequest) and returns
+            a tuple where the first element is True for success or False for error, the
+            second element is the data (for success) or an error string (for failure)
+            and the third is the data (for failure)
         :returns: the previous handler for the request type or None if None existed
         '''
         old = None
@@ -251,7 +285,7 @@ class Actor( gevent.Greenlet ):
 
 
 class ActorResponse( object ):
-    '''Wrapper for responses to requests to Actors.
+    '''Wrapper for responses to requests to Actors. Not created directly.
     Attributes:
     isTimedOut: boolean indicating if the request timed out
     isSuccess: boolean indicating if the request was successful
@@ -360,8 +394,7 @@ class ActorHandle ( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
-        :returns: the response to the request as a dict, or False in the event
-            the request failed or timed out
+        :returns: the response to the request as an ActorResponse
         '''
         z = None
         ret = False
@@ -407,7 +440,9 @@ class ActorHandle ( object ):
 
             if z is not None and curRetry <= nRetries:
                 envelope = { 'data' : data,
-                             'mtd' : { 'ident' : self._ident, 'req' : requestType } }
+                             'mtd' : { 'ident' : self._ident,
+                                       'req' : requestType,
+                                       'id' : str( uuid.uuid4() ) } }
 
                 ret = z.request( envelope, timeout = timeout )
                 # If we hit a timeout we don't take chances
@@ -436,7 +471,9 @@ class ActorHandle ( object ):
         ret = True
 
         envelope = { 'data' : data,
-                     'mtd' : { 'ident' : self._ident, 'req' : requestType } }
+                     'mtd' : { 'ident' : self._ident,
+                               'req' : requestType,
+                               'id' : str( uuid.uuid4() ) } }
 
         for endpoint in self._endpoints.values():
             z = _ZSocket( zmq.REQ, endpoint )

@@ -47,7 +47,6 @@ def test_actor_creation():
     time.sleep( 2 )
 
     d = beach.getDirectory()
-    assert( isMessageSuccess( d ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
@@ -60,7 +59,6 @@ def test_isolated_actor_creation():
     time.sleep( 2 )
 
     d = beach.getDirectory()
-    assert( isMessageSuccess( d ) )
     assert( 2 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
@@ -69,7 +67,7 @@ def test_virtual_handles():
 
     vHandle = beach.getActorHandle( 'pongers' )
     resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
-    assert( resp is not None and resp is not False and 'time' in resp )
+    assert( resp.isSuccess and 'time' in resp.data )
 
 def test_prefix_virtual_handles():
     global beach
@@ -89,15 +87,37 @@ def test_flushing_single_node_cluster():
     assert( f )
 
     d = beach.getDirectory()
-    assert( isMessageSuccess( d ) )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
-    beach.close()
+
+
+def test_trust():
+    global beach
+
+    a1 = beach.addActor( 'Pong', 'pongers/trust', trustedIdents = [ 'abc' ] )
+    assert( isMessageSuccess( a1 ) )
+
+    a2 = beach.addActor( 'Pong', 'pongers/notrust', trustedIdents = [ 'def' ] )
+    assert( isMessageSuccess( a2 ) )
+
+    vHandle = beach.getActorHandle( 'pongers/trust', ident = 'abc' )
+    resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
+    assert( resp.isSuccess and 'time' in resp.data )
+
+    vHandle = beach.getActorHandle( 'pongers/notrust', ident = 'abc' )
+    resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
+    assert( not resp.isSuccess and resp.error == 'unauthorized' )
+
+    vHandle = beach.getActorHandle( 'pongers/notrust', ident = 'def' )
+    resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
+    assert( resp.isSuccess and 'time' in resp.data )
 
 
 def test_terminate_single_node_cluster():
     global h_hostmanager
+    global beach
+    beach.close()
     h_hostmanager.send_signal( signal.SIGQUIT )
 
     assert( 0 == h_hostmanager.wait() )
