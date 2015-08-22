@@ -59,7 +59,10 @@ class Beach ( object ):
         self._opsPort = self._configFile.get( 'ops_port', 4999 )
 
         if 0 == len( self._seedNodes ):
-            self._seedNodes.append( _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) ) )
+            mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )
+            if mainIfaceIp is None:
+                mainIfaceIp = _getIpv4ForIface( 'en0' )
+            self._seedNodes.append( mainIfaceIp )
 
         for s in self._seedNodes:
             self._connectToNode( s )
@@ -80,14 +83,14 @@ class Beach ( object ):
         info = None
         resp = zSock.request( { 'req' : 'host_info' } )
         if isMessageSuccess( resp ):
-            info = resp[ 'info' ]
+            info = resp[ 'data' ][ 'info' ]
         return info
 
     def _updateNodes( self ):
         toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
-        if nodes is not False:
-            for k in nodes[ 'nodes' ].keys():
+        if isMessageSuccess( nodes ):
+            for k in nodes[ 'data' ][ 'nodes' ].keys():
                 if k not in self._nodes:
                     self._connectToNode( k )
 
@@ -124,7 +127,14 @@ class Beach ( object ):
         '''
         return len( self._nodes )
 
-    def addActor( self, actorName, category, strategy = 'random', strategy_hint = None, realm = None, parameters = None, isIsolated = False ):
+    def addActor( self, actorName, category,
+                  strategy = 'random',
+                  strategy_hint = None,
+                  realm = None,
+                  parameters = None,
+                  isIsolated = False,
+                  secretIdent = None,
+                  trustedIdents = [] ):
         '''Spawn a new actor in the cluster.
 
         :param actorName: the name of the actor to spawn
@@ -137,6 +147,10 @@ class Beach ( object ):
             usually used for configurations
         :param isIsolated: if True the Actor will be spawned in its own process space to further
             isolate it from potential crashes of other Actors
+        :param secretIdent: a string used as a semi-secret token passed in requests sent by
+            vHandles produced by the Actor, can be used to segment or ward off vHandles
+            originating from untrusted machines
+        :param trustedIdents: list of idents to be trusted, if an empty list ALL will be trusted
 
         :returns: returns the reply from the node indicating if the actor was created successfully,
             use beach.utils.isMessageSuccess( response ) to check for success
@@ -192,6 +206,10 @@ class Beach ( object ):
                      'isolated' : isIsolated }
             if parameters is not None:
                 info[ 'parameters' ] = parameters
+            if secretIdent is not None:
+                info[ 'ident' ] = secretIdent
+            if trustedIdents is not None:
+                info[ 'trusted' ] = trustedIdents
             resp = node.request( info, timeout = 10 )
 
         return resp
@@ -205,6 +223,7 @@ class Beach ( object ):
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         resp = node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
         if isMessageSuccess( resp ):
+            resp = resp[ 'data' ]
             self._dirCache = resp
         else:
             resp = False
@@ -223,16 +242,20 @@ class Beach ( object ):
 
         return isFlushed
 
-    def getActorHandle( self, category, mode = 'random' ):
+    def getActorHandle( self, category, mode = 'random', nRetries = None, timeout = None, ident = None ):
         '''Get a virtual handle to actors in the cluster.
 
         :param category: the name of the category holding actors to get the handle to
         :param mode: the method actors are queried by the handle, currently
             handles: random
+        :param nRetries: number of times the handle should attempt to retry the request if
+            it times out
+        :param timeout: number of seconds to wait before re-issuing a request or failing
+        :param ident: identity token for trust between Actors
 
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm, category, mode )
+        v = ActorHandle( self._realm, category, mode, nRetries = nRetries, timeout = timeout, ident = ident )
         self._vHandles.append( v )
         return v
 

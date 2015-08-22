@@ -28,6 +28,7 @@ from beach.actor import *
 import yaml
 import time
 import logging
+import logging.handlers
 import traceback
 
 timeToStopEvent = Event()
@@ -111,6 +112,8 @@ class ActorHost ( object ):
                         actorName = data[ 'actor_name' ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
+                        ident = data.get( 'ident', None )
+                        trusted = data.get( 'trusted', [] )
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
@@ -127,7 +130,7 @@ class ActorHost ( object ):
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             actorName )( self, realm, ip, port, uid, parameters )
+                                             actorName )( self, realm, ip, port, uid, parameters, ident, trusted )
                         except:
                             actor = None
 
@@ -176,6 +179,7 @@ class ActorHost ( object ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger()
         self._logger.setLevel( logging.INFO )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = '/dev/log' ) )
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )

@@ -6,9 +6,12 @@ than pure performance.
 ## Design Basics
 Beach enables you to deploy python Actors onto a cluster (with varying strategies) without 
 having to care where they get loaded in the cluster. Additionally, it allows the Actors to
-query each other by issuing requests to Categories of Actors rather than specific Actors.
+query each other by issuing requests (or broadcasts) to Categories of Actors rather than specific Actors.
 This means different roles being fulfilled by Actors can leverage other roles without having
-to care where in the cluster, how many and what are the other Actors.
+to care where in the cluster, how many and what are the other Actors. Note that categories are 
+referenced as prefixes, meaning you can (and should) use the category to encode things like version
+or tag of some kind, like: 'my_crypt_actor/1.2', will match 'my_crypt_actor' but will allow you to
+also shutdown and upgrade certain versions (like tests and prototypes).
 
 Cluster nodes can be added and removed at runtime (no Actor migration yet). All communications
 between nodes are done in a peer-to-peer fashion, guided by a config file for the cluster defining
@@ -104,7 +107,7 @@ class Ping ( Actor ):
 
     def init( self, parameters ):
         print( "Called init of actor." )
-        self.zPong = self.getActorHandle( category = 'pongers' )
+        self.zPong = self.getActorHandle( category = 'myactors/pongers' )
         self.schedule( 5, self.pinger )
 
     def deinit( self ):
@@ -141,8 +144,8 @@ class Pong ( Actor ):
 from beach.beach_api import Beach
 beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
                realm = 'global' )
-a1 = beach.addActor( 'Ping', 'pingers', strategy = 'resource', parameters = {} )
-a2 = beach.addActor( 'Pong', 'pongers', strategy = 'affinity', strategy_hint = 'pingers', parameters = {} )
+a1 = beach.addActor( 'Ping', 'myactors/pingers', strategy = 'resource', parameters = {} )
+a2 = beach.addActor( 'Pong', 'myactors/pongers', strategy = 'affinity', strategy_hint = 'pingers', parameters = {} )
 
 beach.close()
 ```
@@ -152,8 +155,39 @@ beach.close()
 from beach.beach_api import Beach
 beach = Beach( os.path.join( curFileDir, 'multinode.yaml' ),
                realm = 'global' )
-vHandle = beach.getActorHandle( 'pongers' )
+vHandle = beach.getActorHandle( 'myactors/pongers' )
 resp = vHandle.request( 'ping', data = { 'source' : 'outside' }, timeout = 10 )
 
 beach.close()
 ```
+
+## Advanced Features
+### Broadcast
+Instead of using a vHandle.request, you may broadcast a message to all members of a category. This
+feature is mainly there to enable upcoming features (a manager). Note that when broadcasting, no
+response is checked and the .broadcast call returns immediately.
+
+### Isolated Actors
+A flag called isIsolated is available to addActor. When set to True (default False), the new Actor will
+be created in its own instance process on a node in the cluster. This new process will not be shared with 
+any other Actor. This reduces a bit the efficiency of the system if you create a lot of isolated Actors
+but it also limits the potential dammage that Actor can do to other Actors (if it crashes it doesn't 
+take any other Actor down) as well as protects against other unstable Actors. This should be used
+for new potentially-unstable Actors or more critical Actors.
+
+### Retries
+By default, a vHandle request() will send one request to one Actor in the cloud, if that request times out
+or fails, that fact will be reported immediately to the caller. It's up to the caller to handle failure.
+This new nRetries parameter allows the caller to let the vHandle retry the request up to N times (on potentially
+N different Actors). This means it's critical for those requests to be idempotent. This is much nicer
+for Actor programming (not worrying about failures, it's what beach was developed for after all) but
+the idempotent requirement can be demanding which is why it defaults to 0 retries.
+
+### Trust
+An Actor can be created with a list of trusted tokens (ident). If the list is empty, all idents are trusted
+(or no ident at all). A virtual handle can be created with an ident (either through the beach_api or
+through an Actor). This mechanism is used to provide access to a vHandle from an untrusted environment while
+limiting it to certain Actors. For example, a web server could have a vHandle to the cloud, we may not trust
+the webserver since it's likely to get exploited first). In this situation you could setup a common ident
+for all Actors needing to talk together in your cloud, and a second ident for the untrusted web server to talk
+to the "entry point" Actor in your cloud, limiting exposure.

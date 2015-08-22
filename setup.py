@@ -37,5 +37,6 @@ setup( name = 'beach',
                             'pyzmq',
                             'netifaces',
                             'pyyaml',
-                            'psutil' ],
+                            'psutil',
+                            'prefixtree' ],
        long_description = 'Python private compute cloud framework with a focus on ease of deployment and expansion rather than pure performance.' )
