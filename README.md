@@ -3,6 +3,11 @@
 Python private compute cloud framework with a focus on ease of deployment and expansion rather 
 than pure performance.
 
+## More resources
+- Google Groups: https://groups.google.com/forum/#!forum/py-beach
+- Google Groups Mailing List: py-beach@googlegroups.com
+- Pypi: https://pypi.python.org/pypi/beach
+
 ## Design Basics
 Beach enables you to deploy python Actors onto a cluster (with varying strategies) without 
 having to care where they get loaded in the cluster. Additionally, it allows the Actors to
@@ -106,17 +111,17 @@ import time
 class Ping ( Actor ):
 
     def init( self, parameters ):
-        print( "Called init of actor." )
+        self.log( "Called init of actor." )
         self.zPong = self.getActorHandle( category = 'myactors/pongers' )
         self.schedule( 5, self.pinger )
 
     def deinit( self ):
-        print( "Called deinit of actor." )
+        self.log( "Called deinit of actor." )
 
     def pinger( self ):
-        print( "Sending ping" )
+        self.log( "Sending ping" )
         data = self.zPong.request( 'ping', data = { 'time' : time.time() }, timeout = 10 )
-        print( "Received pong: %s" % str( data ) )
+        self.log( "Received pong: %s" % str( data ) )
 ```
 
 #### Pong Actor
@@ -128,15 +133,15 @@ import time
 class Pong ( Actor ):
 
     def init( self, parameters ):
-        print( "Called init of actor." )
+        self.log( "Called init of actor." )
         self.handle( 'ping', self.ponger )
 
     def deinit( self ):
-        print( "Called deinit of actor." )
+        self.log( "Called deinit of actor." )
 
     def ponger( self, msg ):
-        print( "Received ping: %s" % str( msg ) )
-        return { 'time' : time.time() }
+        self.log( "Received ping: %s" % str( msg ) )
+        return ( True,  { 'time' : time.time() } )
 ```
 
 #### Startup script
