@@ -31,11 +31,11 @@ def _sanitizeJson( obj ):
             value = str( value )
         elif type( value ) is datetime.datetime:
             value = value.strftime( '%Y-%m-%d %H:%M:%S' )
+        elif type( value ) not in ( str, unicode, bool, int, float ):
+            value = str( value )
         return value
     
     def _sanitizeJsonStruct( obj ):
-        data = None
-        
         if issubclass( type( obj ), dict ) or type( obj ) is PrefixDict:
             data = {}
             for key, value in obj.iteritems():
