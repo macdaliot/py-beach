@@ -201,3 +201,9 @@ to the "entry point" Actor in your cloud, limiting exposure.
 Each unique request (so across retries and across broadcast) has a unique UUID ID field. This means it can be
 used to keep changes idempotent in the event of a failure-retry. For a short discussion of this kind of logic
 see http://www.ebaytechblog.com/2012/08/14/cassandra-data-modeling-best-practices-part-2/ (search for idempotent).
+
+## Misc Setup
+### Automated Deployment
+An example of automated deployment is included in /examples/salt using the Salt framework (http://saltstack.com/).
+You'll note that in order for it to work you need to change the salt-master definition in firewall.sls and that
+it is generally setup (the firewall component) to work on DigitalOcean's Private Networking.
