@@ -484,6 +484,21 @@ class ActorHandle ( object ):
 
         return ret
 
+    def shoot( self, requestType, data = {} ):
+        '''Send a message to the one actor without waiting for a response.
+
+        :param requestType: the type of request to issue
+        :param data: a dict of the data associated with the request
+        :returns: True since no validation on the reception or reply
+            the endpoint is made
+        '''
+        ret = True
+
+        gevent.spawn( self.request, requestType, data )
+        gevent.sleep( 0 )
+
+        return ret
+
     def isAvailable( self ):
         '''Checks to see if any actors are available to respond to a query of this handle.
 
