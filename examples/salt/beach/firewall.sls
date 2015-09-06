@@ -16,7 +16,7 @@ firewall-loopback-out:
 
 define-master:
     host.present:
-        - ip: 10.1.1.1
+        - ip: 10.132.124.33
         - name: beach-master
 
 firewall-ntp:
@@ -33,7 +33,6 @@ firewall-ntp:
     cron.present:
         - name: ntpdate ntp.ubuntu.com
         - hour: 1
-        - identifier: time sync
 
 firewall-base-out:
     iptables.append:
@@ -102,119 +101,6 @@ firewall-tighten-output:
         - policy: DROP
         - family: ipv4
         - save: True
-        - require_in:
-
-firewall-cloud-mirror-https:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: mirrors.digitalocean.com
-        - dport: 443
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-cloud-mirror-http:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: mirrors.digitalocean.com
-        - dport: 80
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-ubuntu-security-https:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: security.ubuntu.com
-        - dport: 443
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-ubuntu-security-http:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: security.ubuntu.com
-        - dport: 80
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-pypi-https:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: pypi.python.org
-        - dport: 443
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-pypi-http:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: pypi.python.org
-        - dport: 80
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-cloud-launchpad-https:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: ppa.launchpad.net
-        - dport: 443
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
-
-firewall-cloud-launchpad-http:
-    iptables.append:
-        - table: filter
-        - chain: OUTPUT
-        - jump: ACCEPT
-        - match: state
-        - connstate: NEW
-        - destination: ppa.launchpad.net
-        - dport: 80
-        - proto: tcp
-        - save: True
-        - require_in:
-            - iptables: firewall-tighten-output
 
 firewall-salt-1:
     iptables.append:
@@ -261,8 +147,8 @@ firewall-ssh:
         - require_in:
             - iptables: firewall-tighten-input
 
-{% for node_name, node_ip in salt['mine.get']('beach-node-*', 'network.ip_addrs').items()  %}
-{% set node_ip = node_ip[ 0 ] %}
+{% for node_name, node_ip in salt['mine.get']('beach-node-*', 'network.interfaces').items()  %}
+{% set node_ip = node_ip[ 'eth1' ][ 'inet' ][ 0 ][ 'address' ] %}
 beach_node_comms-{{ node_name }}-out:
     iptables.append:
         - table: filter
