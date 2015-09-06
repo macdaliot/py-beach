@@ -17,6 +17,22 @@ function avg_array( arr )
     return total / arr.length;
 }
 
+function set_connected( isConnected )
+{
+    if( !isConnected )
+    {
+        $('#status_indicator').removeClass( 'glyphicon-ok' );
+        $('#status_indicator').addClass( 'glyphicon-remove' );
+        $('#status_indicator').css( 'color', 'red' );
+    }
+    else
+    {
+        $('#status_indicator').removeClass( 'glyphicon-remove' );
+        $('#status_indicator').addClass( 'glyphicon-ok' );
+        $('#status_indicator').css( 'color', 'green' );
+    }
+}
+
 function display_data( data )
 {
     $('#num_nodes').text( data.n_nodes );
@@ -57,12 +73,28 @@ function display_data( data )
     chart_mem.render();
     chart_cpu.render();
 
-    setTimeout( do_refresh, 5000 );
+    $('#realm_dir').empty();
+    for( var k in data.dir.realms )
+    {
+        var realm = k;
+        var cats = data.dir.realms[ k ];
+        for( var c in cats )
+        {
+            var category_name = c;
+            var cat_num = Object.keys( cats[ c ] ).length;
+            $('#realm_dir').append( $("<tr>").append( $("<td>").text( realm ) )
+                                             .append( $("<td>").text( category_name ) )
+                                             .append( $("<td>").text( cat_num ) ) );
+        }
+    }
+
+    set_connected( true );
 }
 
 function do_refresh()
 {
-    $.get( '/info', display_data, 'json' );
+    $.get( '/info', display_data, 'json' ).fail(function(){set_connected(false);})
+                                          .always(function(){setTimeout( do_refresh, 5000 );});
 }
 
 $(function() {
