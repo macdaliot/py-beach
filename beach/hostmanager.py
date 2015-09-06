@@ -445,7 +445,7 @@ class HostManager ( object ):
 
                     if isBrandNew or not instance[ 'isolated' ]:
                         proc = subprocess.Popen( [ 'python',
-                                                   '%s/ActorHost.py' % self.py_beach_dir,
+                                                   '%s/actorhost.py' % self.py_beach_dir,
                                                     self.configFilePath,
                                                     instance[ 'id' ] ] )
 
