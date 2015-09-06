@@ -7,6 +7,7 @@
 ###############################################################################
 
 from setuptools import setup, Command
+import os
 import beach
 
 class PyTest( Command ):
@@ -23,6 +24,10 @@ class PyTest( Command ):
         errno = subprocess.call( [ sys.executable, 'runtests.py', '-v', 'tests/' ] )
         raise SystemExit( errno )
 
+dashboardFiles = []
+for root, dirnames, filenames in os.walk( 'beach/dashboard/' ):
+    dashboardFiles.append( ( root, [ os.path.join( root, x ) for x in filenames ] ) )
+
 setup( name = 'beach',
        version = beach.__version__,
        description = 'Simple private python cloud framework',
@@ -31,6 +36,7 @@ setup( name = 'beach',
        author_email = 'maxime@refractionpoint.com',
        license = 'GPLv2',
        packages = [ 'beach', 'beach.dashboard' ],
+       data_files = dashboardFiles,
        zip_safe = False,
        cmdclass = {'test': PyTest},
        install_requires = [ 'gevent',
