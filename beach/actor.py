@@ -173,11 +173,11 @@ class Actor( gevent.Greenlet ):
                         else:
                             status = ret[ 0 ]
                             if status is True:
-                                data = ret[ 1 ] if 2 == len( ret ) else None
+                                data = ret[ 1 ] if 2 == len( ret ) else {}
                                 ret = successMessage( data )
                             else:
                                 err = ret[ 1 ] if 2 <= len( ret ) else 'error'
-                                data = ret[ 2 ] if 3 == len( ret ) else None
+                                data = ret[ 2 ] if 3 == len( ret ) else {}
                                 ret = errorMessage( err, data = data )
                 z.send( ret )
             else:
@@ -186,7 +186,7 @@ class Actor( gevent.Greenlet ):
         self.log( "Stopping processing Actor ops requests" )
 
     def _defaultHandler( self, msg ):
-        return errorMessage( 'request type not supported by actor' )
+        return ( False, 'request type not supported by actor' )
 
     def stop( self ):
         '''Stop the actor and its threads.'''
@@ -297,12 +297,12 @@ class ActorResponse( object ):
             self.isTimedOut = True
             self.isSuccess = False
             self.error = 'timeout'
-            self.data = None
+            self.data = {}
         else:
             self.isTimedOut = False
             self.isSuccess = msg[ 'status' ][ 'success' ]
-            self.error = msg[ 'status' ].get( 'error', None )
-            self.data = msg.get( 'data', None )
+            self.error = msg[ 'status' ].get( 'error', '' )
+            self.data = msg.get( 'data', {} )
 
     def __str__( self ):
         return 'ActorResponse( isSuccess: %s, isTimedOut: %s, error: %s, data: %s )' % ( self.isSuccess,
@@ -480,6 +480,21 @@ class ActorHandle ( object ):
             if z is not None:
                 gevent.spawn( z.request, envelope )
 
+        gevent.sleep( 0 )
+
+        return ret
+
+    def shoot( self, requestType, data = {} ):
+        '''Send a message to the one actor without waiting for a response.
+
+        :param requestType: the type of request to issue
+        :param data: a dict of the data associated with the request
+        :returns: True since no validation on the reception or reply
+            the endpoint is made
+        '''
+        ret = True
+
+        gevent.spawn( self.request, requestType, data )
         gevent.sleep( 0 )
 
         return ret

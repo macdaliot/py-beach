@@ -21,18 +21,13 @@
 '''
 
 import cmd
-import readline
 import argparse
-import sys
 import inspect
 import shlex
-import uuid
-import urllib
+import yaml
 import json
 import traceback
-import os
 from beach.beach_api import Beach
-from beach.utils import *
 
 def report_errors( func ):
     def silenceit( *args, **kwargs ):
@@ -47,7 +42,7 @@ class BeachShell ( cmd.Cmd ):
     intro = 'Welcome to Beach shell.   Type help or ? to list commands.\n'
     prompt = '(beach) '
 
-    def __init__( self, configFile ):
+    def __init__( self, configFile, realm = None ):
         cmd.Cmd.__init__( self )
         self.realm = 'global'
         self.updatePrompt()
@@ -252,8 +247,25 @@ class BeachShell ( cmd.Cmd ):
         self.printOut( resp )
 
 if __name__ == '__main__':
-    if 2 != len( sys.argv ):
-        print( "Usage: beach_cli.py pathToBeachConfigFile" )
+    conf = None
+
+    parser = argparse.ArgumentParser( description = 'CLI for a Beach cluster.' )
+
+    parser.add_argument( 'config',
+                         type = str,
+                         default = None,
+                         help = 'cluster config file' )
+
+    args = parser.parse_args()
+    if args.config is None:
+        with open( '~/.beach', 'r' ) as f:
+            userConf = yaml.parse( f.read() )
+            if 'config' in userConf:
+                conf = userConf[ 'config' ]
+
+    if conf is None:
+        print( "Usage: beach_cli.py pathToBeachConfigFile\n"
+               "If non config file is present, the one defined in ~/.beach will be used." )
     else:
-        app = BeachShell( sys.argv[ 1 ] )
+        app = BeachShell( conf )
         app.cmdloop()
