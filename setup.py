@@ -7,6 +7,7 @@
 ###############################################################################
 
 from setuptools import setup, Command
+import glob
 import os
 import beach
 
@@ -24,9 +25,11 @@ class PyTest( Command ):
         errno = subprocess.call( [ sys.executable, 'runtests.py', '-v', 'tests/' ] )
         raise SystemExit( errno )
 
+dashDir = 'beach/dashboard/'
 dashboardFiles = []
-for root, dirnames, filenames in os.walk( 'beach/dashboard/' ):
-    dashboardFiles.append( ( root, [ os.path.join( root, x ) for x in filenames ] ) )
+for root, dirnames, filenames in os.walk( dashDir ):
+    for f in filenames:
+        dashboardFiles.append( os.path.join( root, f ).replace( dashDir, '' ) )
 
 setup( name = 'beach',
        version = beach.__version__,
@@ -36,7 +39,8 @@ setup( name = 'beach',
        author_email = 'maxime@refractionpoint.com',
        license = 'GPLv2',
        packages = [ 'beach', 'beach.dashboard' ],
-       data_files = dashboardFiles,
+       #data_files = dashboardFiles,
+       package_data = { 'beach.dashboard' : dashboardFiles },
        zip_safe = False,
        cmdclass = {'test': PyTest},
        install_requires = [ 'gevent',
