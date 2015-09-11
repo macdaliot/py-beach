@@ -262,10 +262,12 @@ if __name__ == '__main__':
             userConf = yaml.parse( f.read() )
             if 'config' in userConf:
                 conf = userConf[ 'config' ]
+    else:
+        conf = args.config
 
     if conf is None:
         print( "Usage: beach_cli.py pathToBeachConfigFile\n"
-               "If non config file is present, the one defined in ~/.beach will be used." )
+               "If no config file is present, the one defined in ~/.beach will be used." )
     else:
         app = BeachShell( conf )
         app.cmdloop()
