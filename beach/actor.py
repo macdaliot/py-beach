@@ -157,6 +157,7 @@ class Actor( gevent.Greenlet ):
 
                 if 0 != len( self._trusted ) and request.ident not in self._trusted:
                     ret = errorMessage( 'unauthorized' )
+                    self.log( "Received unauthorized request." )
                 else:
                     handler = self._handlers.get( request.req, self._defaultHandler )
                     try:
@@ -165,6 +166,7 @@ class Actor( gevent.Greenlet ):
                         raise
                     except:
                         ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
+                        self.logCritical( ret )
                     else:
                         if ( not hasattr( ret, '__iter__' ) or
                              0 == len( ret ) or
@@ -265,7 +267,7 @@ class Actor( gevent.Greenlet ):
             handles: random
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm, category, mode )
+        v = ActorHandle( self._realm, category, mode, ident = self._ident )
         self._vHandles.append( v )
         return v
 

@@ -43,7 +43,7 @@ def _sanitizeJson( obj ):
                     data[ key ] = _sanitizeJsonStruct( value )
                 except AttributeError:
                     data[ key ] = _sanitizeJsonValue( value )
-        elif issubclass( type( obj ), list ):
+        elif issubclass( type( obj ), list ) or issubclass( type( obj ), tuple ):
             data = []
             for value in obj:
                 try:
@@ -131,7 +131,7 @@ class _ZSocket( object ):
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
-            raise
+            self._buildSocket()
         else:
             isSuccess = True
 
@@ -143,13 +143,13 @@ class _ZSocket( object ):
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    data = msgpack.unpackb( self.s.recv() )
+                    data = msgpack.unpackb( self.s.recv(), use_list = True )
             else:
-                data = msgpack.unpackb( self.s.recv() )
+                data = msgpack.unpackb( self.s.recv(), use_list = True )
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
-            raise
+            self._buildSocket()
 
         return data
     
@@ -194,7 +194,7 @@ class _ZMREQ ( object ):
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
                 z.send( msgpack.packb( _sanitizeJson( data ) ) )
-                result = msgpack.unpackb( z.recv() )
+                result = msgpack.unpackb( z.recv(), use_list = True )
         except _TimeoutException:
             z.close( linger = 0 )
             z = self._newSocket()
@@ -259,9 +259,9 @@ class _ZMREP ( object ):
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        data = msgpack.unpackb( self._z.recv() )
+                        data = msgpack.unpackb( self._z.recv(), use_list = True )
                 else:
-                    data = msgpack.unpackb( self._z.recv() )
+                    data = msgpack.unpackb( self._z.recv(), use_list = True )
             except _TimeoutException:
                 data = False
             except zmq.ZMQError, e:
