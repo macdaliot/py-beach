@@ -198,6 +198,8 @@ class _ZMREQ ( object ):
         except _TimeoutException:
             z.close( linger = 0 )
             z = self._newSocket()
+        except zmq.ZMQError, e:
+            z = self._newSocket()
 
         self._available.append( z )
 
@@ -232,8 +234,12 @@ class _ZMREP ( object ):
         self._proxySocks = ( None, None )
 
     class _childSock( object ):
-        def __init__( self, z ):
-            self._z = z
+        def __init__( self, z_func ):
+            self._z_func = z_func
+            self._buildSocket()
+
+        def _buildSocket( self ):
+            self._z = self._z_func()
 
         def send( self, data, timeout = None ):
             isSuccess = False
@@ -245,9 +251,11 @@ class _ZMREP ( object ):
                 else:
                     self._z.send( msgpack.packb( _sanitizeJson( data ) ) )
             except _TimeoutException:
-                isSuccess = False
+                self._z.close( linger = 0 )
+                self._buildSocket()
             except zmq.ZMQError, e:
-                raise
+                self._z.close( linger = 0 )
+                self._buildSocket()
             else:
                 isSuccess = True
 
@@ -265,12 +273,13 @@ class _ZMREP ( object ):
             except _TimeoutException:
                 data = False
             except zmq.ZMQError, e:
-                raise
+                self._z.close( linger = 0 )
+                self._buildSocket()
 
             return data
 
     def getChild( self ):
-        return self._childSock( self._newSocket() )
+        return self._childSock( self._newSocket )
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REP )

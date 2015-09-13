@@ -486,17 +486,24 @@ class ActorHandle ( object ):
 
         return ret
 
-    def shoot( self, requestType, data = {} ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Send a message to the one actor without waiting for a response.
 
         :param requestType: the type of request to issue
         :param data: a dict of the data associated with the request
+        :param timeout: the number of seconds to wait for a response
+        :param key: when used in 'affinity' mode, the key is the main parameter
+            to evaluate to determine which Actor to send the request to, in effect
+            it is the key to the hash map of Actors
+        :param nRetries: the number of times the request will be re-sent if it
+            times out, meaning a timeout of 5 and a retry of 3 could result in
+            a request taking 15 seconds to return
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
         ret = True
 
-        gevent.spawn( self.request, requestType, data )
+        gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries )
         gevent.sleep( 0 )
 
         return ret
