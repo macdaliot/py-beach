@@ -259,15 +259,18 @@ class Actor( gevent.Greenlet ):
         '''
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
 
-    def getActorHandle( self, category, mode = 'random' ):
+    def getActorHandle( self, category, mode = 'random', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
 
         :param category: the name of the category holding actors to get the handle to
         :param mode: the method actors are queried by the handle, currently
             handles: random
+        :param nRetries: number of times the handle should attempt to retry the request if
+            it times out
+        :param timeout: number of seconds to wait before re-issuing a request or failing
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm, category, mode, ident = self._ident )
+        v = ActorHandle( self._realm, category, mode, ident = self._ident, nRetries = nRetries, timeout = timeout )
         self._vHandles.append( v )
         return v
 
