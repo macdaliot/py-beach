@@ -110,6 +110,7 @@ class ActorHost ( object ):
                         z.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
+                        className = actorName[ actorName.rfind( '/' ) + 1 : ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
@@ -130,7 +131,7 @@ class ActorHost ( object ):
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             actorName )( self, realm, ip, port, uid, parameters, ident, trusted )
+                                             className )( self, realm, ip, port, uid, parameters, ident, trusted )
                         except:
                             actor = None
 

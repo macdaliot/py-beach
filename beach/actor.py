@@ -76,6 +76,7 @@ class Actor( gevent.Greenlet ):
         fileName = '%s/%s.py' % ( os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) ), libName )
         with open( fileName, 'r' ) as hFile:
             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+        libName = libName[ libName.rfind( '/' ) + 1 : ]
         mod = imp.load_source( '%s_%s' % ( libName, fileHash ), fileName )
 
         if className is not None:

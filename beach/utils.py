@@ -143,9 +143,9 @@ class _ZSocket( object ):
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    data = msgpack.unpackb( self.s.recv(), use_list = True )
+                    data = msgpack.unpackb( self.s.recv(), use_list = False )
             else:
-                data = msgpack.unpackb( self.s.recv(), use_list = True )
+                data = msgpack.unpackb( self.s.recv(), use_list = False )
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
@@ -194,7 +194,7 @@ class _ZMREQ ( object ):
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
                 z.send( msgpack.packb( _sanitizeJson( data ) ) )
-                result = msgpack.unpackb( z.recv(), use_list = True )
+                result = msgpack.unpackb( z.recv(), use_list = False )
         except _TimeoutException:
             z.close( linger = 0 )
             z = self._newSocket()
@@ -267,9 +267,9 @@ class _ZMREP ( object ):
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        data = msgpack.unpackb( self._z.recv(), use_list = True )
+                        data = msgpack.unpackb( self._z.recv(), use_list = False )
                 else:
-                    data = msgpack.unpackb( self._z.recv(), use_list = True )
+                    data = msgpack.unpackb( self._z.recv(), use_list = False )
             except _TimeoutException:
                 data = False
             except zmq.ZMQError, e:
