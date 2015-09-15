@@ -4,6 +4,7 @@ Python private compute cloud framework with a focus on ease of deployment and ex
 than pure performance.
 
 ## More resources
+- Official Page: http://www.refractionpoint.com/beach.html
 - Google Groups: https://groups.google.com/forum/#!forum/py-beach
 - Google Groups Mailing List: py-beach@googlegroups.com
 - Pypi: https://pypi.python.org/pypi/beach
@@ -201,6 +202,11 @@ to the "entry point" Actor in your cloud, limiting exposure.
 Each unique request (so across retries and across broadcast) has a unique UUID ID field. This means it can be
 used to keep changes idempotent in the event of a failure-retry. For a short discussion of this kind of logic
 see http://www.ebaytechblog.com/2012/08/14/cassandra-data-modeling-best-practices-part-2/ (search for idempotent).
+
+### Dashboard
+A web dashboard is available. It displays basic host health information as well as information on the Actors, Realms 
+and categories present in the cluster. It is based on the Python SimpleHTTPServer which makes it trivial to 
+start on any node and get cluster-wide information. Simply run: python -m beach.dashboard ./cluster.yaml
 
 ## Misc Setup
 ### Automated Deployment

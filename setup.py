@@ -34,7 +34,7 @@ for root, dirnames, filenames in os.walk( dashDir ):
 setup( name = 'beach',
        version = beach.__version__,
        description = 'Simple private python cloud framework',
-       url = 'https://github.com/refractionPOINT/py-beach',
+       url = 'http://www.refractionpoint.com/beach.html',
        author = 'refractionPOINT',
        author_email = 'maxime@refractionpoint.com',
        license = 'GPLv2',
