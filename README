@@ -205,7 +205,7 @@ see http://www.ebaytechblog.com/2012/08/14/cassandra-data-modeling-best-practice
 
 ### Dashboard
 A web dashboard is available. It displays basic host health information as well as information on the Actors, Realms 
-and categories present in the cluster. It is based on the Python SimpleHTTPServer which makes it trivial to 
+and categories present in the cluster. It is based on a standalone Python web server which makes it trivial to
 start on any node and get cluster-wide information. Simply run: python -m beach.dashboard ./cluster.yaml
 
 ## Misc Setup
