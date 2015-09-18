@@ -25,6 +25,8 @@ import msgpack
 
 class _TimeoutException(Exception): pass
 
+global_z_context = zmq.Context()
+
 def _sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):
         if type( value ) is uuid.UUID:
@@ -97,7 +99,9 @@ def successMessage( data = None ):
 class _ZSocket( object ):
     
     def __init__( self, socketType, url, isBind = False ):
-        self.ctx = zmq.Context()
+        global global_z_context
+        self.ctx = global_z_context
+        self.s = None
         self._socketType = socketType
         self._url = url
         self._isBind = isBind
@@ -106,6 +110,8 @@ class _ZSocket( object ):
         self._buildSocket()
 
     def _buildSocket( self ):
+        if self.s is not None:
+            self.s.close()
         self.s = self.ctx.socket( self._socketType )
         self.s.set( zmq.LINGER, 0 )
         if self._isBind:
@@ -164,14 +170,15 @@ class _ZSocket( object ):
         return data
 
     def close( self ):
-        self.s.close()
+        self.s.close( linger = 0 )
 
 class _ZMREQ ( object ):
     def __init__( self, url, isBind ):
+        global global_z_context
         self._available = []
         self._url = url
         self._isBind = isBind
-        self._ctx = zmq.Context()
+        self._ctx = global_z_context
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REQ )
@@ -199,6 +206,7 @@ class _ZMREQ ( object ):
             z.close( linger = 0 )
             z = self._newSocket()
         except zmq.ZMQError, e:
+            z.close( linger = 0 )
             z = self._newSocket()
 
         self._available.append( z )
@@ -207,10 +215,11 @@ class _ZMREQ ( object ):
 
 class _ZMREP ( object ):
     def __init__( self, url, isBind ):
+        global global_z_context
         self._available = []
         self._url = url
         self._isBind = isBind
-        self._ctx = zmq.Context()
+        self._ctx = global_z_context
         self._threads = gevent.pool.Group()
         self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
 
@@ -236,9 +245,12 @@ class _ZMREP ( object ):
     class _childSock( object ):
         def __init__( self, z_func ):
             self._z_func = z_func
+            self._z = None
             self._buildSocket()
 
         def _buildSocket( self ):
+            if self._z is not None:
+                self._z.close()
             self._z = self._z_func()
 
         def send( self, data, timeout = None ):

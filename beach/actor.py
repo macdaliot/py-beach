@@ -377,12 +377,14 @@ class ActorHandle ( object ):
         self._srcSockets = []
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
+        self._quick_refresh_timeout = 15
 
     def _svc_refreshDir( self ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
-        if 0 == len( self._endpoints ):
+        if 0 == len( self._endpoints ) and 0 != self._quick_refresh_timeout:
+            self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
         else:

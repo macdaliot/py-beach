@@ -222,7 +222,7 @@ class HostManager ( object ):
         
         return port
     
-    def _getInstanceForActor( self, uid, actorName, realm, isIsolated = False ):
+    def _getInstanceForActor( self, isIsolated = False ):
         instance = None
 
         if isIsolated:
@@ -232,10 +232,16 @@ class HostManager ( object ):
         elif self.instance_strategy == 'random':
             instance = random.choice( [ x for x in self.processes if x[ 'isolated' ] is False ] )
         
-        if instance is not None:
-            self.actorInfo.setdefault( uid, {} )[ 'instance' ] = instance
-        
         return instance
+
+    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters ):
+        info = self.actorInfo.setdefault( uid, {} )
+        info[ 'instance' ] = instance
+        info[ 'name' ] = actorName
+        info[ 'realm' ] = realm
+        info[ 'isolated' ] = isIsolated
+        info[ 'owner' ] = owner
+        info[ 'params' ] = parameters
 
     def _updateDirectoryWith( self, curDir, newDir ):
         for k, v in newDir.iteritems():
@@ -290,21 +296,27 @@ class HostManager ( object ):
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
+                        owner = data.get( 'owner', None )
                         isIsolated = data.get( 'isolated', False )
                         uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
-                        instance = self._getInstanceForActor( uid, actorName, realm, isIsolated )
-                        newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
-                                                                 'actor_name' : actorName,
-                                                                 'realm' : realm,
-                                                                 'uid' : uid,
-                                                                 'ip' : self.ifaceIp4,
-                                                                 'port' : port,
-                                                                 'parameters' : parameters,
-                                                                 'ident' : ident,
-                                                                 'trusted' : trusted,
-                                                                 'isolated' : isIsolated },
-                                                               timeout = 10 )
+                        instance = self._getInstanceForActor( isIsolated )
+                        if instance is not None:
+                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters )
+                            newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
+                                                                     'actor_name' : actorName,
+                                                                     'realm' : realm,
+                                                                     'uid' : uid,
+                                                                     'ip' : self.ifaceIp4,
+                                                                     'port' : port,
+                                                                     'parameters' : parameters,
+                                                                     'ident' : ident,
+                                                                     'trusted' : trusted,
+                                                                     'isolated' : isIsolated },
+                                                                   timeout = 10 )
+                        else:
+                            newMsg = False
+
                         if isMessageSuccess( newMsg ):
                             self._log( "New actor loaded (isolation = %s), adding to directory" % isIsolated )
                             self.directory.setdefault( realm,
@@ -403,6 +415,8 @@ class HostManager ( object ):
                         z.send( successMessage() )
                     else:
                         z.send( errorMessage( 'missing information to update directory' ) )
+                elif 'get_full_mtd' == action:
+                    z.send( successMessage( { 'mtd' : self.actorInfo } ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:

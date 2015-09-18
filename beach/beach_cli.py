@@ -98,7 +98,7 @@ class BeachShell ( cmd.Cmd ):
 
     @report_errors
     def do_get_dir( self, s ):
-        '''Retrieve a specific user's profile by UID.'''
+        '''Retrieve the directory of all Actors.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
         parser.add_argument( '-c', '--category',
                              type = str,
@@ -126,7 +126,7 @@ class BeachShell ( cmd.Cmd ):
 
     @report_errors
     def do_flush( self, s ):
-        '''Retrieve a specific user's profile by UID.'''
+        '''Remove all Actors from all nodes in the cluster.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
 
         parser.add_argument( '--confirm',
@@ -146,7 +146,7 @@ class BeachShell ( cmd.Cmd ):
 
     @report_errors
     def do_add_actor( self, s ):
-        '''Retrieve a specific user's profile by UID.'''
+        '''Add a new Actor to the cluster.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
         parser.add_argument( '-n', '--name',
                              type = str,
@@ -243,6 +243,15 @@ class BeachShell ( cmd.Cmd ):
             return
 
         resp = self.beach.getClusterHealth()
+
+        self.printOut( resp )
+
+    @report_errors
+    def do_get_mtd( self, s ):
+        '''Retrieve metadata from all nodes.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+
+        resp = self.beach.getAllNodeMetadata()
 
         self.printOut( resp )
 

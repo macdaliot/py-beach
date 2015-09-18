@@ -134,7 +134,8 @@ class Beach ( object ):
                   parameters = None,
                   isIsolated = False,
                   secretIdent = None,
-                  trustedIdents = [] ):
+                  trustedIdents = [],
+                  owner = None ):
         '''Spawn a new actor in the cluster.
 
         :param actorName: the name of the actor to spawn
@@ -151,6 +152,7 @@ class Beach ( object ):
             vHandles produced by the Actor, can be used to segment or ward off vHandles
             originating from untrusted machines
         :param trustedIdents: list of idents to be trusted, if an empty list ALL will be trusted
+        :param owner: an identifier for the owner of the Actor, useful for shared environments
 
         :returns: returns the reply from the node indicating if the actor was created successfully,
             use beach.utils.isMessageSuccess( response ) to check for success
@@ -210,6 +212,8 @@ class Beach ( object ):
                 info[ 'ident' ] = secretIdent
             if trustedIdents is not None:
                 info[ 'trusted' ] = trustedIdents
+            if owner is not None:
+                info[ 'owner' ] = owner
             resp = node.request( info, timeout = 10 )
 
         return resp
@@ -305,3 +309,14 @@ class Beach ( object ):
             health[ name ] = node[ 'info' ]
 
         return health
+
+    def getAllNodeMetadata( self ):
+        '''Retrieve metadata about actors from all nodes.
+
+        :returns: the metadata of nodes of the cluster
+        '''
+        mtd = {}
+        for nodename, node in self._nodes.items():
+            mtd[ nodename ] = node[ 'socket' ].request( { 'req' : 'get_full_mtd' }, timeout = 10 )
+
+        return mtd
