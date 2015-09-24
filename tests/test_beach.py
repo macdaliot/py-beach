@@ -105,6 +105,11 @@ def test_trust():
 
 def test_group():
     global beach
+    a1 = beach.addActor( 'Pong', 'pongers/notrust/1.0', trustedIdents = [ 'def' ], parameters={"a":6} )
+    assert( isMessageSuccess( a1 ) )
+    a2 = beach.addActor( 'Pong', 'pongers/notrust/2.0', trustedIdents = [ 'def' ], parameters={"a":7} )
+    assert( isMessageSuccess( a2 ) )
+
     g1 = beach.getActorHandleGroup( 'pongers/' )
 
     gevent.sleep( 1 )

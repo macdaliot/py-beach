@@ -214,15 +214,16 @@ sending the data to a single Actor under each sub-category. It assumes all sub-c
 This means you can send data to categories dynamically without knowing about them at "compile" time. So with the
 following categories:
 ```
-/foo/bars
+/foo/bars/1.0
+/foo/bars/2.0
 /foo/barz
 /foo/barzzz
 /some/other
 ```
 
 By creating an ActorHandleGroup with the categoryRoot '/foo/' and shoot-ing it a message, ONE actor
-in /foo/bars would get it, ONE actor in /foo/barz would get it and ONE actor in /foo/barzzz would get it but NONE
-in /some/other would get it. If another actor in category /foo/omg is spawned after the fact, the ActorHandleGroup
+in /foo/bars/* would get it, ONE actor in /foo/barz/* would get it and ONE actor in /foo/barzzz/* would get it but NONE
+in /some/other/* would get it. If another actor in category /foo/omg is spawned after the fact, the ActorHandleGroup
 will automatically detect it and begin sending ONE actor in the new category a copy of the requets.
 
 ## Misc Setup
