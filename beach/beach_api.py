@@ -31,6 +31,7 @@ import gevent
 import gevent.pool
 import gevent.event
 from beach.actor import ActorHandle
+from beach.actor import ActorHandleGroup
 from beach.utils import _getIpv4ForIface
 
 class Beach ( object ):
@@ -73,6 +74,7 @@ class Beach ( object ):
         self._isInited.wait( 5 )
 
         ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
+        ActorHandleGroup._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
 
     def _connectToNode( self, host ):
         nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
@@ -320,3 +322,20 @@ class Beach ( object ):
             mtd[ nodename ] = node[ 'socket' ].request( { 'req' : 'get_full_mtd' }, timeout = 10 )
 
         return mtd
+
+    def getActorHandleGroup( self, categoryRoot, mode = 'random', nRetries = None, timeout = None, ident = None ):
+        '''Get a virtual handle to actors in the cluster.
+
+        :param category: the name of the category holding actors to get the handle to
+        :param mode: the method actors are queried by the handle, currently
+            handles: random
+        :param nRetries: number of times the handle should attempt to retry the request if
+            it times out
+        :param timeout: number of seconds to wait before re-issuing a request or failing
+        :param ident: identity token for trust between Actors
+
+        :returns: an ActorHandle
+        '''
+        v = ActorHandleGroup( self._realm, categoryRoot, mode, nRetries = nRetries, timeout = timeout, ident = ident )
+        self._vHandles.append( v )
+        return v

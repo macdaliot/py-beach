@@ -79,6 +79,9 @@ class ActorHost ( object ):
 
         ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
                                                           'ipc:///tmp/py_beach_directory_port' ) )
+
+        ActorHandleGroup._setHostDirInfo( self.configFile.get( 'directory_port',
+                                                               'ipc:///tmp/py_beach_directory_port' ) )
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )

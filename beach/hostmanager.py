@@ -31,7 +31,6 @@ from beach.utils import _getIpv4ForIface
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 import time
-import uuid
 import random
 from sets import Set
 import logging
@@ -99,11 +98,33 @@ class HostManager ( object ):
             self.nProcesses = multiprocessing.cpu_count()
         self._log( "Using %d instances per node" % self.nProcesses )
 
+
+
         if iface is not None:
             self.interface = iface
+            self.ifaceIp4 = _getIpv4ForIface( self.interface )
+            if self.ifaceIp4 is None:
+                self._logCritical( "Could not use iface %s (from cli)." % self.interface )
+                sys.exit( -1 )
         else:
-            self.interface = self.configFile.get( 'interface', 'eth0' )
-        self.ifaceIp4 = _getIpv4ForIface( self.interface )
+            self.interface = self.configFile.get( 'interface', None )
+            if self.interface is not None:
+                self.ifaceIp4 = _getIpv4ForIface( self.interface )
+                if self.ifaceIp4 is None:
+                    self._logCritical( "Could not use iface %s (from config)." % self.interface )
+                    sys.exit( -1 )
+
+        # Building a list of interfaces to auto-detect
+        defaultInterfaces = [ 'en0', 'eth0' ]
+        while self.ifaceIp4 is None and 0 != len( defaultInterfaces ):
+            self.interface = defaultInterfaces.pop()
+            self.ifaceIp4 = _getIpv4ForIface( self.interface )
+            if self.ifaceIp4 is None:
+                self._log( "Failed to use interface %s." % self.interface )
+
+        if self.ifaceIp4 is None:
+            self._logCritical( "Could not find an interface to use." )
+            sys.exit( -1 )
 
         self.seedNodes = self.configFile.get( 'seed_nodes', [] )
 
@@ -192,10 +213,12 @@ class HostManager ( object ):
     def _removeUidFromDirectory( self, uid ):
         isFound = False
         for r in self.directory.values():
-            for c in r.values():
+            for cname, c in r.items():
                 if uid in c:
                     del( c[ uid ] )
                     isFound = True
+                    if 0 == len( c ):
+                        del( r[ cname ] )
                     break
             if isFound:
                 self.tombstones[ uid ] = int( time.time() )
@@ -383,6 +406,12 @@ class HostManager ( object ):
                         z.send( successMessage( data = { 'endpoints' : self._getDirectoryEntriesFor( realm, data[ 'cat' ] ) } ) )
                     else:
                         z.send( errorMessage( 'no category specified' ) )
+                elif 'get_cats_under' == action:
+                    realm = data.get( 'realm', 'global' )
+                    if 'cat' in data:
+                        z.send( successMessage( data = { 'categories' : [ x for x in self.directory.get( realm, PrefixDict() ).startswith( data[ 'cat' ] ) if x != data[ 'cat' ] ] } ) )
+                    else:
+                        z.send( errorMessage( 'no category specified' ) )
                 elif 'get_nodes' == action:
                     nodeList = {}
                     for k in self.nodes.keys():
@@ -543,9 +572,11 @@ class HostManager ( object ):
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
+        #syslog.syslog(syslog.LOG_ALERT, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def _logCritical( self, msg ):
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
+        #syslog.syslog(syslog.LOG_ALERT, '%s : %s' % ( self.__class__.__name__, msg ) )
     
 
 if __name__ == '__main__':
