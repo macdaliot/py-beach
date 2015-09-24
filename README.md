@@ -208,6 +208,23 @@ A web dashboard is available. It displays basic host health information as well 
 and categories present in the cluster. It is based on a standalone Python web server which makes it trivial to
 start on any node and get cluster-wide information. Simply run: python -m beach.dashboard ./cluster.yaml
 
+### ActorHandleGroups
+This can give you the ability to shoot data to all categories matching the root you give to the ActorHandleGroup by
+sending the data to a single Actor under each sub-category. It assumes all sub-categories are '/' separated.
+This means you can send data to categories dynamically without knowing about them at "compile" time. So with the
+following categories:
+```
+/foo/bars
+/foo/barz
+/foo/barzzz
+/some/other
+```
+
+By creating an ActorHandleGroup with the categoryRoot '/foo/' and shoot-ing it a message, ONE actor
+in /foo/bars would get it, ONE actor in /foo/barz would get it and ONE actor in /foo/barzzz would get it but NONE
+in /some/other would get it. If another actor in category /foo/omg is spawned after the fact, the ActorHandleGroup
+will automatically detect it and begin sending ONE actor in the new category a copy of the requets.
+
 ## Misc Setup
 ### Automated Deployment
 An example of automated deployment is included in /examples/salt using the Salt framework (http://saltstack.com/).
