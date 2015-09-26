@@ -39,6 +39,7 @@ import subprocess
 import psutil
 import collections
 import uuid
+import syslog
 from prefixtree import PrefixDict
 
 timeToStopEvent = gevent.event.Event()
@@ -572,11 +573,11 @@ class HostManager ( object ):
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
-        #syslog.syslog(syslog.LOG_ALERT, '%s : %s' % ( self.__class__.__name__, msg ) )
+        syslog.syslog(syslog.LOG_USER, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def _logCritical( self, msg ):
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
-        #syslog.syslog(syslog.LOG_ALERT, '%s : %s' % ( self.__class__.__name__, msg ) )
+        syslog.syslog(syslog.LOG_ERR, '%s : %s' % ( self.__class__.__name__, msg ) )
     
 
 if __name__ == '__main__':

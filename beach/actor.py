@@ -32,6 +32,7 @@ import logging.handlers
 import imp
 import hashlib
 import inspect
+import syslog
 from prefixtree import PrefixDict
 
 class ActorRequest( object ):
@@ -252,6 +253,7 @@ class Actor( gevent.Greenlet ):
         :param msg: the message to log
         '''
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
+        syslog.syslog(syslog.LOG_USER, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def logCritical( self, msg ):
         '''Log errors.
@@ -259,6 +261,7 @@ class Actor( gevent.Greenlet ):
         :param msg: the message to log
         '''
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
+        syslog.syslog(syslog.LOG_ERR, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def getActorHandle( self, category, mode = 'random', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.

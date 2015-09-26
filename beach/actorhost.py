@@ -17,6 +17,7 @@
 import sys
 import os
 import signal
+import syslog
 import gevent
 from gevent import Greenlet
 from gevent.event import Event
@@ -187,9 +188,11 @@ class ActorHost ( object ):
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
+        syslog.syslog(syslog.LOG_USER, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def logCritical( self, msg ):
         self._logger.error( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
+        syslog.syslog(syslog.LOG_ERR, '%s : %s' % ( self.__class__.__name__, msg ) )
 
 if __name__ == '__main__':
     host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ] )
