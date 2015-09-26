@@ -41,7 +41,7 @@ def _stopAllActors():
 class ActorHost ( object ):
     
     # The actorList is a list( actorNames, configFile )
-    def __init__( self, configFile, instanceId ):
+    def __init__( self, configFile, instanceId, logging_level, logging_dest ):
         
         # Setting the signal handler to trigger the stop event which
         # is interpreted by each actor implementation
@@ -49,8 +49,11 @@ class ActorHost ( object ):
         gevent.signal( signal.SIGQUIT, _stopAllActors )
         gevent.signal( signal.SIGINT, _stopAllActors )
 
-        self._initLogging()
         self.instanceId = instanceId
+
+        self._log_level = logging_level
+        self._log_dest = logging_dest
+        self._initLogging( logging_level, logging_dest )
 
         self.log( "Initializing" )
         
@@ -122,6 +125,12 @@ class ActorHost ( object ):
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
+                        log_level = data.get( 'loglevel', None )
+                        log_dest = data.get( 'logdest', None )
+                        if log_level is None:
+                            log_level = self._log_level
+                        if log_dest is None:
+                            log_dest = self._log_dest
                         fileName = '%s/%s/%s.py' % ( self.codeDirectory, realm, actorName )
                         with open( fileName, 'r' ) as hFile:
                             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
@@ -135,7 +144,16 @@ class ActorHost ( object ):
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             className )( self, realm, ip, port, uid, parameters, ident, trusted )
+                                             className )( self,
+                                                          realm,
+                                                          ip,
+                                                          port,
+                                                          uid,
+                                                          log_level,
+                                                          log_dest,
+                                                          parameters,
+                                                          ident,
+                                                          trusted )
                         except:
                             actor = None
 
@@ -180,19 +198,17 @@ class ActorHost ( object ):
                     z.request( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
 
-    def _initLogging( self ):
+    def _initLogging( self, level, dest ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
-        self._logger = logging.getLogger()
-        self._logger.setLevel( logging.INFO )
-        self._logger.addHandler( logging.handlers.SysLogHandler() )
+        self._logger = logging.getLogger( self.instanceId )
+        self._logger.setLevel( level )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
-        syslog.syslog(syslog.LOG_USER, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def logCritical( self, msg ):
         self._logger.error( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
-        syslog.syslog(syslog.LOG_ERR, '%s : %s' % ( self.__class__.__name__, msg ) )
 
 if __name__ == '__main__':
-    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ] )
+    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ] )

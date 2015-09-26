@@ -189,6 +189,16 @@ class BeachShell ( cmd.Cmd ):
                              default = [],
                              action = 'append',
                              help = 'identifier token trusted by the Actor trust model.' )
+        parser.add_argument( '-ll', '--log-level',
+                             type = str,
+                             dest = 'loglevel',
+                             default = None,
+                             help = 'custom logging level for actor.' )
+        parser.add_argument( '-ld', '--log-dest',
+                             type = str,
+                             dest = 'logdest',
+                             default = None,
+                             help = 'custom logging destination for actor.' )
         arguments = self.parse( parser, s )
 
         if arguments is None:
@@ -201,7 +211,9 @@ class BeachShell ( cmd.Cmd ):
                                     parameters = arguments.params,
                                     isIsolated = arguments.isIsolated,
                                     secretIdent = arguments.ident,
-                                    trustedIdents = arguments.trusted )
+                                    trustedIdents = arguments.trusted,
+                                    log_level = arguments.log_level,
+                                    log_dest = arguments.log_dest )
 
         self.printOut( resp )
 

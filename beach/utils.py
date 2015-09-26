@@ -33,7 +33,7 @@ def _sanitizeJson( obj ):
             value = str( value )
         elif type( value ) is datetime.datetime:
             value = value.strftime( '%Y-%m-%d %H:%M:%S' )
-        elif type( value ) not in ( str, unicode, bool, int, float ):
+        elif value is not None and type( value ) not in ( str, unicode, bool, int, float ):
             value = str( value )
         return value
     

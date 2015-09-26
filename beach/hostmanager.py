@@ -51,7 +51,7 @@ def _stop():
 class HostManager ( object ):
     
     # The actorList is a list( actorNames, configFile )
-    def __init__( self, configFile, iface = None ):
+    def __init__( self, configFile, logging_level, logging_dest, iface = None ):
         
         # Setting the signal handler to trigger the stop event
         global timeToStopEvent
@@ -59,7 +59,9 @@ class HostManager ( object ):
         gevent.signal( signal.SIGINT, _stop )
 
         self._logger = None
-        self._initLogging()
+        self._log_level = logging_level
+        self._log_dest = logging_dest
+        self._initLogging( logging_level, logging_dest )
         
         self.stopEvent = timeToStopEvent
         self.py_beach_dir = None
@@ -322,6 +324,8 @@ class HostManager ( object ):
                         trusted = data.get( 'trusted', [] )
                         owner = data.get( 'owner', None )
                         isIsolated = data.get( 'isolated', False )
+                        log_level = data.get( 'loglevel', None )
+                        log_dest = data.get( 'logdest', None )
                         uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
                         instance = self._getInstanceForActor( isIsolated )
@@ -336,7 +340,9 @@ class HostManager ( object ):
                                                                      'parameters' : parameters,
                                                                      'ident' : ident,
                                                                      'trusted' : trusted,
-                                                                     'isolated' : isIsolated },
+                                                                     'isolated' : isIsolated,
+                                                                     'loglevel' : log_level,
+                                                                     'logdest' : log_dest },
                                                                    timeout = 10 )
                         else:
                             newMsg = False
@@ -491,7 +497,9 @@ class HostManager ( object ):
                         proc = subprocess.Popen( [ 'python',
                                                    '%s/actorhost.py' % self.py_beach_dir,
                                                     self.configFilePath,
-                                                    instance[ 'id' ] ] )
+                                                    instance[ 'id' ],
+                                                    str( self._log_level ),
+                                                    self._log_dest ] )
 
                         instance[ 'p' ] = proc
 
@@ -565,19 +573,17 @@ class HostManager ( object ):
                                                 'directory' : self.directory,
                                                 'tombstones' : self.tombstones } )
 
-    def _initLogging( self ):
+    def _initLogging( self, level, dest ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger()
-        self._logger.setLevel( logging.INFO )
-        self._logger.addHandler( logging.handlers.SysLogHandler() )
+        self._logger.setLevel( level )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
-        syslog.syslog(syslog.LOG_USER, '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def _logCritical( self, msg ):
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
-        syslog.syslog(syslog.LOG_ERR, '%s : %s' % ( self.__class__.__name__, msg ) )
     
 
 if __name__ == '__main__':
@@ -591,5 +597,17 @@ if __name__ == '__main__':
                          required = False,
                          dest = 'iface',
                          help = 'override the interface used for comms found in the config file' )
+    parser.add_argument( '--log-level',
+                         type = int,
+                         required = False,
+                         dest = 'loglevel',
+                         default = logging.WARNING,
+                         help = 'the logging level threshold' )
+    parser.add_argument( '--log-dest',
+                         type = str,
+                         required = False,
+                         dest = 'logdest',
+                         default = '/dev/log',
+                         help = 'the destination for the logging for syslog' )
     args = parser.parse_args()
-    hostManager = HostManager( args.configFile, iface = args.iface )
+    hostManager = HostManager( args.configFile, args.loglevel, args.logdest, iface = args.iface )
