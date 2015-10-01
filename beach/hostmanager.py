@@ -322,6 +322,7 @@ class HostManager ( object ):
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
+                        n_concurrent = data.get( 'n_concurrent', 1 )
                         owner = data.get( 'owner', None )
                         isIsolated = data.get( 'isolated', False )
                         log_level = data.get( 'loglevel', None )
@@ -340,6 +341,7 @@ class HostManager ( object ):
                                                                      'parameters' : parameters,
                                                                      'ident' : ident,
                                                                      'trusted' : trusted,
+                                                                     'n_concurrent' : n_concurrent,
                                                                      'isolated' : isIsolated,
                                                                      'loglevel' : log_level,
                                                                      'logdest' : log_dest },
@@ -348,7 +350,7 @@ class HostManager ( object ):
                             newMsg = False
 
                         if isMessageSuccess( newMsg ):
-                            self._log( "New actor loaded (isolation = %s), adding to directory" % isIsolated )
+                            self._log( "New actor loaded (isolation = %s, concurrent = %d), adding to directory" % ( isIsolated, n_concurrent ) )
                             self.directory.setdefault( realm,
                                                        PrefixDict() ).setdefault( category,
                                                                                   {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,

@@ -122,6 +122,7 @@ class ActorHost ( object ):
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
+                        n_concurrent = data.get( 'n_concurrent', 1 )
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
@@ -151,9 +152,10 @@ class ActorHost ( object ):
                                                           uid,
                                                           log_level,
                                                           log_dest,
-                                                          parameters,
-                                                          ident,
-                                                          trusted )
+                                                          parameters = parameters,
+                                                          ident = ident,
+                                                          trusted = trusted,
+                                                          n_concurrent = n_concurrent )
                         except:
                             actor = None
 
@@ -164,7 +166,7 @@ class ActorHost ( object ):
                             z.send( successMessage() )
                         else:
                             z.send( errorMessage( 'exception',
-                                                               data = { 'st' : traceback.format_exc() } ) )
+                                                  data = { 'st' : traceback.format_exc() } ) )
                 elif 'kill_actor' == action:
                     if 'uid' not in data:
                         z.send( errorMessage( 'missing information to stop actor' ) )
@@ -210,5 +212,14 @@ class ActorHost ( object ):
     def logCritical( self, msg ):
         self._logger.error( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
 
+#def _profileSave():
+#    stats = GreenletProfiler.get_func_stats()
+#    stats.save('profile.callgrind', type='callgrind')
+#    gevent.spawn_later( 60, _profileSave )
+
 if __name__ == '__main__':
+#    import GreenletProfiler
+#    GreenletProfiler.set_clock_type('cpu')
+#    gevent.spawn_later( 60, _profileSave )
+#    GreenletProfiler.start()
     host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ] )

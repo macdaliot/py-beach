@@ -199,6 +199,12 @@ class BeachShell ( cmd.Cmd ):
                              dest = 'logdest',
                              default = None,
                              help = 'custom logging destination for actor.' )
+        parser.add_argument( '-o', '--concurrent',
+                             type = int,
+                             dest = 'n_concurrent',
+                             required = False,
+                             default = 1,
+                             help = 'the number of concurrent requests handled by the actor.' )
         arguments = self.parse( parser, s )
 
         if arguments is None:
@@ -212,6 +218,7 @@ class BeachShell ( cmd.Cmd ):
                                     isIsolated = arguments.isIsolated,
                                     secretIdent = arguments.ident,
                                     trustedIdents = arguments.trusted,
+                                    n_concurrent = arguments.n_concurrent,
                                     log_level = arguments.log_level,
                                     log_dest = arguments.log_dest )
 

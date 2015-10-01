@@ -51,6 +51,7 @@ class Beach ( object ):
         self._isInited = gevent.event.Event()
         self._vHandles = []
         self._dirCache = {}
+        self._lastAddActorNode = None
 
         with open( self._configFile, 'r' ) as f:
             self._configFile = yaml.load( f )
@@ -89,22 +90,24 @@ class Beach ( object ):
         return info
 
     def _updateNodes( self ):
-        toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
-        if isMessageSuccess( nodes ):
-            for k in nodes[ 'data' ][ 'nodes' ].keys():
-                if k not in self._nodes:
-                    self._connectToNode( k )
+        try:
+            toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+            nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
+            if isMessageSuccess( nodes ):
+                for k in nodes[ 'data' ][ 'nodes' ].keys():
+                    if k not in self._nodes:
+                        self._connectToNode( k )
 
-        for nodeName, node in self._nodes.items():
-            self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
+            for nodeName, node in self._nodes.items():
+                self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
 
-        tmpDir = self.getDirectory()
-        if tmpDir is not False and 'realms' in tmpDir:
-            self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
+            tmpDir = self.getDirectory()
+            if tmpDir is not False and 'realms' in tmpDir:
+                self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
 
-        self._isInited.set()
-        gevent.spawn_later( 30, self._updateNodes )
+            self._isInited.set()
+        finally:
+            gevent.spawn_later( 30, self._updateNodes )
 
     def close( self ):
         '''Close all threads and resources of the interface.
@@ -137,6 +140,7 @@ class Beach ( object ):
                   isIsolated = False,
                   secretIdent = None,
                   trustedIdents = [],
+                  n_concurrent = 1,
                   owner = None,
                   log_level = None,
                   log_dest = None ):
@@ -145,7 +149,7 @@ class Beach ( object ):
         :param actorName: the name of the actor to spawn
         :param category: the category associated with this new actor
         :param strategy: the strategy to use to decide where to spawn the new actor,
-            currently supports: random
+            currently supports: random, resource, affinity, repulsion, roundrobin
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
         :param parameters: a dict of parameters that will be given to the actor when it starts,
@@ -156,6 +160,7 @@ class Beach ( object ):
             vHandles produced by the Actor, can be used to segment or ward off vHandles
             originating from untrusted machines
         :param trustedIdents: list of idents to be trusted, if an empty list ALL will be trusted
+        :param n_concurrent: number of concurrent requests handled by actor
         :param owner: an identifier for the owner of the Actor, useful for shared environments
         :param log_level: a logging.* value indicating the custom logging level for the actor
         :param log_dest: a destination string for the syslog custom to the actor for the actor
@@ -205,13 +210,21 @@ class Beach ( object ):
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        elif 'roundrobin' == strategy:
+            if 0 != len( self._nodes ):
+                curI = ( self._lastAddActorNode + 1 ) if self._lastAddActorNode is not None else 0
+                if curI >= len( self._nodes ):
+                    curI = 0
+                self._lastAddActorNode = curI
+                node = self._nodes.values()[ curI ][ 'socket' ]
 
         if node is not None:
             info = { 'req' : 'start_actor',
                      'actor_name' : actorName,
                      'realm' : thisRealm,
                      'cat' : category,
-                     'isolated' : isIsolated }
+                     'isolated' : isIsolated,
+                     'n_concurrent' : n_concurrent }
             if parameters is not None:
                 info[ 'parameters' ] = parameters
             if secretIdent is not None:

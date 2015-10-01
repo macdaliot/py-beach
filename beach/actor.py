@@ -86,7 +86,7 @@ class Actor( gevent.Greenlet ):
         return mod
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
-    def __init__( self, host, realm, ip, port, uid, log_level, log_dest, parameters = {}, ident = None, trusted = [] ):
+    def __init__( self, host, realm, ip, port, uid, log_level, log_dest, parameters = {}, ident = None, trusted = [], n_concurrent = 1 ):
         gevent.Greenlet.__init__( self )
 
         self.name = uid
@@ -103,6 +103,7 @@ class Actor( gevent.Greenlet ):
         self._parameters = parameters
         self._ident = ident
         self._trusted = trusted
+        self._n_concurrent = n_concurrent
 
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
@@ -124,7 +125,8 @@ class Actor( gevent.Greenlet ):
         # Initially Actors handle one concurrent request to avoid bad surprises
         # by users not thinking about concurrency. This can be bumped up by calling
         # Actor.AddConcurrentHandler()
-        self.AddConcurrentHandler()
+        for i in xrange( self._n_concurrent ):
+            self.AddConcurrentHandler()
 
         self.stopEvent.wait()
 
