@@ -17,7 +17,9 @@ def test_create_single_node_cluster():
     h_hostmanager = subprocess.Popen( [ 'python',
                                         '-m',
                                         'beach.hostmanager',
-                                        os.path.join( curFileDir, 'simple.yaml' ) ] )
+                                        os.path.join( curFileDir, 'simple.yaml' ),
+                                        '--log-level',
+                                        '10' ] )
 
     time.sleep( 2 )
 
@@ -33,7 +35,7 @@ def test_beach_connection():
 
 def test_actor_creation():
     global beach
-    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1} )
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1}, strategy = 'roundrobin' )
     assert( isMessageSuccess( a1 ) )
 
     a2 = beach.addActor( 'Pong', 'pongers', parameters={"a":2} )
@@ -114,6 +116,45 @@ def test_group():
 
     gevent.sleep( 1 )
     assert( 2 == g1.getNumAvailable() )
+
+    assert( beach.flush() )
+
+def test_concurrency():
+    global beach
+
+    a1 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":8}, n_concurrent = 1 )
+    assert( isMessageSuccess( a1 ) )
+
+    vHandle = beach.getActorHandle( 'sleepers' )
+    gevent.sleep( 1 )
+
+    # Normal query wait for resp
+    resp = vHandle.request( 'nosleep', timeout = 2 )
+    assert( resp.isSuccess and 'time' in resp.data )
+
+    # Query timeout and re-query and confirm one
+    # concurrent query
+    resp = vHandle.request( 'sleep', timeout = 1 )
+    assert( resp.isTimedOut and not resp.isSuccess )
+    resp = vHandle.request( 'nosleep', timeout = 2 )
+    assert( resp.isTimedOut and not resp.isSuccess )
+
+    assert( beach.flush() )
+
+    vHandle.close()
+    vHandle = beach.getActorHandle( 'sleepers' )
+    gevent.sleep( 1 )
+
+    a2 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":9}, n_concurrent = 2 )
+    assert( isMessageSuccess( a2 ) )
+
+    # Now confirm first q does not block entire actor
+    resp = vHandle.request( 'sleep', timeout = 1 )
+    assert( resp.isTimedOut and not resp.isSuccess )
+    resp = vHandle.request( 'nosleep', timeout = 2 )
+    assert( resp.isSuccess and 'time' in resp.data )
+
+
 
 def test_terminate_single_node_cluster():
     global beach
