@@ -266,6 +266,19 @@ class BeachShell ( cmd.Cmd ):
         self.printOut( resp )
 
     @report_errors
+    def do_get_load_info( self, s ):
+        '''Retrieve the number of free handlers per actor.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        resp = self.beach.getLoadInfo()
+
+        self.printOut( resp )
+
+    @report_errors
     def do_get_mtd( self, s ):
         '''Retrieve metadata from all nodes.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )

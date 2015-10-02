@@ -333,6 +333,20 @@ class Beach ( object ):
 
         return health
 
+    def getLoadInfo( self ):
+        ''' Get the number of free handlers per Actor in the cluster.
+
+        :returns: dict of all Actors by uid and the number of handler available
+        '''
+        load = {}
+
+        for node in self._nodes.values():
+            resp = node[ 'socket' ].request( { 'req' : 'get_load_info' }, timeout = 30 )
+            if isMessageSuccess( resp ):
+                load.update( resp[ 'data' ][ 'load' ] )
+
+        return load
+
     def getAllNodeMetadata( self ):
         '''Retrieve metadata about actors from all nodes.
 

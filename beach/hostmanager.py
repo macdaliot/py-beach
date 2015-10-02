@@ -455,6 +455,13 @@ class HostManager ( object ):
                         z.send( errorMessage( 'missing information to update directory' ) )
                 elif 'get_full_mtd' == action:
                     z.send( successMessage( { 'mtd' : self.actorInfo } ) )
+                elif 'get_load_info' == action:
+                    info = {}
+                    for instance in self.processes:
+                        tmp = instance[ 'socket' ].request( { 'req' : 'get_load_info' }, timeout = 5 )
+                        if isMessageSuccess( tmp ):
+                            info.update( tmp[ 'data' ] )
+                    z.send( successMessage( { 'load' : info } ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:

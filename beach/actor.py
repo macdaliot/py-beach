@@ -105,6 +105,8 @@ class Actor( gevent.Greenlet ):
         self._trusted = trusted
         self._n_concurrent = n_concurrent
 
+        self._n_free_handlers = 0
+
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
 
@@ -153,6 +155,7 @@ class Actor( gevent.Greenlet ):
 
     def _opsHandler( self ):
         z = self._opsSocket.getChild()
+        self._n_free_handlers += 1
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
             try:
@@ -192,6 +195,7 @@ class Actor( gevent.Greenlet ):
             else:
                 self.logCritical( 'invalid request: %s' % str( msg ) )
                 z.send( errorMessage( 'invalid request' ) )
+        self._n_free_handlers -= 1
         self.log( "Stopping processing Actor ops requests" )
 
     def _defaultHandler( self, msg ):
@@ -421,7 +425,7 @@ class ActorHandle ( object ):
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
         else:
-            self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
+            self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), self._svc_refreshDir ) )
 
     def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Issue a request to the actor category of this handle.
@@ -650,7 +654,7 @@ class ActorHandleGroup( object ):
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 10, self._svc_refreshCats ) )
         else:
-            self._threads.add( gevent.spawn_later( 60 * 5, self._svc_refreshCats ) )
+            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ) , self._svc_refreshCats ) )
 
     def shoot( self, requestType, data = {}, timeout = None, nRetries = None ):
         '''Send a message to the one actor in each sub-category without waiting for a response.

@@ -184,6 +184,11 @@ class ActorHost ( object ):
                             z.send( successMessage( data = info ) )
                         else:
                             z.send( errorMessage( 'actor not found' ) )
+                elif 'get_load_info' == action:
+                    info = {}
+                    for uid, actor in self.actors.items():
+                        info[ uid ] = actor._n_free_handlers
+                    z.send( successMessage( data = info ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
