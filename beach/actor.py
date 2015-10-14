@@ -158,43 +158,46 @@ class Actor( gevent.Greenlet ):
         self._n_free_handlers += 1
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
+            start_time = time.time()
             try:
                 request = ActorRequest( msg )
             except:
                 request = None
-            if request is not None and not self.stopEvent.wait( 0 ):
-                self.log( "Received: %s" % request.req )
+            if not self.stopEvent.wait( 0 ):
+                if request is not None:
+                    self.log( "Received: %s" % request.req )
 
-                if 0 != len( self._trusted ) and request.ident not in self._trusted:
-                    ret = errorMessage( 'unauthorized' )
-                    self.log( "Received unauthorized request." )
-                else:
-                    handler = self._handlers.get( request.req, self._defaultHandler )
-                    try:
-                        ret = handler( request )
-                    except gevent.GreenletExit:
-                        raise
-                    except:
-                        ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
-                        self.logCritical( ret )
+                    if 0 != len( self._trusted ) and request.ident not in self._trusted:
+                        ret = errorMessage( 'unauthorized' )
+                        self.log( "Received unauthorized request." )
                     else:
-                        if ( not hasattr( ret, '__iter__' ) or
-                             0 == len( ret ) or
-                             type( ret[ 0 ] ) is not bool ):
-                            ret = errorMessage( 'invalid response format', data = ret )
+                        handler = self._handlers.get( request.req, self._defaultHandler )
+                        try:
+                            ret = handler( request )
+                        except gevent.GreenletExit:
+                            raise
+                        except:
+                            ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
+                            self.logCritical( ret )
                         else:
-                            status = ret[ 0 ]
-                            if status is True:
-                                data = ret[ 1 ] if 2 == len( ret ) else {}
-                                ret = successMessage( data )
+                            if ( not hasattr( ret, '__iter__' ) or
+                                 0 == len( ret ) or
+                                 type( ret[ 0 ] ) is not bool ):
+                                ret = errorMessage( 'invalid response format', data = ret )
                             else:
-                                err = ret[ 1 ] if 2 <= len( ret ) else 'error'
-                                data = ret[ 2 ] if 3 == len( ret ) else {}
-                                ret = errorMessage( err, data = data )
-                z.send( ret )
-            else:
-                self.logCritical( 'invalid request: %s' % str( msg ) )
-                z.send( errorMessage( 'invalid request' ) )
+                                status = ret[ 0 ]
+                                if status is True:
+                                    data = ret[ 1 ] if 2 == len( ret ) else {}
+                                    ret = successMessage( data )
+                                else:
+                                    err = ret[ 1 ] if 2 <= len( ret ) else 'error'
+                                    data = ret[ 2 ] if 3 == len( ret ) else {}
+                                    ret = errorMessage( err, data = data )
+                    z.send( ret )
+                else:
+                    self.logCritical( 'invalid request: %s' % str( msg ) )
+                    z.send( errorMessage( 'invalid request' ) )
+            self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
         self._n_free_handlers -= 1
         self.log( "Stopping processing Actor ops requests" )
 
@@ -323,6 +326,11 @@ class Actor( gevent.Greenlet ):
         self._vHandles.append( v )
         return v
 
+    def yieldCpu( self ):
+        '''Yield the CPU to another coroutine, if needed during long tasks.
+        '''
+        return gevent.sleep( 0 )
+
 
 
 class ActorResponse( object ):
@@ -420,7 +428,7 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
-        if 0 == len( self._endpoints ) and 0 != self._quick_refresh_timeout:
+        if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
@@ -649,7 +657,7 @@ class ActorHandleGroup( object ):
                 if cat not in categories:
                     self._handles[ cat ].close()
                     del( self._handles[ cat ] )
-        if cats is False or 0 == len( cats ) and 0 != self._quick_refresh_timeout:
+        if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 10, self._svc_refreshCats ) )

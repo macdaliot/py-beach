@@ -16,6 +16,8 @@
 
 import sys
 if 'threading' in sys.modules and 'sphinx' not in sys.modules:
+    import gevent.monkey
+    if 0 == len( gevent.monkey.saved ):
         raise Exception('threading module loaded before patching!')
 import gevent.monkey
 gevent.monkey.patch_all()

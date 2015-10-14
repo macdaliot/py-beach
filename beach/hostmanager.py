@@ -473,7 +473,7 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 0 ):
             data = z.recv()
 
-            self._log( "Received directory request" )
+            self._log( "Received directory request: %s/%s" % ( data[ 'realm' ], data[ 'cat' ] ) )
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
@@ -488,7 +488,7 @@ class HostManager ( object ):
 
                 if self.initialProcesses and instance[ 'p' ] is not None:
                     # Only attempt keepalive if we know of a pid for it, otherwise it must be new
-                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
+                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 60 )
                 else:
                     # For first instances, immediately trigger the instance creation
                     data = False

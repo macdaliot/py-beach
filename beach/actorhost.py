@@ -15,6 +15,13 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import sys
+if 'threading' in sys.modules and 'sphinx' not in sys.modules:
+    import gevent.monkey
+    if 0 == len( gevent.monkey.saved ):
+        raise Exception('threading module loaded before patching!')
+import gevent.monkey
+gevent.monkey.patch_all()
+
 import os
 import signal
 import syslog
