@@ -121,33 +121,36 @@ class Actor( gevent.Greenlet ):
 
     def _run( self ):
 
-        if hasattr( self, 'init' ):
-            self.init( self._parameters )
+        try:
+            if hasattr( self, 'init' ):
+                self.init( self._parameters )
 
-        # Initially Actors handle one concurrent request to avoid bad surprises
-        # by users not thinking about concurrency. This can be bumped up by calling
-        # Actor.AddConcurrentHandler()
-        for i in xrange( self._n_concurrent ):
-            self.AddConcurrentHandler()
+            # Initially Actors handle one concurrent request to avoid bad surprises
+            # by users not thinking about concurrency. This can be bumped up by calling
+            # Actor.AddConcurrentHandler()
+            for i in xrange( self._n_concurrent ):
+                self.AddConcurrentHandler()
 
-        self.stopEvent.wait()
+            self.stopEvent.wait()
 
-        self._opsSocket.close()
+            self._opsSocket.close()
 
-        # Before we break the party, we ask gently to exit
-        self.log( "Waiting for threads to finish" )
-        self._threads.join( timeout = 1 )
+            # Before we break the party, we ask gently to exit
+            self.log( "Waiting for threads to finish" )
+            self._threads.join( timeout = 1 )
 
-        # Finish all the handlers, in theory we could rely on GC to eventually
-        # signal the Greenlets to quit, but it's nicer to control the exact timing
-        self.log( "Killing any remaining threads" )
-        self._threads.kill( timeout = 10 )
+            # Finish all the handlers, in theory we could rely on GC to eventually
+            # signal the Greenlets to quit, but it's nicer to control the exact timing
+            self.log( "Killing any remaining threads" )
+            self._threads.kill( timeout = 10 )
 
-        for v in self._vHandles:
-            v.close()
+            for v in self._vHandles:
+                v.close()
 
-        if hasattr( self, 'deinit' ):
-            self.deinit()
+            if hasattr( self, 'deinit' ):
+                self.deinit()
+        except:
+            self.logCritical( traceback.format_exc() )
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''

@@ -206,10 +206,10 @@ class ActorHost ( object ):
         z = self.hostOpsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             self.log( "Culling actors that stopped of themselves" )
-            for uid, actor in self.actors.iteritems():
+            for uid, actor in self.actors.items():
                 if not actor.isRunning():
                     del( self.actors[ uid ] )
-                    z.request( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
+                    z.send( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
 
     def _initLogging( self, level, dest ):
