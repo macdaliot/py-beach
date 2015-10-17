@@ -66,6 +66,24 @@ on the LAN, accessible to the devs and cluster nodes. It might look something li
 /project3/....
 ```
 
+### Starting a new node
+To start a new node in a cluster, all you need to do is install the beach package (through pip or the
+git repo, Debian example):
+```
+echo We need to install python-dev manually before beach since pip does not support native dependancies.
+sudo apt-get install python-dev
+sudo pip install beach
+sudo python setup.py install
+```
+Once installed, copy a beach config (or the sample config provided) over to the node and start the node
+simply by going:
+```
+python -m beach.hostmanager /path/to/config/file
+```
+
+Since beach is peer-to-peer, once you have a few nodes as 'seed nodes' in the config file you do not need
+to add *every* node to the config, they'll discover each other through the seeds.
+
 ### Bootstraping the cluster
 The main API to the cluster is beach.beach_api.Beach. By instantiating the Beach() and pointing it to the 
 config file for the cluster, the Beach will connect to the nodes and discover the full list of nodes as

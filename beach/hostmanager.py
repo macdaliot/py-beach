@@ -189,7 +189,7 @@ class HostManager ( object ):
     def _sendQuitToInstance( self, instance ):
         if instance[ 'p' ] is not None:
             instance[ 'p' ].send_signal( signal.SIGQUIT )
-            errorCode = instance[ 'p' ].wait( 30 )
+            errorCode = instance[ 'p' ].wait()
             if 0 != errorCode:
                 self._logCritical( 'actor host exited with error code: %d' % errorCode )
 
