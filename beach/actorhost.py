@@ -15,8 +15,16 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import sys
+if 'threading' in sys.modules and 'sphinx' not in sys.modules:
+    import gevent.monkey
+    if 0 == len( gevent.monkey.saved ):
+        raise Exception('threading module loaded before patching!')
+import gevent.monkey
+gevent.monkey.patch_all()
+
 import os
 import signal
+import syslog
 import gevent
 from gevent import Greenlet
 from gevent.event import Event
@@ -40,7 +48,7 @@ def _stopAllActors():
 class ActorHost ( object ):
     
     # The actorList is a list( actorNames, configFile )
-    def __init__( self, configFile, instanceId ):
+    def __init__( self, configFile, instanceId, logging_level, logging_dest ):
         
         # Setting the signal handler to trigger the stop event which
         # is interpreted by each actor implementation
@@ -48,8 +56,11 @@ class ActorHost ( object ):
         gevent.signal( signal.SIGQUIT, _stopAllActors )
         gevent.signal( signal.SIGINT, _stopAllActors )
 
-        self._initLogging()
         self.instanceId = instanceId
+
+        self._log_level = logging_level
+        self._log_dest = logging_dest
+        self._initLogging( logging_level, logging_dest )
 
         self.log( "Initializing" )
         
@@ -79,6 +90,9 @@ class ActorHost ( object ):
 
         ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
                                                           'ipc:///tmp/py_beach_directory_port' ) )
+
+        ActorHandleGroup._setHostDirInfo( self.configFile.get( 'directory_port',
+                                                               'ipc:///tmp/py_beach_directory_port' ) )
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
@@ -110,13 +124,21 @@ class ActorHost ( object ):
                         z.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
+                        className = actorName[ actorName.rfind( '/' ) + 1 : ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
+                        n_concurrent = data.get( 'n_concurrent', 1 )
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
+                        log_level = data.get( 'loglevel', None )
+                        log_dest = data.get( 'logdest', None )
+                        if log_level is None:
+                            log_level = self._log_level
+                        if log_dest is None:
+                            log_dest = self._log_dest
                         fileName = '%s/%s/%s.py' % ( self.codeDirectory, realm, actorName )
                         with open( fileName, 'r' ) as hFile:
                             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
@@ -130,7 +152,17 @@ class ActorHost ( object ):
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) ),
-                                             actorName )( self, realm, ip, port, uid, parameters, ident, trusted )
+                                             className )( self,
+                                                          realm,
+                                                          ip,
+                                                          port,
+                                                          uid,
+                                                          log_level,
+                                                          log_dest,
+                                                          parameters = parameters,
+                                                          ident = ident,
+                                                          trusted = trusted,
+                                                          n_concurrent = n_concurrent )
                         except:
                             actor = None
 
@@ -141,7 +173,7 @@ class ActorHost ( object ):
                             z.send( successMessage() )
                         else:
                             z.send( errorMessage( 'exception',
-                                                               data = { 'st' : traceback.format_exc() } ) )
+                                                  data = { 'st' : traceback.format_exc() } ) )
                 elif 'kill_actor' == action:
                     if 'uid' not in data:
                         z.send( errorMessage( 'missing information to stop actor' ) )
@@ -159,6 +191,11 @@ class ActorHost ( object ):
                             z.send( successMessage( data = info ) )
                         else:
                             z.send( errorMessage( 'actor not found' ) )
+                elif 'get_load_info' == action:
+                    info = {}
+                    for uid, actor in self.actors.items():
+                        info[ uid ] = actor._n_free_handlers
+                    z.send( successMessage( data = info ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
@@ -169,17 +206,17 @@ class ActorHost ( object ):
         z = self.hostOpsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
             self.log( "Culling actors that stopped of themselves" )
-            for uid, actor in self.actors.iteritems():
+            for uid, actor in self.actors.items():
                 if not actor.isRunning():
                     del( self.actors[ uid ] )
-                    z.request( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
+                    z.send( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
 
-    def _initLogging( self ):
+    def _initLogging( self, level, dest ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
-        self._logger = logging.getLogger()
-        self._logger.setLevel( logging.INFO )
-        self._logger.addHandler( logging.handlers.SysLogHandler() )
+        self._logger = logging.getLogger( self.instanceId )
+        self._logger.setLevel( level )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
@@ -187,5 +224,14 @@ class ActorHost ( object ):
     def logCritical( self, msg ):
         self._logger.error( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )
 
+#def _profileSave():
+#    stats = GreenletProfiler.get_func_stats()
+#    stats.save('profile.callgrind', type='callgrind')
+#    gevent.spawn_later( 60, _profileSave )
+
 if __name__ == '__main__':
-    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ] )
+#    import GreenletProfiler
+#    GreenletProfiler.set_clock_type('cpu')
+#    gevent.spawn_later( 60, _profileSave )
+#    GreenletProfiler.start()
+    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ] )

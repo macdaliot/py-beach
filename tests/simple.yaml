@@ -31,7 +31,7 @@ port_range_end: 6000
 
 # The network interface used for inter-node comms
 # Default: eth0
-interface: eth0
+#interface: eth0
 
 # A keepalive request is sent between nodes every X seconds
 # Default: 60

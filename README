@@ -4,6 +4,7 @@ Python private compute cloud framework with a focus on ease of deployment and ex
 than pure performance.
 
 ## More resources
+- Official Page: http://www.refractionpoint.com/beach.html
 - Google Groups: https://groups.google.com/forum/#!forum/py-beach
 - Google Groups Mailing List: py-beach@googlegroups.com
 - Pypi: https://pypi.python.org/pypi/beach
@@ -64,6 +65,24 @@ on the LAN, accessible to the devs and cluster nodes. It might look something li
 /project2/....
 /project3/....
 ```
+
+### Starting a new node
+To start a new node in a cluster, all you need to do is install the beach package (through pip or the
+git repo, Debian example):
+```
+echo We need to install python-dev manually before beach since pip does not support native dependancies.
+sudo apt-get install python-dev
+sudo pip install beach
+sudo python setup.py install
+```
+Once installed, copy a beach config (or the sample config provided) over to the node and start the node
+simply by going:
+```
+python -m beach.hostmanager /path/to/config/file
+```
+
+Since beach is peer-to-peer, once you have a few nodes as 'seed nodes' in the config file you do not need
+to add *every* node to the config, they'll discover each other through the seeds.
 
 ### Bootstraping the cluster
 The main API to the cluster is beach.beach_api.Beach. By instantiating the Beach() and pointing it to the 
@@ -201,6 +220,29 @@ to the "entry point" Actor in your cloud, limiting exposure.
 Each unique request (so across retries and across broadcast) has a unique UUID ID field. This means it can be
 used to keep changes idempotent in the event of a failure-retry. For a short discussion of this kind of logic
 see http://www.ebaytechblog.com/2012/08/14/cassandra-data-modeling-best-practices-part-2/ (search for idempotent).
+
+### Dashboard
+A web dashboard is available. It displays basic host health information as well as information on the Actors, Realms 
+and categories present in the cluster. It is based on a standalone Python web server which makes it trivial to
+start on any node and get cluster-wide information. Simply run: python -m beach.dashboard ./cluster.yaml
+
+### ActorHandleGroups
+This can give you the ability to shoot data to all categories matching the root you give to the ActorHandleGroup by
+sending the data to a single Actor under each sub-category. It assumes all sub-categories are '/' separated.
+This means you can send data to categories dynamically without knowing about them at "compile" time. So with the
+following categories:
+```
+/foo/bars/1.0
+/foo/bars/2.0
+/foo/barz
+/foo/barzzz
+/some/other
+```
+
+By creating an ActorHandleGroup with the categoryRoot '/foo/' and shoot-ing it a message, ONE actor
+in /foo/bars/* would get it, ONE actor in /foo/barz/* would get it and ONE actor in /foo/barzzz/* would get it but NONE
+in /some/other/* would get it. If another actor in category /foo/omg is spawned after the fact, the ActorHandleGroup
+will automatically detect it and begin sending ONE actor in the new category a copy of the requets.
 
 ## Misc Setup
 ### Automated Deployment

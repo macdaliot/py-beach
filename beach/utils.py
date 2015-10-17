@@ -25,13 +25,15 @@ import msgpack
 
 class _TimeoutException(Exception): pass
 
+global_z_context = zmq.Context()
+
 def _sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):
         if type( value ) is uuid.UUID:
             value = str( value )
         elif type( value ) is datetime.datetime:
             value = value.strftime( '%Y-%m-%d %H:%M:%S' )
-        elif type( value ) not in ( str, unicode, bool, int, float ):
+        elif value is not None and type( value ) not in ( str, unicode, bool, int, float ):
             value = str( value )
         return value
     
@@ -97,7 +99,9 @@ def successMessage( data = None ):
 class _ZSocket( object ):
     
     def __init__( self, socketType, url, isBind = False ):
-        self.ctx = zmq.Context()
+        global global_z_context
+        self.ctx = global_z_context
+        self.s = None
         self._socketType = socketType
         self._url = url
         self._isBind = isBind
@@ -106,6 +110,8 @@ class _ZSocket( object ):
         self._buildSocket()
 
     def _buildSocket( self ):
+        if self.s is not None:
+            self.s.close()
         self.s = self.ctx.socket( self._socketType )
         self.s.set( zmq.LINGER, 0 )
         if self._isBind:
@@ -143,9 +149,9 @@ class _ZSocket( object ):
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    data = msgpack.unpackb( self.s.recv(), use_list = True )
+                    data = msgpack.unpackb( self.s.recv(), use_list = False )
             else:
-                data = msgpack.unpackb( self.s.recv(), use_list = True )
+                data = msgpack.unpackb( self.s.recv(), use_list = False )
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
@@ -164,14 +170,15 @@ class _ZSocket( object ):
         return data
 
     def close( self ):
-        self.s.close()
+        self.s.close( linger = 0 )
 
 class _ZMREQ ( object ):
     def __init__( self, url, isBind ):
+        global global_z_context
         self._available = []
         self._url = url
         self._isBind = isBind
-        self._ctx = zmq.Context()
+        self._ctx = global_z_context
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REQ )
@@ -194,8 +201,11 @@ class _ZMREQ ( object ):
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
                 z.send( msgpack.packb( _sanitizeJson( data ) ) )
-                result = msgpack.unpackb( z.recv(), use_list = True )
+                result = msgpack.unpackb( z.recv(), use_list = False )
         except _TimeoutException:
+            z.close( linger = 0 )
+            z = self._newSocket()
+        except zmq.ZMQError, e:
             z.close( linger = 0 )
             z = self._newSocket()
 
@@ -205,10 +215,11 @@ class _ZMREQ ( object ):
 
 class _ZMREP ( object ):
     def __init__( self, url, isBind ):
+        global global_z_context
         self._available = []
         self._url = url
         self._isBind = isBind
-        self._ctx = zmq.Context()
+        self._ctx = global_z_context
         self._threads = gevent.pool.Group()
         self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
 
@@ -232,8 +243,15 @@ class _ZMREP ( object ):
         self._proxySocks = ( None, None )
 
     class _childSock( object ):
-        def __init__( self, z ):
-            self._z = z
+        def __init__( self, z_func ):
+            self._z_func = z_func
+            self._z = None
+            self._buildSocket()
+
+        def _buildSocket( self ):
+            if self._z is not None:
+                self._z.close()
+            self._z = self._z_func()
 
         def send( self, data, timeout = None ):
             isSuccess = False
@@ -245,9 +263,11 @@ class _ZMREP ( object ):
                 else:
                     self._z.send( msgpack.packb( _sanitizeJson( data ) ) )
             except _TimeoutException:
-                isSuccess = False
+                self._z.close( linger = 0 )
+                self._buildSocket()
             except zmq.ZMQError, e:
-                raise
+                self._z.close( linger = 0 )
+                self._buildSocket()
             else:
                 isSuccess = True
 
@@ -259,18 +279,19 @@ class _ZMREP ( object ):
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        data = msgpack.unpackb( self._z.recv(), use_list = True )
+                        data = msgpack.unpackb( self._z.recv(), use_list = False )
                 else:
-                    data = msgpack.unpackb( self._z.recv(), use_list = True )
+                    data = msgpack.unpackb( self._z.recv(), use_list = False )
             except _TimeoutException:
                 data = False
             except zmq.ZMQError, e:
-                raise
+                self._z.close( linger = 0 )
+                self._buildSocket()
 
             return data
 
     def getChild( self ):
-        return self._childSock( self._newSocket() )
+        return self._childSock( self._newSocket )
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REP )

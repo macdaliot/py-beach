@@ -31,7 +31,6 @@ from beach.utils import _getIpv4ForIface
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 import time
-import uuid
 import random
 from sets import Set
 import logging
@@ -40,6 +39,7 @@ import subprocess
 import psutil
 import collections
 import uuid
+import syslog
 from prefixtree import PrefixDict
 
 timeToStopEvent = gevent.event.Event()
@@ -51,7 +51,7 @@ def _stop():
 class HostManager ( object ):
     
     # The actorList is a list( actorNames, configFile )
-    def __init__( self, configFile, iface = None ):
+    def __init__( self, configFile, logging_level, logging_dest, iface = None ):
         
         # Setting the signal handler to trigger the stop event
         global timeToStopEvent
@@ -59,7 +59,9 @@ class HostManager ( object ):
         gevent.signal( signal.SIGINT, _stop )
 
         self._logger = None
-        self._initLogging()
+        self._log_level = logging_level
+        self._log_dest = logging_dest
+        self._initLogging( logging_level, logging_dest )
         
         self.stopEvent = timeToStopEvent
         self.py_beach_dir = None
@@ -99,11 +101,33 @@ class HostManager ( object ):
             self.nProcesses = multiprocessing.cpu_count()
         self._log( "Using %d instances per node" % self.nProcesses )
 
+
+
         if iface is not None:
             self.interface = iface
+            self.ifaceIp4 = _getIpv4ForIface( self.interface )
+            if self.ifaceIp4 is None:
+                self._logCritical( "Could not use iface %s (from cli)." % self.interface )
+                sys.exit( -1 )
         else:
-            self.interface = self.configFile.get( 'interface', 'eth0' )
-        self.ifaceIp4 = _getIpv4ForIface( self.interface )
+            self.interface = self.configFile.get( 'interface', None )
+            if self.interface is not None:
+                self.ifaceIp4 = _getIpv4ForIface( self.interface )
+                if self.ifaceIp4 is None:
+                    self._logCritical( "Could not use iface %s (from config)." % self.interface )
+                    sys.exit( -1 )
+
+        # Building a list of interfaces to auto-detect
+        defaultInterfaces = [ 'en0', 'eth0' ]
+        while self.ifaceIp4 is None and 0 != len( defaultInterfaces ):
+            self.interface = defaultInterfaces.pop()
+            self.ifaceIp4 = _getIpv4ForIface( self.interface )
+            if self.ifaceIp4 is None:
+                self._log( "Failed to use interface %s." % self.interface )
+
+        if self.ifaceIp4 is None:
+            self._logCritical( "Could not find an interface to use." )
+            sys.exit( -1 )
 
         self.seedNodes = self.configFile.get( 'seed_nodes', [] )
 
@@ -192,10 +216,12 @@ class HostManager ( object ):
     def _removeUidFromDirectory( self, uid ):
         isFound = False
         for r in self.directory.values():
-            for c in r.values():
+            for cname, c in r.items():
                 if uid in c:
                     del( c[ uid ] )
                     isFound = True
+                    if 0 == len( c ):
+                        del( r[ cname ] )
                     break
             if isFound:
                 self.tombstones[ uid ] = int( time.time() )
@@ -222,7 +248,7 @@ class HostManager ( object ):
         
         return port
     
-    def _getInstanceForActor( self, uid, actorName, realm, isIsolated = False ):
+    def _getInstanceForActor( self, isIsolated = False ):
         instance = None
 
         if isIsolated:
@@ -232,10 +258,16 @@ class HostManager ( object ):
         elif self.instance_strategy == 'random':
             instance = random.choice( [ x for x in self.processes if x[ 'isolated' ] is False ] )
         
-        if instance is not None:
-            self.actorInfo.setdefault( uid, {} )[ 'instance' ] = instance
-        
         return instance
+
+    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters ):
+        info = self.actorInfo.setdefault( uid, {} )
+        info[ 'instance' ] = instance
+        info[ 'name' ] = actorName
+        info[ 'realm' ] = realm
+        info[ 'isolated' ] = isIsolated
+        info[ 'owner' ] = owner
+        info[ 'params' ] = parameters
 
     def _updateDirectoryWith( self, curDir, newDir ):
         for k, v in newDir.iteritems():
@@ -290,23 +322,35 @@ class HostManager ( object ):
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
+                        n_concurrent = data.get( 'n_concurrent', 1 )
+                        owner = data.get( 'owner', None )
                         isIsolated = data.get( 'isolated', False )
+                        log_level = data.get( 'loglevel', None )
+                        log_dest = data.get( 'logdest', None )
                         uid = str( uuid.uuid4() )
                         port = self._getAvailablePortForUid( uid )
-                        instance = self._getInstanceForActor( uid, actorName, realm, isIsolated )
-                        newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
-                                                                 'actor_name' : actorName,
-                                                                 'realm' : realm,
-                                                                 'uid' : uid,
-                                                                 'ip' : self.ifaceIp4,
-                                                                 'port' : port,
-                                                                 'parameters' : parameters,
-                                                                 'ident' : ident,
-                                                                 'trusted' : trusted,
-                                                                 'isolated' : isIsolated },
-                                                               timeout = 10 )
+                        instance = self._getInstanceForActor( isIsolated )
+                        if instance is not None:
+                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters )
+                            newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
+                                                                     'actor_name' : actorName,
+                                                                     'realm' : realm,
+                                                                     'uid' : uid,
+                                                                     'ip' : self.ifaceIp4,
+                                                                     'port' : port,
+                                                                     'parameters' : parameters,
+                                                                     'ident' : ident,
+                                                                     'trusted' : trusted,
+                                                                     'n_concurrent' : n_concurrent,
+                                                                     'isolated' : isIsolated,
+                                                                     'loglevel' : log_level,
+                                                                     'logdest' : log_dest },
+                                                                   timeout = 10 )
+                        else:
+                            newMsg = False
+
                         if isMessageSuccess( newMsg ):
-                            self._log( "New actor loaded (isolation = %s), adding to directory" % isIsolated )
+                            self._log( "New actor loaded (isolation = %s, concurrent = %d), adding to directory" % ( isIsolated, n_concurrent ) )
                             self.directory.setdefault( realm,
                                                        PrefixDict() ).setdefault( category,
                                                                                   {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
@@ -371,6 +415,12 @@ class HostManager ( object ):
                         z.send( successMessage( data = { 'endpoints' : self._getDirectoryEntriesFor( realm, data[ 'cat' ] ) } ) )
                     else:
                         z.send( errorMessage( 'no category specified' ) )
+                elif 'get_cats_under' == action:
+                    realm = data.get( 'realm', 'global' )
+                    if 'cat' in data:
+                        z.send( successMessage( data = { 'categories' : [ x for x in self.directory.get( realm, PrefixDict() ).startswith( data[ 'cat' ] ) if x != data[ 'cat' ] ] } ) )
+                    else:
+                        z.send( errorMessage( 'no category specified' ) )
                 elif 'get_nodes' == action:
                     nodeList = {}
                     for k in self.nodes.keys():
@@ -403,6 +453,15 @@ class HostManager ( object ):
                         z.send( successMessage() )
                     else:
                         z.send( errorMessage( 'missing information to update directory' ) )
+                elif 'get_full_mtd' == action:
+                    z.send( successMessage( { 'mtd' : self.actorInfo } ) )
+                elif 'get_load_info' == action:
+                    info = {}
+                    for instance in self.processes:
+                        tmp = instance[ 'socket' ].request( { 'req' : 'get_load_info' }, timeout = 5 )
+                        if isMessageSuccess( tmp ):
+                            info.update( tmp[ 'data' ] )
+                    z.send( successMessage( { 'load' : info } ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
@@ -414,7 +473,7 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 0 ):
             data = z.recv()
 
-            self._log( "Received directory request" )
+            self._log( "Received directory request: %s/%s" % ( data[ 'realm' ], data[ 'cat' ] ) )
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
@@ -429,7 +488,7 @@ class HostManager ( object ):
 
                 if self.initialProcesses and instance[ 'p' ] is not None:
                     # Only attempt keepalive if we know of a pid for it, otherwise it must be new
-                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 5 )
+                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 60 )
                 else:
                     # For first instances, immediately trigger the instance creation
                     data = False
@@ -447,7 +506,9 @@ class HostManager ( object ):
                         proc = subprocess.Popen( [ 'python',
                                                    '%s/actorhost.py' % self.py_beach_dir,
                                                     self.configFilePath,
-                                                    instance[ 'id' ] ] )
+                                                    instance[ 'id' ],
+                                                    str( self._log_level ),
+                                                    self._log_dest ] )
 
                         instance[ 'p' ] = proc
 
@@ -521,11 +582,11 @@ class HostManager ( object ):
                                                 'directory' : self.directory,
                                                 'tombstones' : self.tombstones } )
 
-    def _initLogging( self ):
+    def _initLogging( self, level, dest ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger()
-        self._logger.setLevel( logging.INFO )
-        self._logger.addHandler( logging.handlers.SysLogHandler() )
+        self._logger.setLevel( level )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
@@ -545,5 +606,17 @@ if __name__ == '__main__':
                          required = False,
                          dest = 'iface',
                          help = 'override the interface used for comms found in the config file' )
+    parser.add_argument( '--log-level',
+                         type = int,
+                         required = False,
+                         dest = 'loglevel',
+                         default = logging.WARNING,
+                         help = 'the logging level threshold' )
+    parser.add_argument( '--log-dest',
+                         type = str,
+                         required = False,
+                         dest = 'logdest',
+                         default = '/dev/log',
+                         help = 'the destination for the logging for syslog' )
     args = parser.parse_args()
-    hostManager = HostManager( args.configFile, iface = args.iface )
+    hostManager = HostManager( args.configFile, args.loglevel, args.logdest, iface = args.iface )

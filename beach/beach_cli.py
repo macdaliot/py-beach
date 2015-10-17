@@ -98,7 +98,7 @@ class BeachShell ( cmd.Cmd ):
 
     @report_errors
     def do_get_dir( self, s ):
-        '''Retrieve a specific user's profile by UID.'''
+        '''Retrieve the directory of all Actors.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
         parser.add_argument( '-c', '--category',
                              type = str,
@@ -126,7 +126,7 @@ class BeachShell ( cmd.Cmd ):
 
     @report_errors
     def do_flush( self, s ):
-        '''Retrieve a specific user's profile by UID.'''
+        '''Remove all Actors from all nodes in the cluster.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
 
         parser.add_argument( '--confirm',
@@ -146,7 +146,7 @@ class BeachShell ( cmd.Cmd ):
 
     @report_errors
     def do_add_actor( self, s ):
-        '''Retrieve a specific user's profile by UID.'''
+        '''Add a new Actor to the cluster.'''
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
         parser.add_argument( '-n', '--name',
                              type = str,
@@ -189,6 +189,22 @@ class BeachShell ( cmd.Cmd ):
                              default = [],
                              action = 'append',
                              help = 'identifier token trusted by the Actor trust model.' )
+        parser.add_argument( '-ll', '--log-level',
+                             type = str,
+                             dest = 'loglevel',
+                             default = None,
+                             help = 'custom logging level for actor.' )
+        parser.add_argument( '-ld', '--log-dest',
+                             type = str,
+                             dest = 'logdest',
+                             default = None,
+                             help = 'custom logging destination for actor.' )
+        parser.add_argument( '-o', '--concurrent',
+                             type = int,
+                             dest = 'n_concurrent',
+                             required = False,
+                             default = 1,
+                             help = 'the number of concurrent requests handled by the actor.' )
         arguments = self.parse( parser, s )
 
         if arguments is None:
@@ -201,7 +217,10 @@ class BeachShell ( cmd.Cmd ):
                                     parameters = arguments.params,
                                     isIsolated = arguments.isIsolated,
                                     secretIdent = arguments.ident,
-                                    trustedIdents = arguments.trusted )
+                                    trustedIdents = arguments.trusted,
+                                    n_concurrent = arguments.n_concurrent,
+                                    log_level = arguments.log_level,
+                                    log_dest = arguments.log_dest )
 
         self.printOut( resp )
 
@@ -243,6 +262,28 @@ class BeachShell ( cmd.Cmd ):
             return
 
         resp = self.beach.getClusterHealth()
+
+        self.printOut( resp )
+
+    @report_errors
+    def do_get_load_info( self, s ):
+        '''Retrieve the number of free handlers per actor.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        resp = self.beach.getLoadInfo()
+
+        self.printOut( resp )
+
+    @report_errors
+    def do_get_mtd( self, s ):
+        '''Retrieve metadata from all nodes.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+
+        resp = self.beach.getAllNodeMetadata()
 
         self.printOut( resp )
 

@@ -4,6 +4,8 @@ var chart_data_mem = [];
 var chart_mem;
 var chart_data_cpu = [];
 var chart_cpu;
+var max_timeline_values = ((60/5)*60*24);
+
 
 function avg_array( arr )
 {
@@ -56,6 +58,10 @@ function display_data( data )
         }
         health_data_mem[ node_name ].dataPoints.push( { x: (new Date).getTime(),
                                                         y: node_info.mem } );
+        if( health_data_mem[ node_name ].dataPoints.length > max_timeline_values )
+        {
+            health_data_mem[ node_name ].dataPoints.shift();
+        }
 
         if( !(node_name in health_data_cpu) )
         {
@@ -68,6 +74,10 @@ function display_data( data )
         }
         health_data_cpu[ node_name ].dataPoints.push( { x: (new Date).getTime(),
                                                         y: avg_array( node_info.cpu ) } );
+        if( health_data_cpu[ node_name ].dataPoints.length > max_timeline_values )
+        {
+            health_data_cpu[ node_name ].dataPoints.shift();
+        }
     }
 
     chart_mem.render();

@@ -32,6 +32,7 @@ import logging.handlers
 import imp
 import hashlib
 import inspect
+import syslog
 from prefixtree import PrefixDict
 
 class ActorRequest( object ):
@@ -76,6 +77,7 @@ class Actor( gevent.Greenlet ):
         fileName = '%s/%s.py' % ( os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) ), libName )
         with open( fileName, 'r' ) as hFile:
             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+        libName = libName[ libName.rfind( '/' ) + 1 : ]
         mod = imp.load_source( '%s_%s' % ( libName, fileHash ), fileName )
 
         if className is not None:
@@ -84,20 +86,26 @@ class Actor( gevent.Greenlet ):
         return mod
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
-    def __init__( self, host, realm, ip, port, uid, parameters = {}, ident = None, trusted = [] ):
+    def __init__( self, host, realm, ip, port, uid, log_level, log_dest, parameters = {}, ident = None, trusted = [], n_concurrent = 1 ):
         gevent.Greenlet.__init__( self )
 
-        self._initLogging()
+        self.name = uid
+
+        self._log_level = log_level
+        self._log_dest = log_dest
+        self._initLogging( log_level, log_dest )
 
         self.stopEvent = gevent.event.Event()
         self._realm = realm
         self._ip = ip
         self._port = port
-        self.name = uid
         self._host = host
         self._parameters = parameters
         self._ident = ident
         self._trusted = trusted
+        self._n_concurrent = n_concurrent
+
+        self._n_free_handlers = 0
 
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
@@ -113,32 +121,36 @@ class Actor( gevent.Greenlet ):
 
     def _run( self ):
 
-        if hasattr( self, 'init' ):
-            self.init( self._parameters )
+        try:
+            if hasattr( self, 'init' ):
+                self.init( self._parameters )
 
-        # Initially Actors handle one concurrent request to avoid bad surprises
-        # by users not thinking about concurrency. This can be bumped up by calling
-        # Actor.AddConcurrentHandler()
-        self.AddConcurrentHandler()
+            # Initially Actors handle one concurrent request to avoid bad surprises
+            # by users not thinking about concurrency. This can be bumped up by calling
+            # Actor.AddConcurrentHandler()
+            for i in xrange( self._n_concurrent ):
+                self.AddConcurrentHandler()
 
-        self.stopEvent.wait()
+            self.stopEvent.wait()
 
-        self._opsSocket.close()
+            self._opsSocket.close()
 
-        # Before we break the party, we ask gently to exit
-        self.log( "Waiting for threads to finish" )
-        self._threads.join( timeout = 1 )
+            # Before we break the party, we ask gently to exit
+            self.log( "Waiting for threads to finish" )
+            self._threads.join( timeout = 1 )
 
-        # Finish all the handlers, in theory we could rely on GC to eventually
-        # signal the Greenlets to quit, but it's nicer to control the exact timing
-        self.log( "Killing any remaining threads" )
-        self._threads.kill( timeout = 10 )
+            # Finish all the handlers, in theory we could rely on GC to eventually
+            # signal the Greenlets to quit, but it's nicer to control the exact timing
+            self.log( "Killing any remaining threads" )
+            self._threads.kill( timeout = 10 )
 
-        for v in self._vHandles:
-            v.close()
+            for v in self._vHandles:
+                v.close()
 
-        if hasattr( self, 'deinit' ):
-            self.deinit()
+            if hasattr( self, 'deinit' ):
+                self.deinit()
+        except:
+            self.logCritical( traceback.format_exc() )
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
@@ -146,45 +158,50 @@ class Actor( gevent.Greenlet ):
 
     def _opsHandler( self ):
         z = self._opsSocket.getChild()
+        self._n_free_handlers += 1
         while not self.stopEvent.wait( 0 ):
             msg = z.recv()
+            start_time = time.time()
             try:
                 request = ActorRequest( msg )
             except:
                 request = None
-            if request is not None and not self.stopEvent.wait( 0 ):
-                self.log( "Received: %s" % request.req )
+            if not self.stopEvent.wait( 0 ):
+                if request is not None:
+                    self.log( "Received: %s" % request.req )
 
-                if 0 != len( self._trusted ) and request.ident not in self._trusted:
-                    ret = errorMessage( 'unauthorized' )
-                    self.log( "Received unauthorized request." )
-                else:
-                    handler = self._handlers.get( request.req, self._defaultHandler )
-                    try:
-                        ret = handler( request )
-                    except gevent.GreenletExit:
-                        raise
-                    except:
-                        ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
-                        self.logCritical( ret )
+                    if 0 != len( self._trusted ) and request.ident not in self._trusted:
+                        ret = errorMessage( 'unauthorized' )
+                        self.log( "Received unauthorized request." )
                     else:
-                        if ( not hasattr( ret, '__iter__' ) or
-                             0 == len( ret ) or
-                             type( ret[ 0 ] ) is not bool ):
-                            ret = errorMessage( 'invalid response format', data = ret )
+                        handler = self._handlers.get( request.req, self._defaultHandler )
+                        try:
+                            ret = handler( request )
+                        except gevent.GreenletExit:
+                            raise
+                        except:
+                            ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
+                            self.logCritical( ret )
                         else:
-                            status = ret[ 0 ]
-                            if status is True:
-                                data = ret[ 1 ] if 2 == len( ret ) else {}
-                                ret = successMessage( data )
+                            if ( not hasattr( ret, '__iter__' ) or
+                                 0 == len( ret ) or
+                                 type( ret[ 0 ] ) is not bool ):
+                                ret = errorMessage( 'invalid response format', data = ret )
                             else:
-                                err = ret[ 1 ] if 2 <= len( ret ) else 'error'
-                                data = ret[ 2 ] if 3 == len( ret ) else {}
-                                ret = errorMessage( err, data = data )
-                z.send( ret )
-            else:
-                self.logCritical( 'invalid request: %s' % str( msg ) )
-                z.send( errorMessage( 'invalid request' ) )
+                                status = ret[ 0 ]
+                                if status is True:
+                                    data = ret[ 1 ] if 2 == len( ret ) else {}
+                                    ret = successMessage( data )
+                                else:
+                                    err = ret[ 1 ] if 2 <= len( ret ) else 'error'
+                                    data = ret[ 2 ] if 3 == len( ret ) else {}
+                                    ret = errorMessage( err, data = data )
+                    z.send( ret )
+                else:
+                    self.logCritical( 'invalid request: %s' % str( msg ) )
+                    z.send( errorMessage( 'invalid request' ) )
+            self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
+        self._n_free_handlers -= 1
         self.log( "Stopping processing Actor ops requests" )
 
     def _defaultHandler( self, msg ):
@@ -236,11 +253,11 @@ class Actor( gevent.Greenlet ):
             except:
                 self.logCritical( traceback.format_exc( ) )
 
-    def _initLogging( self ):
+    def _initLogging( self, level, dest ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
-        self._logger = logging.getLogger()
-        self._logger.setLevel( logging.INFO )
-        self._logger.addHandler( logging.handlers.SysLogHandler() )
+        self._logger = logging.getLogger( self.name )
+        self._logger.setLevel( level )
+        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
 
     def sleep( self, seconds ):
         gevent.sleep( seconds )
@@ -259,15 +276,23 @@ class Actor( gevent.Greenlet ):
         '''
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
 
-    def getActorHandle( self, category, mode = 'random' ):
+    def getActorHandle( self, category, mode = 'random', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
 
         :param category: the name of the category holding actors to get the handle to
         :param mode: the method actors are queried by the handle, currently
             handles: random
+        :param nRetries: number of times the handle should attempt to retry the request if
+            it times out
+        :param timeout: number of seconds to wait before re-issuing a request or failing
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm, category, mode, ident = self._ident )
+        v = ActorHandle( self._realm,
+                         category,
+                         mode,
+                         ident = self._ident,
+                         nRetries = nRetries,
+                         timeout = timeout )
         self._vHandles.append( v )
         return v
 
@@ -283,6 +308,31 @@ class Actor( gevent.Greenlet ):
             isAvailable = True
 
         return isAvailable
+
+    def getActorHandleGroup( self, categoryRoot, mode = 'random', nRetries = None, timeout = None ):
+        '''Get a virtual handle to actors in the cluster.
+
+        :param category: the name of the category holding actors to get the handle to
+        :param mode: the method actors are queried by the handle, currently
+            handles: random
+        :param nRetries: number of times the handle should attempt to retry the request if
+            it times out
+        :param timeout: number of seconds to wait before re-issuing a request or failing
+        :returns: an ActorHandle
+        '''
+        v = ActorHandleGroup( self._realm,
+                              categoryRoot,
+                              mode,
+                              ident = self._ident,
+                              nRetries = nRetries,
+                              timeout = timeout )
+        self._vHandles.append( v )
+        return v
+
+    def yieldCpu( self ):
+        '''Yield the CPU to another coroutine, if needed during long tasks.
+        '''
+        return gevent.sleep( 0 )
 
 
 
@@ -373,16 +423,20 @@ class ActorHandle ( object ):
         self._srcSockets = []
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
+        self._quick_refresh_timeout = 15
+        self._affinityCache = {}
+        self._affinityOrder = None
 
     def _svc_refreshDir( self ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
-        if 0 == len( self._endpoints ):
+        if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
+            self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
         else:
-            self._threads.add( gevent.spawn_later( 60, self._svc_refreshDir ) )
+            self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), self._svc_refreshDir ) )
 
     def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Issue a request to the actor category of this handle.
@@ -401,6 +455,7 @@ class ActorHandle ( object ):
         z = None
         ret = False
         curRetry = 0
+        affinityKey = None
 
         if nRetries is None:
             nRetries = self._nRetries
@@ -423,10 +478,21 @@ class ActorHandle ( object ):
                             # is not locked, if it changes, affinity is re-computed without migrating
                             # any previous affinities. Therefore, I suggest a good cooldown before
                             # starting to process with affinity after the Actors have been spawned.
-                            sortedActors = [ x[ 1 ] for x in sorted( self._endpoints.items(),
-                                                                     key = lambda x: x.__getitem__( 0 ) ) ]
-                            z = sortedActors[ hash( key ) % len( sortedActors ) ]
-                            z = _ZSocket( zmq.REQ, z )
+                            orderedEndpoints  = sorted( self._endpoints.items(),
+                                                        key = lambda x: x.__getitem__( 0 ) )
+                            orderHash = tuple( [ x[ 0 ] for x in orderedEndpoints ] ).__hash__()
+                            if self._affinityOrder is None or self._affinityOrder != orderHash:
+                                self._affinityOrder = orderHash
+                                self._affinityCache = {}
+                            sortedActors = [ x[ 1 ] for x in orderedEndpoints ]
+                            affinityKey = ( hash( key ) % len( sortedActors ) )
+                            if affinityKey in self._affinityCache:
+                                z = self._affinityCache[ affinityKey ]
+                            else:
+                                z = sortedActors[ affinityKey ]
+                                z = _ZSocket( zmq.REQ, z )
+                                if z is not None:
+                                    self._affinityCache[ affinityKey ] = z
                         elif 0 != len( self._srcSockets ):
                             # Prioritize existing connections, only create new one
                             # based on the mode when we have no connections available
@@ -450,9 +516,12 @@ class ActorHandle ( object ):
                 # If we hit a timeout we don't take chances
                 # and remove that socket
                 if ret is not False:
-                    self._srcSockets.append( z )
+                    if 'affinity' != self._mode:
+                        self._srcSockets.append( z )
                     break
                 else:
+                    if 'affinity' == self._mode:
+                        del( self._affinityCache[ affinityKey ] )
                     z.close()
                     z = None
                     curRetry += 1
@@ -486,17 +555,24 @@ class ActorHandle ( object ):
 
         return ret
 
-    def shoot( self, requestType, data = {} ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Send a message to the one actor without waiting for a response.
 
         :param requestType: the type of request to issue
         :param data: a dict of the data associated with the request
+        :param timeout: the number of seconds to wait for a response
+        :param key: when used in 'affinity' mode, the key is the main parameter
+            to evaluate to determine which Actor to send the request to, in effect
+            it is the key to the hash map of Actors
+        :param nRetries: the number of times the request will be re-sent if it
+            times out, meaning a timeout of 5 and a retry of 3 could result in
+            a request taking 15 seconds to return
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
         ret = True
 
-        gevent.spawn( self.request, requestType, data )
+        gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries )
         gevent.sleep( 0 )
 
         return ret
@@ -518,4 +594,105 @@ class ActorHandle ( object ):
     def close( self ):
         '''Close all threads and resources associated with this handle.
         '''
+        self._threads.kill()
+
+class ActorHandleGroup( object ):
+    _zHostDir = None
+    _zDir = []
+
+    def __init__( self, realm, categoryRoot, mode = 'random', nRetries = None, timeout = None, ident = None ):
+        self._realm = realm
+        self._categoryRoot = categoryRoot
+        self._mode = mode
+        self._nRetries = nRetries
+        self._timeout = timeout
+        self._ident = ident
+        self._quick_refresh_timeout = 15
+        self._threads = gevent.pool.Group()
+        self._threads.add( gevent.spawn_later( 0, self._svc_refreshCats ) )
+        self._handles = {}
+
+    @classmethod
+    def _setHostDirInfo( cls, zHostDir ):
+        if type( zHostDir ) is not tuple and type( zHostDir ) is not list:
+            zHostDir = ( zHostDir, )
+        if cls._zHostDir is None:
+            cls._zHostDir = zHostDir
+            for h in zHostDir:
+                cls._zDir.append( _ZMREQ( h, isBind = False ) )
+
+    @classmethod
+    def _getCategories( cls, realm, catRoot ):
+        msg = False
+        if 0 != len( cls._zDir ):
+            z = cls._zDir[ random.randint( 0, len( cls._zDir ) - 1 ) ]
+            # These requests can be sent to the directory service of a HostManager
+            # or the ops service of the HostManager. Directory service is OOB from the
+            # ops but is only available locally to Actors. The ops is available from outside
+            # the host. So if the ActorHandle is created by an Actor, it goes to the dir_svc
+            # and if it's created from outside components through a Beach it goes to
+            # the ops.
+            cats = None
+            resp = z.request( { 'req' : 'get_cats_under', 'cat' : catRoot, 'realm' : realm }, timeout = 10 )
+            if isMessageSuccess( resp ):
+                cats = resp[ 'data' ][ 'categories' ]
+        return cats
+
+    def _svc_refreshCats( self ):
+        cats = self._getCategories( self._realm, self._categoryRoot )
+        if cats is not False:
+            categories = []
+            for cat in cats:
+                cat = cat.replace( self._categoryRoot, '' ).split( '/' )
+                cat = cat[ 0 ] if ( 0 != len( cat ) or 1 == len( cat ) ) else cat[ 1 ]
+                categories.append( cat )
+
+            for cat in categories:
+                if cat not in self._handles:
+                    self._handles[ cat ] = ActorHandle( self._realm,
+                                                        cat,
+                                                        mode = self._mode,
+                                                        nRetries = self._nRetries,
+                                                        timeout = self._timeout,
+                                                        ident = self._ident )
+
+            for cat in self._handles.keys():
+                if cat not in categories:
+                    self._handles[ cat ].close()
+                    del( self._handles[ cat ] )
+        if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
+            self._quick_refresh_timeout -= 1
+            # No Actors yet, be more agressive to look for some
+            self._threads.add( gevent.spawn_later( 10, self._svc_refreshCats ) )
+        else:
+            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ) , self._svc_refreshCats ) )
+
+    def shoot( self, requestType, data = {}, timeout = None, nRetries = None ):
+        '''Send a message to the one actor in each sub-category without waiting for a response.
+
+        :param requestType: the type of request to issue
+        :param data: a dict of the data associated with the request
+        :param timeout: the number of seconds to wait for a response
+        :param nRetries: the number of times the request will be re-sent if it
+            times out, meaning a timeout of 5 and a retry of 3 could result in
+            a request taking 15 seconds to return
+        :returns: True since no validation on the reception or reply
+            the endpoint is made
+        '''
+        for h in self._handles.values():
+            h.shoot( requestType, data, timeout = timeout, nRetries = nRetries )
+
+    def getNumAvailable( self ):
+        '''Checks to see the number of categories served by this HandleGroup.
+
+        :returns: number of available categories
+        '''
+        return len( self._handles )
+
+    def close( self ):
+        '''Close all threads and resources associated with this handle group.
+        '''
+        for h in self._handles.values():
+            h.close()
+
         self._threads.kill()
