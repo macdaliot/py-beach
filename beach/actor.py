@@ -47,6 +47,7 @@ class ActorRequest( object ):
         self.ident = msg[ 'mtd' ].get( 'ident', None )
         self.id = msg[ 'mtd' ][ 'id' ]
         self.req = msg[ 'mtd' ][ 'req' ]
+        self.dst = msg[ 'mtd' ][ 'dst' ]
         self.data = msg[ 'data' ]
 
     def __str__(self):
@@ -170,7 +171,10 @@ class Actor( gevent.Greenlet ):
                 if request is not None:
                     self.log( "Received: %s" % request.req )
 
-                    if 0 != len( self._trusted ) and request.ident not in self._trusted:
+                    if request.dst != self.name:
+                        ret = errorMessage( 'wrong dest' )
+                        self.log( "Request is for wrong destination." )
+                    elif 0 != len( self._trusted ) and request.ident not in self._trusted:
                         ret = errorMessage( 'unauthorized' )
                         self.log( "Received unauthorized request." )
                     else:
@@ -453,6 +457,7 @@ class ActorHandle ( object ):
         :returns: the response to the request as an ActorResponse
         '''
         z = None
+        z_ident = None
         ret = False
         curRetry = 0
         affinityKey = None
@@ -484,23 +489,23 @@ class ActorHandle ( object ):
                             if self._affinityOrder is None or self._affinityOrder != orderHash:
                                 self._affinityOrder = orderHash
                                 self._affinityCache = {}
-                            sortedActors = [ x[ 1 ] for x in orderedEndpoints ]
-                            affinityKey = ( hash( key ) % len( sortedActors ) )
+                            affinityKey = ( hash( key ) % len( orderedEndpoints ) )
                             if affinityKey in self._affinityCache:
-                                z = self._affinityCache[ affinityKey ]
+                                z, z_ident = self._affinityCache[ affinityKey ]
                             else:
-                                z = sortedActors[ affinityKey ]
+                                z_ident, z = orderedEndpoints[ affinityKey ]
                                 z = _ZSocket( zmq.REQ, z )
                                 if z is not None:
-                                    self._affinityCache[ affinityKey ] = z
+                                    self._affinityCache[ affinityKey ] = z, z_ident
                         elif 0 != len( self._srcSockets ):
                             # Prioritize existing connections, only create new one
                             # based on the mode when we have no connections available
-                            z = self._srcSockets.pop()
+                            z, z_ident = self._srcSockets.pop()
                         elif 'random' == self._mode:
-                            endpoints = self._endpoints.values()
+                            endpoints = self._endpoints.keys()
                             if 0 != len( endpoints ):
-                                z = _ZSocket( zmq.REQ, endpoints[ random.randint( 0, len( endpoints ) - 1 ) ] )
+                                z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
+                                z = _ZSocket( zmq.REQ, self._endpoints[ z_ident ] )
                         if z is None:
                             gevent.sleep( 0.001 )
             except _TimeoutException:
@@ -510,14 +515,17 @@ class ActorHandle ( object ):
                 envelope = { 'data' : data,
                              'mtd' : { 'ident' : self._ident,
                                        'req' : requestType,
-                                       'id' : str( uuid.uuid4() ) } }
+                                       'id' : str( uuid.uuid4() ),
+                                       'dst' : z_ident } }
 
                 ret = z.request( envelope, timeout = timeout )
-                # If we hit a timeout we don't take chances
+
+                ret = ActorResponse( ret )
+                # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
-                if ret is not False:
+                if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
                     if 'affinity' != self._mode:
-                        self._srcSockets.append( z )
+                        self._srcSockets.append( ( z, z_ident ) )
                     break
                 else:
                     if 'affinity' == self._mode:
@@ -527,9 +535,12 @@ class ActorHandle ( object ):
                     curRetry += 1
 
         if z is not None:
-            self._srcSockets.append( z )
+            self._srcSockets.append( ( z, z_ident ) )
 
-        return ActorResponse( ret )
+        if ret is None or ret is False:
+            ret = ActorResponse( ret )
+
+        return ret
 
     def broadcast( self, requestType, data = {} ):
         '''Issue a request to the all actors in the category of this handle.
