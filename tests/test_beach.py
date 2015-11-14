@@ -117,6 +117,8 @@ def test_group():
     gevent.sleep( 1 )
     assert( 2 == g1.getNumAvailable() )
 
+    gevent.sleep( 2 )
+
     assert( beach.flush() )
 
 def test_concurrency():
@@ -154,6 +156,23 @@ def test_concurrency():
     resp = vHandle.request( 'nosleep', timeout = 2 )
     assert( resp.isSuccess and 'time' in resp.data )
 
+    assert( beach.flush() )
+
+def test_private_params():
+    global beach
+
+    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":9,"_b":42,"c":43}, n_concurrent = 1 )
+    assert( isMessageSuccess( a1 ) )
+
+    mtd = beach.getAllNodeMetadata()
+
+    mtd = mtd.values()[ 0 ].get( 'data', {} ).get( 'mtd', {} ).values()[ 0 ].get( 'params', {} )
+
+    assert( mtd[ 'a' ] == 9 )
+    assert( mtd[ 'c' ] == 43 )
+    assert( mtd[ '_b' ] == '<PRIVATE>' )
+
+    assert( beach.flush() )
 
 
 def test_terminate_single_node_cluster():

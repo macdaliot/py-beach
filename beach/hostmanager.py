@@ -267,7 +267,12 @@ class HostManager ( object ):
         info[ 'realm' ] = realm
         info[ 'isolated' ] = isIsolated
         info[ 'owner' ] = owner
-        info[ 'params' ] = parameters
+        info[ 'params' ] = {}
+        for k in parameters.keys():
+            if k.startswith( '_' ):
+                info[ 'params' ][ k ] = '<PRIVATE>'
+            else:
+                info[ 'params' ][ k ] = parameters[ k ]
 
     def _updateDirectoryWith( self, curDir, newDir ):
         for k, v in newDir.iteritems():
