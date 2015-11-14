@@ -117,7 +117,7 @@ def test_group():
     gevent.sleep( 1 )
     assert( 2 == g1.getNumAvailable() )
 
-    gevent.sleep( 1 )
+    gevent.sleep( 2 )
 
     assert( beach.flush() )
 
@@ -170,7 +170,7 @@ def test_private_params():
 
     assert( mtd[ 'a' ] == 9 )
     assert( mtd[ 'c' ] == 43 )
-    assert( 'b' not in mtd )
+    assert( mtd[ '_b' ] == '<PRIVATE>' )
 
     assert( beach.flush() )
 

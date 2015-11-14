@@ -269,7 +269,9 @@ class HostManager ( object ):
         info[ 'owner' ] = owner
         info[ 'params' ] = {}
         for k in parameters.keys():
-            if not k.startswith( '_' ):
+            if k.startswith( '_' ):
+                info[ 'params' ][ k ] = '<PRIVATE>'
+            else:
                 info[ 'params' ][ k ] = parameters[ k ]
 
     def _updateDirectoryWith( self, curDir, newDir ):

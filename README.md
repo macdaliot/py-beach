@@ -244,6 +244,10 @@ in /foo/bars/* would get it, ONE actor in /foo/barz/* would get it and ONE actor
 in /some/other/* would get it. If another actor in category /foo/omg is spawned after the fact, the ActorHandleGroup
 will automatically detect it and begin sending ONE actor in the new category a copy of the requets.
 
+### Private Parameters
+When doing an addActor, any parameters given to the Actor that starts with a "_" will be treated as private and
+will not be echoed back. This can be used to give things like crypto keys to Actors without exposing them too much.
+
 ## Misc Setup
 ### Automated Deployment
 An example of automated deployment is included in /examples/salt using the Salt framework (http://saltstack.com/).
