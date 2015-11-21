@@ -18,7 +18,6 @@ import os
 import gevent
 import gevent.event
 import gevent.pool
-import zmq.green as zmq
 import traceback
 import time
 from beach.utils import *
@@ -32,8 +31,7 @@ import logging.handlers
 import imp
 import hashlib
 import inspect
-import syslog
-from prefixtree import PrefixDict
+import sys
 
 class ActorRequest( object ):
     '''Wrapper for requests to Actors. Not created directly.
@@ -79,7 +77,10 @@ class Actor( gevent.Greenlet ):
         with open( fileName, 'r' ) as hFile:
             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
         libName = libName[ libName.rfind( '/' ) + 1 : ]
-        mod = imp.load_source( '%s_%s' % ( libName, fileHash ), fileName )
+        modName = '%s_%s' % ( libName, fileHash )
+        mod = sys.modules.get( modName, None )
+        if mod is None:
+            mod = imp.load_source( modName, fileName )
 
         if className is not None:
             mod = getattr( mod, className )
