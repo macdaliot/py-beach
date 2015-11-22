@@ -429,6 +429,7 @@ class ActorHandle ( object ):
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
         self._quick_refresh_timeout = 15
+        self._initialRefreshDone = gevent.event.Event()
         self._affinityCache = {}
         self._affinityOrder = None
 
@@ -436,6 +437,8 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
+            if not self._initialRefreshDone.isSet():
+                self._initialRefreshDone.set()
         if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
@@ -478,6 +481,9 @@ class ActorHandle ( object ):
                 # We use the timeout to wait for an available node if none
                 # exists
                 with gevent.Timeout( timeout, _TimeoutException ):
+
+                    self._initialRefreshDone.wait( timeout = timeout )
+
                     while z is None:
                         if 'affinity' == self._mode and key is not None:
                             # Affinity is currently a soft affinity, meaning the set of Actors
