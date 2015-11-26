@@ -482,7 +482,7 @@ class ActorHandle ( object ):
                 # exists
                 with gevent.Timeout( timeout, _TimeoutException ):
 
-                    self._initialRefreshDone.wait( timeout = timeout )
+                    self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
 
                     while z is None:
                         if 'affinity' == self._mode and key is not None:
@@ -621,11 +621,14 @@ class ActorHandleGroup( object ):
     def __init__( self, realm, categoryRoot, mode = 'random', nRetries = None, timeout = None, ident = None ):
         self._realm = realm
         self._categoryRoot = categoryRoot
+        if not self._categoryRoot.endswith( '/' ):
+            self._categoryRoot += '/'
         self._mode = mode
         self._nRetries = nRetries
         self._timeout = timeout
         self._ident = ident
         self._quick_refresh_timeout = 15
+        self._initialRefreshDone = gevent.event.Event()
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshCats ) )
         self._handles = {}
@@ -663,7 +666,7 @@ class ActorHandleGroup( object ):
             for cat in cats:
                 cat = cat.replace( self._categoryRoot, '' ).split( '/' )
                 cat = cat[ 0 ] if ( 0 != len( cat ) or 1 == len( cat ) ) else cat[ 1 ]
-                categories.append( cat )
+                categories.append( '%s%s/' % ( self._categoryRoot, cat ) )
 
             for cat in categories:
                 if cat not in self._handles:
@@ -678,6 +681,8 @@ class ActorHandleGroup( object ):
                 if cat not in categories:
                     self._handles[ cat ].close()
                     del( self._handles[ cat ] )
+            if not self._initialRefreshDone.isSet():
+                self._initialRefreshDone.set()
         if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
@@ -697,6 +702,8 @@ class ActorHandleGroup( object ):
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
+        self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
+
         for h in self._handles.values():
             h.shoot( requestType, data, timeout = timeout, nRetries = nRetries )
 

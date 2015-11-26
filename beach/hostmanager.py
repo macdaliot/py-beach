@@ -513,7 +513,8 @@ class HostManager ( object ):
                                                     self.configFilePath,
                                                     instance[ 'id' ],
                                                     str( self._log_level ),
-                                                    self._log_dest ] )
+                                                    self._log_dest,
+                                                    self.interface ] )
 
                         instance[ 'p' ] = proc
 
