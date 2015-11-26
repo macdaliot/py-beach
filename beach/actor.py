@@ -18,7 +18,6 @@ import os
 import gevent
 import gevent.event
 import gevent.pool
-import zmq.green as zmq
 import traceback
 import time
 from beach.utils import *
@@ -32,8 +31,7 @@ import logging.handlers
 import imp
 import hashlib
 import inspect
-import syslog
-from prefixtree import PrefixDict
+import sys
 
 class ActorRequest( object ):
     '''Wrapper for requests to Actors. Not created directly.
@@ -79,7 +77,10 @@ class Actor( gevent.Greenlet ):
         with open( fileName, 'r' ) as hFile:
             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
         libName = libName[ libName.rfind( '/' ) + 1 : ]
-        mod = imp.load_source( '%s_%s' % ( libName, fileHash ), fileName )
+        modName = '%s_%s' % ( libName, fileHash )
+        mod = sys.modules.get( modName, None )
+        if mod is None:
+            mod = imp.load_source( modName, fileName )
 
         if className is not None:
             mod = getattr( mod, className )
@@ -428,6 +429,7 @@ class ActorHandle ( object ):
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
         self._quick_refresh_timeout = 15
+        self._initialRefreshDone = gevent.event.Event()
         self._affinityCache = {}
         self._affinityOrder = None
 
@@ -435,6 +437,8 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
+            if not self._initialRefreshDone.isSet():
+                self._initialRefreshDone.set()
         if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
@@ -477,6 +481,9 @@ class ActorHandle ( object ):
                 # We use the timeout to wait for an available node if none
                 # exists
                 with gevent.Timeout( timeout, _TimeoutException ):
+
+                    self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
+
                     while z is None:
                         if 'affinity' == self._mode and key is not None:
                             # Affinity is currently a soft affinity, meaning the set of Actors
@@ -614,11 +621,14 @@ class ActorHandleGroup( object ):
     def __init__( self, realm, categoryRoot, mode = 'random', nRetries = None, timeout = None, ident = None ):
         self._realm = realm
         self._categoryRoot = categoryRoot
+        if not self._categoryRoot.endswith( '/' ):
+            self._categoryRoot += '/'
         self._mode = mode
         self._nRetries = nRetries
         self._timeout = timeout
         self._ident = ident
         self._quick_refresh_timeout = 15
+        self._initialRefreshDone = gevent.event.Event()
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshCats ) )
         self._handles = {}
@@ -656,7 +666,7 @@ class ActorHandleGroup( object ):
             for cat in cats:
                 cat = cat.replace( self._categoryRoot, '' ).split( '/' )
                 cat = cat[ 0 ] if ( 0 != len( cat ) or 1 == len( cat ) ) else cat[ 1 ]
-                categories.append( cat )
+                categories.append( '%s%s/' % ( self._categoryRoot, cat ) )
 
             for cat in categories:
                 if cat not in self._handles:
@@ -671,6 +681,8 @@ class ActorHandleGroup( object ):
                 if cat not in categories:
                     self._handles[ cat ].close()
                     del( self._handles[ cat ] )
+            if not self._initialRefreshDone.isSet():
+                self._initialRefreshDone.set()
         if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
@@ -690,6 +702,8 @@ class ActorHandleGroup( object ):
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
+        self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
+
         for h in self._handles.values():
             h.shoot( requestType, data, timeout = timeout, nRetries = nRetries )
 

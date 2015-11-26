@@ -29,6 +29,7 @@ import gevent
 from gevent import Greenlet
 from gevent.event import Event
 from beach.utils import *
+from beach.utils import _getIpv4ForIface
 from beach.utils import _ZMREP
 import imp
 import zmq.green as zmq
@@ -48,7 +49,7 @@ def _stopAllActors():
 class ActorHost ( object ):
     
     # The actorList is a list( actorNames, configFile )
-    def __init__( self, configFile, instanceId, logging_level, logging_dest ):
+    def __init__( self, configFile, instanceId, logging_level, logging_dest, interface ):
         
         # Setting the signal handler to trigger the stop event which
         # is interpreted by each actor implementation
@@ -73,6 +74,9 @@ class ActorHost ( object ):
         self.configFilePath = configFile
         self.configFile = None
 
+        self.interface = interface
+        self.ifaceIp4 = _getIpv4ForIface( self.interface )
+
         with open( self.configFilePath, 'r' ) as f:
             self.configFile = yaml.load( f )
 
@@ -86,13 +90,12 @@ class ActorHost ( object ):
         self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
-        self.hostOpsSocket = _ZMREP( 'tcp://127.0.0.1:%d' % self.hostOpsPort, isBind = False )
+        self.hostOpsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ), isBind = False )
 
         ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
                                                           'ipc:///tmp/py_beach_directory_port' ) )
 
-        ActorHandleGroup._setHostDirInfo( self.configFile.get( 'directory_port',
-                                                               'ipc:///tmp/py_beach_directory_port' ) )
+        ActorHandleGroup._setHostDirInfo( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ) )
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
@@ -234,4 +237,4 @@ if __name__ == '__main__':
 #    GreenletProfiler.set_clock_type('cpu')
 #    gevent.spawn_later( 60, _profileSave )
 #    GreenletProfiler.start()
-    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ] )
+    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ], sys.argv[ 5 ] )
