@@ -22,6 +22,11 @@ import zmq.green as zmq
 import netifaces
 from prefixtree import PrefixDict
 import msgpack
+try:
+    import M2Crypto
+    IV_LENGTH = 0x10
+except:
+    print( "Beach crypto facilities disable due to failure to load M2Crypto." )
 
 class _TimeoutException(Exception): pass
 
@@ -98,13 +103,14 @@ def successMessage( data = None ):
 
 class _ZSocket( object ):
     
-    def __init__( self, socketType, url, isBind = False ):
+    def __init__( self, socketType, url, isBind = False, private_key = None ):
         global global_z_context
         self.ctx = global_z_context
         self.s = None
         self._socketType = socketType
         self._url = url
         self._isBind = isBind
+        self._private_key = private_key
         self._isTransactionSocket = ( self._socketType == zmq.REQ or self._socketType == zmq.REP )
 
         self._buildSocket()
@@ -128,12 +134,25 @@ class _ZSocket( object ):
     def send( self, data, timeout = None ):
         isSuccess = False
 
+        data = msgpack.packb( _sanitizeJson( data ) )
+
+        if self._private_key is not None:
+            sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )
+            aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
+                                       key = self._private_key,
+                                       iv = sym_iv,
+                                       salt = False,
+                                       key_as_bytes = False,
+                                       op = 1 ) # 1 == ENC
+            data = sym_iv + aes.update( data )
+            data += aes.final()
+
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    self.s.send( msgpack.packb( _sanitizeJson( data ) ) )
+                    self.s.send( data )
             else:
-                self.s.send( msgpack.packb( _sanitizeJson( data ) ) )
+                self.s.send( data )
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
@@ -149,13 +168,32 @@ class _ZSocket( object ):
         try:
             if timeout is not None:
                 with gevent.Timeout( timeout, _TimeoutException ):
-                    data = msgpack.unpackb( self.s.recv(), use_list = False )
+                    data = self.s.recv()
             else:
-                data = msgpack.unpackb( self.s.recv(), use_list = False )
+                data = self.s.recv()
         except _TimeoutException:
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
             self._buildSocket()
+
+        if data is not None:
+            if self._private_key is not None:
+                if IV_LENGTH < len( data ):
+                    sym_iv = data[ 0 : IV_LENGTH ]
+                    data = data[ IV_LENGTH : ]
+                    aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
+                                               key = self._private_key,
+                                               iv = sym_iv,
+                                               salt = False,
+                                               key_as_bytes = False,
+                                               op = 0 ) # 0 == DEC
+                    data = aes.update( data )
+                    data += aes.final()
+                else:
+                    data = None
+
+            if data is not None:
+                data = msgpack.unpackb( data, use_list = False )
 
         return data
     
@@ -173,12 +211,13 @@ class _ZSocket( object ):
         self.s.close( linger = 0 )
 
 class _ZMREQ ( object ):
-    def __init__( self, url, isBind ):
+    def __init__( self, url, isBind, private_key = None ):
         global global_z_context
         self._available = []
         self._url = url
         self._isBind = isBind
         self._ctx = global_z_context
+        self._private_key = private_key
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REQ )
@@ -192,7 +231,6 @@ class _ZMREQ ( object ):
     def request( self, data, timeout = None ):
         result = False
         z = None
-
         try:
             z = self._available.pop()
         except:
@@ -200,8 +238,41 @@ class _ZMREQ ( object ):
 
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
-                z.send( msgpack.packb( _sanitizeJson( data ) ) )
-                result = msgpack.unpackb( z.recv(), use_list = False )
+                data = msgpack.packb( _sanitizeJson( data ) )
+
+                if self._private_key is not None:
+                    sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )
+                    aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
+                                               key = self._private_key,
+                                               iv = sym_iv,
+                                               salt = False,
+                                               key_as_bytes = False,
+                                               op = 1 ) # 1 == ENC
+                    data = sym_iv + aes.update( data )
+                    data += aes.final()
+
+                z.send( data )
+                result = z.recv()
+
+                if result is not None:
+                    if self._private_key is not None:
+                        if IV_LENGTH < len( result ):
+                            sym_iv = result[ 0 : IV_LENGTH ]
+                            result = result[ IV_LENGTH : ]
+                            aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
+                                                       key = self._private_key,
+                                                       iv = sym_iv,
+                                                       salt = False,
+                                                       key_as_bytes = False,
+                                                       op = 0 ) # 0 == DEC
+                            result = aes.update( result )
+                            result += aes.final()
+                        else:
+                            result = None
+
+                    if result is not None:
+                        result = msgpack.unpackb( result, use_list = False )
+
         except _TimeoutException:
             z.close( linger = 0 )
             z = self._newSocket()
@@ -210,11 +281,10 @@ class _ZMREQ ( object ):
             z = self._newSocket()
 
         self._available.append( z )
-
         return result
 
 class _ZMREP ( object ):
-    def __init__( self, url, isBind ):
+    def __init__( self, url, isBind, private_key = None ):
         global global_z_context
         self._available = []
         self._url = url
@@ -222,6 +292,7 @@ class _ZMREP ( object ):
         self._ctx = global_z_context
         self._threads = gevent.pool.Group()
         self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
+        self._private_key = private_key
 
         zFront = self._ctx.socket( zmq.ROUTER )
         zBack = self._ctx.socket( zmq.DEALER )
@@ -243,10 +314,11 @@ class _ZMREP ( object ):
         self._proxySocks = ( None, None )
 
     class _childSock( object ):
-        def __init__( self, z_func ):
+        def __init__( self, z_func, private_key = None ):
             self._z_func = z_func
             self._z = None
             self._buildSocket()
+            self._private_key = private_key
 
         def _buildSocket( self ):
             if self._z is not None:
@@ -256,12 +328,25 @@ class _ZMREP ( object ):
         def send( self, data, timeout = None ):
             isSuccess = False
 
+            data = msgpack.packb( _sanitizeJson( data ) )
+
+            if self._private_key is not None:
+                sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )
+                aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
+                                           key = self._private_key,
+                                           iv = sym_iv,
+                                           salt = False,
+                                           key_as_bytes = False,
+                                           op = 1 ) # 1 == ENC
+                data = sym_iv + aes.update( data )
+                data += aes.final()
+
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        self._z.send( msgpack.packb( _sanitizeJson( data ) ) )
+                        self._z.send( data )
                 else:
-                    self._z.send( msgpack.packb( _sanitizeJson( data ) ) )
+                    self._z.send( data )
             except _TimeoutException:
                 self._z.close( linger = 0 )
                 self._buildSocket()
@@ -275,23 +360,41 @@ class _ZMREP ( object ):
 
         def recv( self, timeout = None ):
             data = False
-
             try:
                 if timeout is not None:
                     with gevent.Timeout( timeout, _TimeoutException ):
-                        data = msgpack.unpackb( self._z.recv(), use_list = False )
+                        data = self._z.recv()
                 else:
-                    data = msgpack.unpackb( self._z.recv(), use_list = False )
+                    data = self._z.recv()
             except _TimeoutException:
                 data = False
             except zmq.ZMQError, e:
                 self._z.close( linger = 0 )
                 self._buildSocket()
 
+            if data is not None:
+                if self._private_key is not None:
+                    if IV_LENGTH < len( data ):
+                        sym_iv = data[ 0 : IV_LENGTH ]
+                        data = data[ IV_LENGTH : ]
+                        syslog.syslog( sym_iv.encode( "hex" ) )
+                        aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
+                                                   key = self._private_key,
+                                                   iv = sym_iv,
+                                                   salt = False,
+                                                   key_as_bytes = False,
+                                                   op = 0 ) # 0 == DEC
+                        data = aes.update( data )
+                        data += aes.final()
+                    else:
+                        data = None
+
+                if data is not None:
+                    data = msgpack.unpackb( data, use_list = False )
             return data
 
     def getChild( self ):
-        return self._childSock( self._newSocket )
+        return self._childSock( self._newSocket, private_key = self._private_key )
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REP )

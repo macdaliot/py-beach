@@ -96,6 +96,11 @@ class HostManager ( object ):
 
         os.chdir( os.path.dirname( os.path.abspath( self.configFilePath ) ) )
 
+        self.private_key = self.configFile.get( 'private_key', None )
+        if self.private_key is not None:
+            with open( self.private_key, 'r' ) as f:
+                self.private_key = f.read()
+
         self.nProcesses = self.configFile.get( 'n_processes', 0 )
         if self.nProcesses == 0:
             self.nProcesses = multiprocessing.cpu_count()
@@ -139,10 +144,13 @@ class HostManager ( object ):
 
         self.directoryPort = _ZMREP( self.configFile.get( 'directory_port',
                                                          'ipc:///tmp/py_beach_directory_port' ),
-                                    isBind = True )
+                                    isBind = True,
+                                    private_key = self.private_key )
         
         self.opsPort = self.configFile.get( 'ops_port', 4999 )
-        self.opsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ), isBind = True )
+        self.opsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.opsPort ),
+                                 isBind = True,
+                                 private_key = self.private_key )
         self._log( "Listening for ops on %s:%d" % ( self.ifaceIp4, self.opsPort ) )
         
         self.port_range = ( self.configFile.get( 'port_range_start', 5000 ), self.configFile.get( 'port_range_end', 6000 ) )
@@ -210,7 +218,9 @@ class HostManager ( object ):
             self._sendQuitToInstance( instance )
 
     def _connectToNode( self, ip ):
-        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ), isBind = False )
+        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ),
+                             isBind = False,
+                             private_key = self.private_key )
         self.nodes[ ip ] = { 'socket' : nodeSocket, 'last_seen' : None }
 
     def _removeUidFromDirectory( self, uid ):

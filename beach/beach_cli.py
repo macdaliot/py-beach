@@ -28,6 +28,10 @@ import yaml
 import json
 import traceback
 from beach.beach_api import Beach
+try:
+    import M2Crypto
+except:
+    print( "Beach crypto facilities disable due to failure to load M2Crypto." )
 
 def report_errors( func ):
     def silenceit( *args, **kwargs ):
@@ -73,6 +77,24 @@ class BeachShell ( cmd.Cmd ):
 
     def printOut( self, data ):
         print( json.dumps( data, indent = 4 ) )
+
+    @report_errors
+    def do_gen_key( self, s ):
+        '''Generate a key that can be used as a beach private key.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+
+        parser.add_argument( 'out',
+                             type = str,
+                             help = 'the path where to store the key.' )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        with open( arguments.out, 'w' ) as f:
+            f.write( M2Crypto.Rand.rand_bytes( 0x20 ) )
+
+        self.printOut( 'New private key written to %s.' % arguments.out )
 
     @report_errors
     def do_realm( self, s ):

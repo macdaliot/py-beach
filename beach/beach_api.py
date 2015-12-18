@@ -22,6 +22,7 @@ if 'threading' in sys.modules and 'sphinx' not in sys.modules:
 import gevent.monkey
 gevent.monkey.patch_all()
 
+import os
 import yaml
 from beach.utils import *
 from beach.utils import _ZMREQ
@@ -62,6 +63,12 @@ class Beach ( object ):
 
         self._opsPort = self._configFile.get( 'ops_port', 4999 )
 
+        self._private_key = self._configFile.get( 'private_key', None )
+        if self._private_key is not None:
+            key_path = os.path.join( os.path.dirname( os.path.abspath( configFile ) ), self._private_key )
+            with open( key_path, 'r' ) as f:
+                self._private_key = f.read()
+
         if 0 == len( self._seedNodes ):
             mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )
             if mainIfaceIp is None:
@@ -76,11 +83,15 @@ class Beach ( object ):
 
         self._isInited.wait( 5 )
 
-        ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
-        ActorHandleGroup._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
+        ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ],
+                                     private_key = self._private_key )
+        ActorHandleGroup._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ],
+                                          private_key = self._private_key )
 
     def _connectToNode( self, host ):
-        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
+        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ),
+                             isBind = False,
+                             private_key = self._private_key )
         self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 

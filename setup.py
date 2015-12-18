@@ -50,5 +50,6 @@ setup( name = 'beach',
                             'psutil',
                             'web.py',
                             'prefixtree',
-                            'msgpack-python'],
+                            'msgpack-python',
+                            'M2crypto'],
        long_description = 'Python private compute cloud framework with a focus on ease of deployment and expansion rather than pure performance.' )
