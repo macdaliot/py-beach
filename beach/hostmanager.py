@@ -103,6 +103,8 @@ class HostManager ( object ):
                 self.private_key = f.read()
                 self._log( "Using shared key: %s" % key_path )
 
+        self.admin_token = self.configFile.get( 'admin_token', None )
+
         self.nProcesses = self.configFile.get( 'n_processes', 0 )
         if self.nProcesses == 0:
             self.nProcesses = multiprocessing.cpu_count()
@@ -192,6 +194,9 @@ class HostManager ( object ):
             self._sendQuitToInstance( proc )
         
         self._log( "Exiting." )
+
+    def _isPrivileged( self, req ):
+        return ( self.admin_token is None ) or ( req.get( 'admin_token', None ) == self.admin_token )
 
     def _catToList( self, cat ):
         return [ x for x in str( cat ).split( '/' ) if '' != x ]
@@ -330,7 +335,9 @@ class HostManager ( object ):
                         self._connectToNode( data[ 'from' ] )
                     z.send( successMessage() )
                 elif 'start_actor' == action:
-                    if 'actor_name' not in data or 'cat' not in data:
+                    if not self._isPrivileged( data ):
+                        z.send( errorMessage( 'unprivileged' ) )
+                    elif 'actor_name' not in data or 'cat' not in data:
                         z.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
@@ -377,7 +384,9 @@ class HostManager ( object ):
                             self._removeUidFromDirectory( uid )
                         z.send( newMsg )
                 elif 'kill_actor' == action:
-                    if 'uid' not in data:
+                    if not self._isPrivileged( data ):
+                        z.send( errorMessage( 'unprivileged' ) )
+                    elif 'uid' not in data:
                         z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uids = data[ 'uid' ]
@@ -409,7 +418,9 @@ class HostManager ( object ):
                         else:
                             z.send( successMessage() )
                 elif 'remove_actor' == action:
-                    if 'uid' not in data:
+                    if not self._isPrivileged( data ):
+                        z.send( errorMessage( 'unprivileged' ) )
+                    elif 'uid' not in data:
                         z.send( errorMessage( 'missing information to remove actor' ) )
                     else:
                         uid = data[ 'uid' ]
@@ -444,22 +455,25 @@ class HostManager ( object ):
                         nodeList[ k ] = { 'last_seen' : self.nodes[ k ][ 'last_seen' ] }
                     z.send( successMessage( { 'nodes' : nodeList } ) )
                 elif 'flush' == action:
-                    resp = successMessage()
-                    for uid, actor in self.actorInfo.items():
-                        instance = actor[ 'instance' ]
-                        newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                 'uid' : uid },
-                                                               timeout = 10 )
-                        if isMessageSuccess( newMsg ):
-                            if not self._removeUidFromDirectory( uid ):
-                                resp = errorMessage( 'error removing actor from directory after stop' )
+                    if not self._isPrivileged( data ):
+                        z.send( errorMessage( 'unprivileged' ) )
+                    else:
+                        resp = successMessage()
+                        for uid, actor in self.actorInfo.items():
+                            instance = actor[ 'instance' ]
+                            newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
+                                                                     'uid' : uid },
+                                                                   timeout = 10 )
+                            if isMessageSuccess( newMsg ):
+                                if not self._removeUidFromDirectory( uid ):
+                                    resp = errorMessage( 'error removing actor from directory after stop' )
 
-                        self._removeInstanceIfIsolated( instance )
+                            self._removeInstanceIfIsolated( instance )
 
-                    z.send( resp )
+                        z.send( resp )
 
-                    if isMessageSuccess( resp ):
-                        self.isActorChanged.set()
+                        if isMessageSuccess( resp ):
+                            self.isActorChanged.set()
                 elif 'get_dir_sync' == action:
                     z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones } ) )
                 elif 'push_dir_sync' == action:

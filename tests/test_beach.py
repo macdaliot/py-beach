@@ -32,6 +32,26 @@ def test_beach_connection():
     time.sleep( 1 )
     assert( 1 == beach.getNodeCount() )
 
+def test_admin_privileges():
+    global beach
+
+    tmpAdminToken = beach._admin_token
+    beach._admin_token = None
+
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1} )
+    assert( ( not isMessageSuccess( a1 ) ) and ( a1.get( 'status', {} ).get( 'error', None ) == 'unprivileged' ) )
+
+    beach._admin_token = tmpAdminToken
+
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1} )
+    assert( isMessageSuccess( a1 ) )
+
+    time.sleep( 2 )
+
+    d = beach.getDirectory()
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
+
+    assert( beach.flush() )
 
 def test_actor_creation():
     global beach
@@ -173,7 +193,6 @@ def test_private_params():
     assert( mtd[ '_b' ] == '<PRIVATE>' )
 
     assert( beach.flush() )
-
 
 def test_terminate_single_node_cluster():
     global beach

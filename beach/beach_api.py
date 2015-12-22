@@ -70,6 +70,8 @@ class Beach ( object ):
                 self._private_key = f.read()
                 print( "Using shared key: %s" % key_path )
 
+        self._admin_token = self._configFile.get( 'admin_token', None )
+
         if 0 == len( self._seedNodes ):
             mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )
             if mainIfaceIp is None:
@@ -251,6 +253,8 @@ class Beach ( object ):
                 info[ 'loglevel' ] = log_level
             if log_dest is not None:
                 info[ 'logdest' ] = log_dest
+            if self._admin_token is not None:
+                info[ 'admin_token' ] = self._admin_token
             resp = node.request( info, timeout = 10 )
 
         return resp
@@ -276,8 +280,11 @@ class Beach ( object ):
         :returns: True if all actors were removed normally
         '''
         isFlushed = True
+        req = { 'req' : 'flush' }
+        if self._admin_token is not None:
+            req[ 'admin_token' ] = self._admin_token
         for node in self._nodes.values():
-            resp = node[ 'socket' ].request( { 'req' : 'flush' }, timeout = 30 )
+            resp = node[ 'socket' ].request( req, timeout = 30 )
             if not isMessageSuccess( resp ):
                 isFlushed = False
 
@@ -328,8 +335,11 @@ class Beach ( object ):
 
             # We take the easy way out for now by just spamming the kill to every node.
             isSuccess = True
+            req = { 'req' : 'kill_actor', 'uid' : toRemove }
+            if self._admin_token is not None:
+                req[ 'admin_token' ] = self._admin_token
             for node in self._nodes.values():
-                resp = node[ 'socket' ].request( { 'req' : 'kill_actor', 'uid' : toRemove }, timeout = 30 )
+                resp = node[ 'socket' ].request( req, timeout = 30 )
                 if not isMessageSuccess( resp ):
                     isSuccess = resp
 
