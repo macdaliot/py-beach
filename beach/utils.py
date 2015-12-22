@@ -176,7 +176,7 @@ class _ZSocket( object ):
         except zmq.ZMQError, e:
             self._buildSocket()
 
-        if data is not None:
+        if data is not None and data is not False:
             if self._private_key is not None:
                 if IV_LENGTH < len( data ):
                     sym_iv = data[ 0 : IV_LENGTH ]
@@ -254,7 +254,7 @@ class _ZMREQ ( object ):
                 z.send( data )
                 result = z.recv()
 
-                if result is not None:
+                if result is not None and result is not False:
                     if self._private_key is not None:
                         if IV_LENGTH < len( result ):
                             sym_iv = result[ 0 : IV_LENGTH ]
@@ -372,12 +372,11 @@ class _ZMREP ( object ):
                 self._z.close( linger = 0 )
                 self._buildSocket()
 
-            if data is not None:
+            if data is not None and data is not False:
                 if self._private_key is not None:
                     if IV_LENGTH < len( data ):
                         sym_iv = data[ 0 : IV_LENGTH ]
                         data = data[ IV_LENGTH : ]
-                        syslog.syslog( sym_iv.encode( "hex" ) )
                         aes = M2Crypto.EVP.Cipher( alg = 'aes_256_cbc',
                                                    key = self._private_key,
                                                    iv = sym_iv,

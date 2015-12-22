@@ -68,6 +68,7 @@ class Beach ( object ):
             key_path = os.path.join( os.path.dirname( os.path.abspath( configFile ) ), self._private_key )
             with open( key_path, 'r' ) as f:
                 self._private_key = f.read()
+                print( "Using shared key: %s" % key_path )
 
         if 0 == len( self._seedNodes ):
             mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )

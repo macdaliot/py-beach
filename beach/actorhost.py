@@ -87,7 +87,9 @@ class ActorHost ( object ):
         self.private_key = self.configFile.get( 'private_key', None )
         if self.private_key is not None:
             with open( self.private_key, 'r' ) as f:
+                key_path = self.private_key
                 self.private_key = f.read()
+                self.log( "Using shared key: %s" % key_path )
 
         self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
 
