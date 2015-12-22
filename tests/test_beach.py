@@ -5,6 +5,7 @@ import signal
 from gevent.lock import Semaphore
 from beach.beach_api import Beach
 from beach.utils import *
+from beach.utils import _getIpv4ForIface
 
 h_hostmanager = None
 beach = None
@@ -191,6 +192,31 @@ def test_private_params():
     assert( mtd[ 'a' ] == 9 )
     assert( mtd[ 'c' ] == 43 )
     assert( mtd[ '_b' ] == '<PRIVATE>' )
+
+    assert( beach.flush() )
+
+def test_host_affinity():
+    global beach
+
+    a1 = beach.addActor( 'Ping', 'pingers',
+                         parameters={"a":1},
+                         strategy = 'host_affinity',
+                         strategy_hint = 'nope' )
+    assert( not isMessageSuccess( a1 ) )
+
+    thisIface = _getIpv4ForIface( 'eth0' )
+    if thisIface is None:
+        thisIface = _getIpv4ForIface( 'en0' )
+    a1 = beach.addActor( 'Ping', 'pingers',
+                         parameters={"a":1},
+                         strategy = 'host_affinity',
+                         strategy_hint = thisIface )
+    assert( isMessageSuccess( a1 ) )
+
+    time.sleep( 2 )
+
+    d = beach.getDirectory()
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
     assert( beach.flush() )
 

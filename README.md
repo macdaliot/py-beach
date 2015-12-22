@@ -104,6 +104,10 @@ The documentation for the CLI is built into the interface.
 - random: this will spawn a new actor somewhere randomly in the cluster
 - affinity: this will try to spawn the actor on a node with actors in the category specified in
     by strategy_hint
+- host_affinity: this will spawn the actor on the node (and only on the node) specified by strategy_hint
+- resource: spawn the actor on the node with the least CPU and RAM usage
+- repulsion: spawn the actor on the node with the least of an actor category specified by strategy_hint
+- roundrobin: spawn the actor in the next node, round-robin
 
 ### Actor requests
 - random: will issue the request to a random actors, prioritizing actors we already have a connection to
@@ -247,6 +251,17 @@ will automatically detect it and begin sending ONE actor in the new category a c
 ### Private Parameters
 When doing an addActor, any parameters given to the Actor that starts with a "_" will be treated as private and
 will not be echoed back. This can be used to give things like crypto keys to Actors without exposing them too much.
+
+### Encrypted Node Comms
+By specifying a 'private_key' parameter in the beach config that points to an AES-256 key on disk (and that can
+be generated with the beach_cli command 'gen_key'), all beach node (and actor) comms will be encrypted 
+point-to-point using AES-256-CBC.
+
+### API Admin Privilege
+By specifuing an 'admin_token' parameter in the beach config, nodes will only accept privileged commands like
+addActor and removeActor from API instances providing an 'admin_token' (also through the beach config). This 
+means some APIs can be unprivileged by not having the 'admin_token' in the config file it uses while having the
+'admin_token' in the beach config for the cluster nodes.
 
 ## Misc Setup
 ### Automated Deployment
