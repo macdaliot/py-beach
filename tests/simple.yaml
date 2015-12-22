@@ -57,3 +57,13 @@ tombstone_culling_seconds: 3600
 # will receive the new actor
 # Default: random
 instance_strategy: random
+
+# The private key (AES-256-CBC) used to encrypt all requests
+# within the beach cluster.
+# Default: None
+private_key: ./key.pri.aes.256.cbc
+
+# The token required to be able to add Actors. If not
+# present, no token is required. This is used as a basic
+# mechanism to prevent random API access to modify Actors.
+admin_token: 9ceab09cf66fc688b1a188964d098220e7054546cdde1a2141d7293a7aabaffc

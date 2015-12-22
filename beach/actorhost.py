@@ -84,13 +84,23 @@ class ActorHost ( object ):
 
         os.chdir( os.path.dirname( os.path.abspath( self.configFilePath ) ) )
 
+        self.private_key = self.configFile.get( 'private_key', None )
+        if self.private_key is not None:
+            with open( self.private_key, 'r' ) as f:
+                key_path = self.private_key
+                self.private_key = f.read()
+                self.log( "Using shared key: %s" % key_path )
+
         self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
 
-        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%s' % instanceId, isBind = True )
+        self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%s' % instanceId,
+                                 isBind = True )
         self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
-        self.hostOpsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ), isBind = False )
+        self.hostOpsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ),
+                                     isBind = False,
+                                     private_key = self.private_key )
 
         ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
                                                           'ipc:///tmp/py_beach_directory_port' ) )
@@ -117,7 +127,7 @@ class ActorHost ( object ):
         while not self.stopEvent.wait( 0 ):
             self.log( "Waiting for op" )
             data = z.recv()
-            if data is not False and 'req' in data:
+            if data is not False and data is not None and 'req' in data:
                 action = data[ 'req' ]
                 self.log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
@@ -165,7 +175,8 @@ class ActorHost ( object ):
                                                           parameters = parameters,
                                                           ident = ident,
                                                           trusted = trusted,
-                                                          n_concurrent = n_concurrent )
+                                                          n_concurrent = n_concurrent,
+                                                          private_key = self.private_key )
                         except:
                             actor = None
 

@@ -22,6 +22,7 @@ if 'threading' in sys.modules and 'sphinx' not in sys.modules:
 import gevent.monkey
 gevent.monkey.patch_all()
 
+import os
 import yaml
 from beach.utils import *
 from beach.utils import _ZMREQ
@@ -62,6 +63,15 @@ class Beach ( object ):
 
         self._opsPort = self._configFile.get( 'ops_port', 4999 )
 
+        self._private_key = self._configFile.get( 'private_key', None )
+        if self._private_key is not None:
+            key_path = os.path.join( os.path.dirname( os.path.abspath( configFile ) ), self._private_key )
+            with open( key_path, 'r' ) as f:
+                self._private_key = f.read()
+                print( "Using shared key: %s" % key_path )
+
+        self._admin_token = self._configFile.get( 'admin_token', None )
+
         if 0 == len( self._seedNodes ):
             mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )
             if mainIfaceIp is None:
@@ -76,11 +86,15 @@ class Beach ( object ):
 
         self._isInited.wait( 5 )
 
-        ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
-        ActorHandleGroup._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ] )
+        ActorHandle._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ],
+                                     private_key = self._private_key )
+        ActorHandleGroup._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ],
+                                          private_key = self._private_key )
 
     def _connectToNode( self, host ):
-        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ), isBind = False )
+        nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ),
+                             isBind = False,
+                             private_key = self._private_key )
         self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 
@@ -196,6 +210,10 @@ class Beach ( object ):
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        elif 'host_affinity' == strategy:
+            node = self._nodes.get( strategy_hint, None )
+            if node is not None:
+                node = node[ 'socket' ]
         elif 'repulsion' == strategy:
             possibleNodes = self._nodes.keys()
 
@@ -239,6 +257,8 @@ class Beach ( object ):
                 info[ 'loglevel' ] = log_level
             if log_dest is not None:
                 info[ 'logdest' ] = log_dest
+            if self._admin_token is not None:
+                info[ 'admin_token' ] = self._admin_token
             resp = node.request( info, timeout = 10 )
 
         return resp
@@ -264,8 +284,11 @@ class Beach ( object ):
         :returns: True if all actors were removed normally
         '''
         isFlushed = True
+        req = { 'req' : 'flush' }
+        if self._admin_token is not None:
+            req[ 'admin_token' ] = self._admin_token
         for node in self._nodes.values():
-            resp = node[ 'socket' ].request( { 'req' : 'flush' }, timeout = 30 )
+            resp = node[ 'socket' ].request( req, timeout = 30 )
             if not isMessageSuccess( resp ):
                 isFlushed = False
 
@@ -316,8 +339,11 @@ class Beach ( object ):
 
             # We take the easy way out for now by just spamming the kill to every node.
             isSuccess = True
+            req = { 'req' : 'kill_actor', 'uid' : toRemove }
+            if self._admin_token is not None:
+                req[ 'admin_token' ] = self._admin_token
             for node in self._nodes.values():
-                resp = node[ 'socket' ].request( { 'req' : 'kill_actor', 'uid' : toRemove }, timeout = 30 )
+                resp = node[ 'socket' ].request( req, timeout = 30 )
                 if not isMessageSuccess( resp ):
                     isSuccess = resp
 

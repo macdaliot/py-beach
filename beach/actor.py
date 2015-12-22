@@ -88,7 +88,19 @@ class Actor( gevent.Greenlet ):
         return mod
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
-    def __init__( self, host, realm, ip, port, uid, log_level, log_dest, parameters = {}, ident = None, trusted = [], n_concurrent = 1 ):
+    def __init__( self,
+                  host,
+                  realm,
+                  ip,
+                  port,
+                  uid,
+                  log_level,
+                  log_dest,
+                  parameters = {},
+                  ident = None,
+                  trusted = [],
+                  n_concurrent = 1,
+                  private_key = None ):
         gevent.Greenlet.__init__( self )
 
         self.name = uid
@@ -106,6 +118,7 @@ class Actor( gevent.Greenlet ):
         self._ident = ident
         self._trusted = trusted
         self._n_concurrent = n_concurrent
+        self._private_key = private_key
 
         self._n_free_handlers = 0
 
@@ -117,7 +130,9 @@ class Actor( gevent.Greenlet ):
 
         # This socket receives all taskings for the actor and dispatch
         # the messages as requested by user
-        self._opsSocket = _ZMREP( 'tcp://%s:%d' % ( self._ip, self._port ), isBind = True )
+        self._opsSocket = _ZMREP( 'tcp://%s:%d' % ( self._ip, self._port ),
+                                  isBind = True,
+                                  private_key = self._private_key )
 
         self._vHandles = []
 
@@ -381,6 +396,7 @@ class ActorResponse( object ):
 class ActorHandle ( object ):
     _zHostDir = None
     _zDir = []
+    _private_key = None
 
     @classmethod
     def _getNAvailableInCat( cls, realm, cat ):
@@ -409,15 +425,22 @@ class ActorHandle ( object ):
         return msg
 
     @classmethod
-    def _setHostDirInfo( cls, zHostDir ):
+    def _setHostDirInfo( cls, zHostDir, private_key = None ):
+        cls._private_key = private_key
         if type( zHostDir ) is not tuple and type( zHostDir ) is not list:
             zHostDir = ( zHostDir, )
         if cls._zHostDir is None:
             cls._zHostDir = zHostDir
             for h in zHostDir:
-                cls._zDir.append( _ZMREQ( h, isBind = False ) )
+                cls._zDir.append( _ZMREQ( h, isBind = False, private_key = cls._private_key ) )
 
-    def __init__( self, realm, category, mode = 'random', nRetries = None, timeout = None, ident = None ):
+    def __init__( self,
+                  realm,
+                  category,
+                  mode = 'random',
+                  nRetries = None,
+                  timeout = None,
+                  ident = None ):
         self._cat = category
         self._nRetries = nRetries
         self._timeout = timeout
@@ -501,7 +524,7 @@ class ActorHandle ( object ):
                                 z, z_ident = self._affinityCache[ affinityKey ]
                             else:
                                 z_ident, z = orderedEndpoints[ affinityKey ]
-                                z = _ZSocket( zmq.REQ, z )
+                                z = _ZSocket( zmq.REQ, z, private_key = self._private_key )
                                 if z is not None:
                                     self._affinityCache[ affinityKey ] = z, z_ident
                         elif 0 != len( self._srcSockets ):
@@ -512,7 +535,9 @@ class ActorHandle ( object ):
                             endpoints = self._endpoints.keys()
                             if 0 != len( endpoints ):
                                 z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
-                                z = _ZSocket( zmq.REQ, self._endpoints[ z_ident ] )
+                                z = _ZSocket( zmq.REQ,
+                                              self._endpoints[ z_ident ],
+                                              private_key = self._private_key )
                         if z is None:
                             gevent.sleep( 0.001 )
             except _TimeoutException:
@@ -565,7 +590,7 @@ class ActorHandle ( object ):
                                'id' : str( uuid.uuid4() ) } }
 
         for endpoint in self._endpoints.values():
-            z = _ZSocket( zmq.REQ, endpoint )
+            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
                 gevent.spawn( z.request, envelope )
 
@@ -617,8 +642,15 @@ class ActorHandle ( object ):
 class ActorHandleGroup( object ):
     _zHostDir = None
     _zDir = []
+    _private_key = None
 
-    def __init__( self, realm, categoryRoot, mode = 'random', nRetries = None, timeout = None, ident = None ):
+    def __init__( self,
+                  realm,
+                  categoryRoot,
+                  mode = 'random',
+                  nRetries = None,
+                  timeout = None,
+                  ident = None ):
         self._realm = realm
         self._categoryRoot = categoryRoot
         if not self._categoryRoot.endswith( '/' ):
@@ -634,13 +666,14 @@ class ActorHandleGroup( object ):
         self._handles = {}
 
     @classmethod
-    def _setHostDirInfo( cls, zHostDir ):
+    def _setHostDirInfo( cls, zHostDir, private_key = None ):
+        cls._private_key = private_key
         if type( zHostDir ) is not tuple and type( zHostDir ) is not list:
             zHostDir = ( zHostDir, )
         if cls._zHostDir is None:
             cls._zHostDir = zHostDir
             for h in zHostDir:
-                cls._zDir.append( _ZMREQ( h, isBind = False ) )
+                cls._zDir.append( _ZMREQ( h, isBind = False, private_key = cls._private_key ) )
 
     @classmethod
     def _getCategories( cls, realm, catRoot ):
@@ -688,7 +721,7 @@ class ActorHandleGroup( object ):
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 10, self._svc_refreshCats ) )
         else:
-            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ) , self._svc_refreshCats ) )
+            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), self._svc_refreshCats ) )
 
     def shoot( self, requestType, data = {}, timeout = None, nRetries = None ):
         '''Send a message to the one actor in each sub-category without waiting for a response.
