@@ -32,6 +32,7 @@ import imp
 import hashlib
 import inspect
 import sys
+from types import ModuleType
 
 class ActorRequest( object ):
     '''Wrapper for requests to Actors. Not created directly.
@@ -72,8 +73,11 @@ class Actor( gevent.Greenlet ):
 
         :returns: the module or element of the module loaded
         '''
-
-        fileName = '%s/%s.py' % ( os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) ), libName )
+        initPath = os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) )
+        fileName = '%s/%s.py' % ( initPath, libName )
+        if not os.path.isfile( fileName ):
+            fileName = '%s/%s/__init__.py' % ( initPath, libName )
+            libName = os.path.basename( initPath )
         with open( fileName, 'r' ) as hFile:
             fileHash = hashlib.sha1( hFile.read() ).hexdigest()
         libName = libName[ libName.rfind( '/' ) + 1 : ]
@@ -82,8 +86,21 @@ class Actor( gevent.Greenlet ):
         if mod is None:
             mod = imp.load_source( modName, fileName )
 
-        if className is not None:
+        if className is not None and className != '*':
             mod = getattr( mod, className )
+
+        parentGlobals = inspect.currentframe().f_back.f_globals
+        if className is not None and className == '*':
+            loadModule = mod
+            mod = {}
+            for name, val in loadModule.__dict__.iteritems():
+                if not name.startswith( '_' ) and type( name ) is not ModuleType:
+                    parentGlobals[ name ] = val
+                    mod[ name ] = val
+        elif className is not None:
+            parentGlobals[ className ] = mod
+        else:
+            parentGlobals[ libName ] = mod
 
         return mod
 
@@ -723,7 +740,7 @@ class ActorHandleGroup( object ):
         else:
             self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), self._svc_refreshCats ) )
 
-    def shoot( self, requestType, data = {}, timeout = None, nRetries = None ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Send a message to the one actor in each sub-category without waiting for a response.
 
         :param requestType: the type of request to issue
@@ -738,7 +755,7 @@ class ActorHandleGroup( object ):
         self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
 
         for h in self._handles.values():
-            h.shoot( requestType, data, timeout = timeout, nRetries = nRetries )
+            h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries )
 
     def getNumAvailable( self ):
         '''Checks to see the number of categories served by this HandleGroup.
