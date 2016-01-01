@@ -186,6 +186,7 @@ class ActorHost ( object ):
                             actor.start()
                             z.send( successMessage() )
                         else:
+                            self.logCritical( 'Error loading actor %s/%s' % ( realm, actorName ) )
                             z.send( errorMessage( 'exception',
                                                   data = { 'st' : traceback.format_exc() } ) )
                 elif 'kill_actor' == action:

@@ -381,6 +381,7 @@ class HostManager ( object ):
                                                                                                                   port )
                             self.isActorChanged.set()
                         else:
+                            self._logCritical( 'Error loading actor %s.' % actorName )
                             self._removeUidFromDirectory( uid )
                         z.send( newMsg )
                 elif 'kill_actor' == action:
