@@ -65,6 +65,7 @@ class GetClusterInfo:
         info[ 'dir' ] = beach.getDirectory()
         info[ 'health' ] = beach.getClusterHealth()
         info[ 'n_nodes' ] = beach.getNodeCount()
+        info[ 'load' ] = beach.getLoadInfo()
 
         unique_actors = Set()
         n_realms = 0

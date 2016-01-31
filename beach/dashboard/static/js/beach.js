@@ -98,6 +98,21 @@ function display_data( data )
         }
     }
 
+    $('#actors_info').empty();
+    for( var k in data.load )
+    {
+        var actor_id = k;
+        var loads = data.load[ k ];
+        var entry = $("<tr>").append( $("<td>").text( actor_id ) )
+                             .append( $("<td>").text( loads[ 0 ] ) )
+                             .append( $("<td>").text( loads[ 1 ] ) );
+        if( loads[ 0 ] == 0 )
+        {
+            entry.css( 'background-color', 'red' )
+        }
+        $('#actors_info').append( entry );
+    }
+
     set_connected( true );
 }
 
