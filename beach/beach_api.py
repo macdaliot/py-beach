@@ -163,7 +163,7 @@ class Beach ( object ):
         '''Spawn a new actor in the cluster.
 
         :param actorName: the name of the actor to spawn
-        :param category: the category associated with this new actor
+        :param category: the (or list of) category associated with this new actor
         :param strategy: the strategy to use to decide where to spawn the new actor,
             currently supports: random, resource, affinity, repulsion, roundrobin
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
@@ -239,6 +239,9 @@ class Beach ( object ):
                 node = self._nodes.values()[ curI ][ 'socket' ]
 
         if node is not None:
+            if type( category ) is str or type( category ) is unicode:
+                category = ( category, )
+
             info = { 'req' : 'start_actor',
                      'actor_name' : actorName,
                      'realm' : thisRealm,
@@ -265,7 +268,8 @@ class Beach ( object ):
 
     def getDirectory( self ):
         '''Retrieve the directory from a random node, all nodes have a directory that
-            is eventually-consistent.
+           is eventually-consistent. Side-effect of this call is to update the internal
+           cache, so it can be used as a "forceRefresh".
 
         :returns: the realm directory of the cluster
         '''
@@ -402,3 +406,45 @@ class Beach ( object ):
         v = ActorHandleGroup( self._realm, categoryRoot, mode, nRetries = nRetries, timeout = timeout, ident = ident )
         self._vHandles.append( v )
         return v
+
+    def addToCategory( self, actorId , category ):
+        '''Associate a specific actor with a specific category.
+
+        :param actorId: a single actor IDs to associate
+        :param category: a category name to associate with
+
+        :returns: True if the actors association was successful
+        '''
+
+        req = { 'req' : 'associate', 'uid' : actorId, 'category' : category }
+        if self._admin_token is not None:
+            req[ 'admin_token' ] = self._admin_token
+
+        for node in self._nodes.values():
+            resp = node[ 'socket' ].request( req, timeout = 30 )
+            if isMessageSuccess( resp ):
+                isSuccess = True
+                break
+
+        return isSuccess
+
+    def removeFromCategory( self, actorId , category ):
+        '''Disassociate a specific actor with a specific category.
+
+        :param actorId: a single actor IDs to associate
+        :param category: a category name to disassociate from
+
+        :returns: True if the actors disassociation was successful
+        '''
+
+        req = { 'req' : 'disassociate', 'uid' : actorId, 'category' : category }
+        if self._admin_token is not None:
+            req[ 'admin_token' ] = self._admin_token
+
+        for node in self._nodes.values():
+            resp = node[ 'socket' ].request( req, timeout = 30 )
+            if isMessageSuccess( resp ):
+                isSuccess = True
+                break
+
+        return isSuccess

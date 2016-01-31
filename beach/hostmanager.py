@@ -232,17 +232,15 @@ class HostManager ( object ):
 
     def _removeUidFromDirectory( self, uid ):
         isFound = False
-        for r in self.directory.values():
-            for cname, c in r.items():
-                if uid in c:
-                    del( c[ uid ] )
-                    isFound = True
-                    if 0 == len( c ):
-                        del( r[ cname ] )
-                    break
-            if isFound:
-                self.tombstones[ uid ] = int( time.time() )
-                break
+        realm = self.actorInfo[ uid ][ 'realm' ]
+        for cname, c in self.directory[ realm ].items():
+            if uid in c:
+                del( c[ uid ] )
+                isFound = True
+                if 0 == len( c ):
+                    del( self.directory[ realm ][ cname ] )
+        if isFound:
+            self.tombstones[ uid ] = int( time.time() )
 
         if uid in self.actorInfo:
             port = self.actorInfo[ uid ][ 'port' ]
@@ -341,7 +339,7 @@ class HostManager ( object ):
                         z.send( errorMessage( 'missing information to start actor' ) )
                     else:
                         actorName = data[ 'actor_name' ]
-                        category = data[ 'cat' ]
+                        categories = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
                         ident = data.get( 'ident', None )
@@ -375,12 +373,14 @@ class HostManager ( object ):
 
                         if isMessageSuccess( newMsg ):
                             self._log( "New actor loaded (isolation = %s, concurrent = %d), adding to directory" % ( isIsolated, n_concurrent ) )
-                            self.directory.setdefault( realm,
-                                                       PrefixDict() ).setdefault( category,
-                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
-                                                                                                                  port )
+                            for category in categories:
+                                self.directory.setdefault( realm,
+                                                           PrefixDict() ).setdefault( category,
+                                                                                      {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                      port )
                             self.isActorChanged.set()
                         else:
+                            self._logCritical( 'Error loading actor %s.' % actorName )
                             self._removeUidFromDirectory( uid )
                         z.send( newMsg )
                 elif 'kill_actor' == action:
@@ -463,9 +463,15 @@ class HostManager ( object ):
                             instance = actor[ 'instance' ]
                             newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
                                                                      'uid' : uid },
-                                                                   timeout = 10 )
-                            if isMessageSuccess( newMsg ):
-                                if not self._removeUidFromDirectory( uid ):
+                                                                   timeout = 30 )
+                            if not isMessageSuccess( newMsg ):
+                                if newMsg is None or newMsg is False:
+                                    self._log( 'stopping actor timed out, not all is lost' )
+                                else:
+                                    resp = errorMessage( 'error stopping actor' )
+
+                            if not self._removeUidFromDirectory( uid ):
+                                if isMessageSuccess( resp ):
                                     resp = errorMessage( 'error removing actor from directory after stop' )
 
                             self._removeInstanceIfIsolated( instance )
@@ -493,6 +499,39 @@ class HostManager ( object ):
                         if isMessageSuccess( tmp ):
                             info.update( tmp[ 'data' ] )
                     z.send( successMessage( { 'load' : info } ) )
+                elif 'associate' == action:
+                    if not self._isPrivileged( data ):
+                        z.send( errorMessage( 'unprivileged' ) )
+                    else:
+                        uid = data[ 'uid' ]
+                        category = data[ 'category' ]
+                        try:
+                            info = self.actorInfo[ uid ]
+                            self.directory.setdefault( info[ 'realm' ],
+                                                       PrefixDict() ).setdefault( category,
+                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                  info[ 'port' ] )
+                        except:
+                            z.send( errorMessage( 'error associating, actor hosted here?' ) )
+                        else:
+                            self.isActorChanged.set()
+                            z.send( successMessage() )
+                elif 'disassociate' == action:
+                    if not self._isPrivileged( data ):
+                        z.send( errorMessage( 'unprivileged' ) )
+                    else:
+                        uid = data[ 'uid' ]
+                        category = data[ 'category' ]
+                        try:
+                            info = self.actorInfo[ uid ]
+                            del( self.directory[ info[ 'realm' ] ][ category ][ uid ] )
+                            if 0 == len( self.directory[ info[ 'realm' ] ][ category ] ):
+                                del( self.directory[ info[ 'realm' ] ][ category ] )
+                        except:
+                            z.send( errorMessage( 'error associating, actor exists in category?' ) )
+                        else:
+                            self.isActorChanged.set()
+                            z.send( successMessage() )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
