@@ -195,6 +195,7 @@ class Actor( gevent.Greenlet ):
         self._n_free_handlers += 1
         while not self.stopEvent.wait( 0 ):
             msg = z.recv( timeout = 10 )
+            if msg is False: continue
             start_time = time.time()
             try:
                 request = ActorRequest( msg )
