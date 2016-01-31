@@ -27,6 +27,7 @@ import datetime
 import time
 import json
 from functools import wraps
+from sets import Set
 
 
 ###############################################################################
@@ -65,7 +66,7 @@ class GetClusterInfo:
         info[ 'health' ] = beach.getClusterHealth()
         info[ 'n_nodes' ] = beach.getNodeCount()
 
-        n_actors = 0
+        unique_actors = Set()
         n_realms = 0
         n_cats = 0
         for realm, categories in info[ 'dir' ][ 'realms' ].items():
@@ -73,9 +74,9 @@ class GetClusterInfo:
             for cat_name, actors in categories.items():
                 n_cats += 1
                 for actor_uid, endpoint in actors.items():
-                    n_actors += 1
+                    unique_actors.add( actor_uid )
 
-        info[ 'n_actors' ] = n_actors
+        info[ 'n_actors' ] = len( unique_actors )
         info[ 'n_realms' ] = n_realms
         info[ 'n_cats' ] = n_cats
         return json.dumps( info )
