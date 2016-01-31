@@ -263,6 +263,15 @@ addActor and removeActor from API instances providing an 'admin_token' (also thr
 means some APIs can be unprivileged by not having the 'admin_token' in the config file it uses while having the
 'admin_token' in the beach config for the cluster nodes.
 
+### Multi Category Actors
+Actors can now register in multiple categories where they will receive messages. This means you can correlate
+data coming from multiple categories by using differentiating them with handlers on different actions. Additionally
+Actors and API users can add/remove a category association with a specific actor with addToCategory like:
+```
+beach.addToCategory( 'b31fa917-424d-44b9-b97f-000d6ebddcd4', 'some/new/cat' )
+beach.removeFromCategory( 'b31fa917-424d-44b9-b97f-000d6ebddcd4', 'some/new/cat' )
+```
+
 ## Misc Setup
 ### Automated Deployment
 An example of automated deployment is included in /examples/salt using the Salt framework (http://saltstack.com/).

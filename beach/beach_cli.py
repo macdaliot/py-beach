@@ -179,7 +179,8 @@ class BeachShell ( cmd.Cmd ):
                              type = str,
                              dest = 'category',
                              required = True,
-                             help = 'only show the directory for a specific category.' )
+                             nargs = '+',
+                             help = 'category or categories to add the Actor to.' )
         parser.add_argument( '-s', '--strategy',
                              type = str,
                              dest = 'strategy',
@@ -306,6 +307,54 @@ class BeachShell ( cmd.Cmd ):
         parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
 
         resp = self.beach.getAllNodeMetadata()
+
+        self.printOut( resp )
+
+    @report_errors
+    def do_remove_from_category( self, s ):
+        '''Remove an Actor from a category.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        parser.add_argument( '-i', '--id',
+                             type = str,
+                             dest = 'id',
+                             required = True,
+                             help = 'the ID of the actor to add to the category.' )
+        parser.add_argument( '-c', '--category',
+                             type = str,
+                             dest = 'category',
+                             required = True,
+                             help = 'category to add the actor to.' )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        resp = self.beach.removeFromCategory( arguments.id,
+                                         arguments.category )
+
+        self.printOut( resp )
+
+    @report_errors
+    def do_add_to_category( self, s ):
+        '''Add an Actor to a category.'''
+        parser = argparse.ArgumentParser( prog = inspect.stack()[0][3][ 3 : ] )
+        parser.add_argument( '-i', '--id',
+                             type = str,
+                             dest = 'id',
+                             required = True,
+                             help = 'the ID of the actor to add to the category.' )
+        parser.add_argument( '-c', '--category',
+                             type = str,
+                             dest = 'category',
+                             required = True,
+                             help = 'category to add the actor to.' )
+        arguments = self.parse( parser, s )
+
+        if arguments is None:
+            return
+
+        resp = self.beach.addToCategory( arguments.id,
+                                         arguments.category )
 
         self.printOut( resp )
 

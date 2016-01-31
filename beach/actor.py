@@ -171,7 +171,7 @@ class Actor( gevent.Greenlet ):
 
             # Before we break the party, we ask gently to exit
             self.log( "Waiting for threads to finish" )
-            self._threads.join( timeout = 1 )
+            self._threads.join( timeout = 30 )
 
             # Finish all the handlers, in theory we could rely on GC to eventually
             # signal the Greenlets to quit, but it's nicer to control the exact timing
@@ -194,7 +194,7 @@ class Actor( gevent.Greenlet ):
         z = self._opsSocket.getChild()
         self._n_free_handlers += 1
         while not self.stopEvent.wait( 0 ):
-            msg = z.recv()
+            msg = z.recv( timeout = 10 )
             start_time = time.time()
             try:
                 request = ActorRequest( msg )
@@ -282,13 +282,15 @@ class Actor( gevent.Greenlet ):
         :param kw_args: keyword arguments to the function
         '''
         if not self.stopEvent.wait( 0 ):
-            self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
             try:
                 func( *args, **kw_args )
             except gevent.GreenletExit:
                 raise
             except:
-                self.logCritical( traceback.format_exc( ) )
+                self.logCritical( traceback.format_exc() )
+
+            if not self.stopEvent.wait( 0 ):
+                self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
 
     def _initLogging( self, level, dest ):
         logging.basicConfig( format = "%(asctime)-15s %(message)s" )
@@ -473,12 +475,15 @@ class ActorHandle ( object ):
         self._affinityCache = {}
         self._affinityOrder = None
 
-    def _svc_refreshDir( self ):
+    def _updateDirectory( self ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
+
+    def _svc_refreshDir( self ):
+        self._updateDirectory()
         if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
@@ -642,6 +647,7 @@ class ActorHandle ( object ):
 
         :returns: True if at least one actor is available
         '''
+        self._initialRefreshDone.wait( 2 )
         return ( 0 != len( self._endpoints ) )
 
     def getNumAvailable( self ):
@@ -649,12 +655,19 @@ class ActorHandle ( object ):
 
         :returns: number of available actors
         '''
+        self._initialRefreshDone.wait( 2 )
         return len( self._endpoints )
 
     def close( self ):
         '''Close all threads and resources associated with this handle.
         '''
         self._threads.kill()
+
+    def forceRefresh( self ):
+        '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
+           since a periodic refresh is already at an interval frequent enough for most use.
+        '''
+        self._updateDirectory()
 
 class ActorHandleGroup( object ):
     _zHostDir = None
@@ -679,7 +692,7 @@ class ActorHandleGroup( object ):
         self._quick_refresh_timeout = 15
         self._initialRefreshDone = gevent.event.Event()
         self._threads = gevent.pool.Group()
-        self._threads.add( gevent.spawn_later( 0, self._svc_refreshCats ) )
+        self._threads.add( gevent.spawn_later( 0, self._svc_periodicRefreshCats ) )
         self._handles = {}
 
     @classmethod
@@ -709,7 +722,7 @@ class ActorHandleGroup( object ):
                 cats = resp[ 'data' ][ 'categories' ]
         return cats
 
-    def _svc_refreshCats( self ):
+    def _refreshCats( self ):
         cats = self._getCategories( self._realm, self._categoryRoot )
         if cats is not False:
             categories = []
@@ -733,12 +746,16 @@ class ActorHandleGroup( object ):
                     del( self._handles[ cat ] )
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
+        return cats
+
+    def _svc_periodicRefreshCats( self ):
+        cats = self._refreshCats()
         if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
-            self._threads.add( gevent.spawn_later( 10, self._svc_refreshCats ) )
+            self._threads.add( gevent.spawn_later( 10, self._svc_periodicRefreshCats ) )
         else:
-            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), self._svc_refreshCats ) )
+            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), self._svc_periodicRefreshCats ) )
 
     def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Send a message to the one actor in each sub-category without waiting for a response.
@@ -762,6 +779,7 @@ class ActorHandleGroup( object ):
 
         :returns: number of available categories
         '''
+        self._initialRefreshDone.wait( 2 )
         return len( self._handles )
 
     def close( self ):
@@ -771,3 +789,11 @@ class ActorHandleGroup( object ):
             h.close()
 
         self._threads.kill()
+
+    def forceRefresh( self ):
+        '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
+           since a periodic refresh is already at an interval frequent enough for most use.
+        '''
+        self._refreshCats()
+        for handle in self._handles.values():
+            handle._updateDirectory()

@@ -103,9 +103,11 @@ class ActorHost ( object ):
                                      private_key = self.private_key )
 
         ActorHandle._setHostDirInfo( self.configFile.get( 'directory_port',
-                                                          'ipc:///tmp/py_beach_directory_port' ) )
+                                                          'ipc:///tmp/py_beach_directory_port' ),
+                                     self.configFile.get( 'private_key', None ) )
 
-        ActorHandleGroup._setHostDirInfo( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ) )
+        ActorHandleGroup._setHostDirInfo( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ),
+                                          self.configFile.get( 'private_key', None ))
         
         gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
@@ -184,7 +186,7 @@ class ActorHost ( object ):
                             self.log( "Successfully loaded actor %s/%s" % ( realm, actorName ) )
                             self.actors[ uid ] = actor
                             actor.start()
-                            z.send( successMessage() )
+                            z.send( successMessage( { 'uid' : uid } ) )
                         else:
                             self.logCritical( 'Error loading actor %s/%s' % ( realm, actorName ) )
                             z.send( errorMessage( 'exception',
