@@ -612,9 +612,10 @@ class ActorHandle ( object ):
                                'req' : requestType,
                                'id' : str( uuid.uuid4() ) } }
 
-        for endpoint in self._endpoints.values():
+        for z_ident, endpoint in self._endpoints.items():
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
+                envelope[ 'mtd' ][ 'dst' ] = z_ident
                 gevent.spawn( z.request, envelope )
 
         gevent.sleep( 0 )
