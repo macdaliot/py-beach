@@ -416,6 +416,8 @@ class Beach ( object ):
         :returns: True if the actors association was successful
         '''
 
+        isSuccess = False
+
         req = { 'req' : 'associate', 'uid' : actorId, 'category' : category }
         if self._admin_token is not None:
             req[ 'admin_token' ] = self._admin_token
@@ -436,6 +438,8 @@ class Beach ( object ):
 
         :returns: True if the actors disassociation was successful
         '''
+
+        isSuccess = False
 
         req = { 'req' : 'disassociate', 'uid' : actorId, 'category' : category }
         if self._admin_token is not None:

@@ -612,6 +612,8 @@ class ActorHandle ( object ):
                                'req' : requestType,
                                'id' : str( uuid.uuid4() ) } }
 
+        self._initialRefreshDone.wait( timeout = self._timeout )
+
         for z_ident, endpoint in self._endpoints.items():
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
