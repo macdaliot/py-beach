@@ -102,14 +102,26 @@ function display_data( data )
     for( var k in data.load )
     {
         var actor_id = k;
+        var actor_name = data.actor_mtd[ k ];
         var loads = data.load[ k ];
-        var entry = $("<tr>").append( $("<td>").text( actor_id ) )
+        var entry = $("<tr>").append( $("<td>").text( actor_id )
+                                               .attr( 'nowrap', 'nowrap' )
+                                               .append( $("<br>") )
+                                               .append( $("<i>").text( actor_name ) ) )
                              .append( $("<td>").text( loads[ 0 ] ) )
                              .append( $("<td>").text( loads[ 1 ] ) );
+
         if( loads[ 0 ] == 0 )
         {
             entry.css( 'background-color', 'red' )
         }
+        $('#actors_info').append( entry );
+
+        entry = $("<tr>").append( $("<br>") )
+                         .append( $("<td>").attr( "colspan", "2" )
+                                           .append( $("<b>").text( "Pending transactions:" ) )
+                                           .append( $("<pre>").text( JSON.stringify( loads[ 2 ],
+                                                                                     null, 4 ) ) ) );
         $('#actors_info').append( entry );
     }
 

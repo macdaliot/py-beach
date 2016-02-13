@@ -374,6 +374,10 @@ class Actor( gevent.Greenlet ):
         '''
         return gevent.sleep( 0 )
 
+    def getPending( self ):
+        '''Get the number of pending requests made by this Actor.
+        '''
+        return [ h.getPending() for h in self._vHandles ]
 
 
 class ActorResponse( object ):
@@ -475,6 +479,7 @@ class ActorHandle ( object ):
         self._initialRefreshDone = gevent.event.Event()
         self._affinityCache = {}
         self._affinityOrder = None
+        self._pending = {}
 
     def _updateDirectory( self ):
         newDir = self._getDirectory( self._realm, self._cat )
@@ -491,6 +496,19 @@ class ActorHandle ( object ):
             self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
         else:
             self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), self._svc_refreshDir ) )
+
+    def _accountedSend( self, z, msg, z_ident, timeout ):
+        if z_ident not in self._pending:
+            self._pending[ z_ident ] = 0
+        self._pending[ z_ident ] += 1
+
+        ret = z.request( msg, timeout = timeout )
+
+        self._pending[ z_ident ] -= 1
+        if 0 == self._pending[ z_ident ]:
+            del( self._pending[ z_ident ] )
+
+        return ret
 
     def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Issue a request to the actor category of this handle.
@@ -573,7 +591,7 @@ class ActorHandle ( object ):
                                        'id' : str( uuid.uuid4() ),
                                        'dst' : z_ident } }
 
-                ret = z.request( envelope, timeout = timeout )
+                ret = self._accountedSend( z, envelope, z_ident, timeout )
 
                 ret = ActorResponse( ret )
                 # If we hit a timeout or wrong dest we don't take chances
@@ -618,7 +636,7 @@ class ActorHandle ( object ):
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                gevent.spawn( z.request, envelope )
+                gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout )
 
         gevent.sleep( 0 )
 
@@ -672,6 +690,11 @@ class ActorHandle ( object ):
            since a periodic refresh is already at an interval frequent enough for most use.
         '''
         self._updateDirectory()
+
+    def getPending( self ):
+        '''Get the number of pending requests made by this handle.
+        '''
+        return self._pending
 
 class ActorHandleGroup( object ):
     _zHostDir = None
@@ -801,3 +824,8 @@ class ActorHandleGroup( object ):
         self._refreshCats()
         for handle in self._handles.values():
             handle._updateDirectory()
+
+    def getPending( self ):
+        '''Get the number of pending requests made by this handle group.
+        '''
+        return [ h.getPending() for h in self._handles.values() ]

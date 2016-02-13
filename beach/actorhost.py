@@ -213,7 +213,7 @@ class ActorHost ( object ):
                 elif 'get_load_info' == action:
                     info = {}
                     for uid, actor in self.actors.items():
-                        info[ uid ] = ( actor._n_free_handlers, actor._n_concurrent )
+                        info[ uid ] = ( actor._n_free_handlers, actor._n_concurrent, actor.getPending() )
                     z.send( successMessage( data = info ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
