@@ -233,6 +233,8 @@ class HostManager ( object ):
     def _removeUidFromDirectory( self, uid ):
         isFound = False
         realm = self.actorInfo[ uid ][ 'realm' ]
+        if realm not in self.directory: return False
+
         for cname, c in self.directory[ realm ].items():
             if uid in c:
                 del( c[ uid ] )

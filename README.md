@@ -272,6 +272,24 @@ beach.addToCategory( 'b31fa917-424d-44b9-b97f-000d6ebddcd4', 'some/new/cat' )
 beach.removeFromCategory( 'b31fa917-424d-44b9-b97f-000d6ebddcd4', 'some/new/cat' )
 ```
 
+### Patrol
+Beach has a module called Patrol which can be used in conjunction with a config file that specifies behaviors to
+be taken if and when an Actor fails, or becomes less available. A 'relaunchOnFailure' parameters tells the Patrol
+to restart any instances that fails. An 'initialInstances' parameters specifies how many instances of the Actor
+should be running at a minimum, while a 'maxInstances' parameter specifies the maximum number of instances that
+should be spawned. Here is an example of an entry in the config file:
+```
+Patrol( 'BeaconProcessor',
+        initialInstances = 2,
+        maxInstances = None,
+        relaunchOnFailure = True,
+        onFailureCall = None,
+        actorArgs = ( 'c2/BeaconProcessor',
+                      'c2/beacon/1.0' ),
+        actorKwArgs = { 'parameters' : {},
+                        'n_concurrent' : 5 } )
+```
+
 ## Misc Setup
 ### Automated Deployment
 An example of automated deployment is included in /examples/salt using the Salt framework (http://saltstack.com/).
