@@ -66,6 +66,12 @@ class GetClusterInfo:
         info[ 'health' ] = beach.getClusterHealth()
         info[ 'n_nodes' ] = beach.getNodeCount()
         info[ 'load' ] = beach.getLoadInfo()
+        metadata = {}
+        mtd = beach.getAllNodeMetadata()
+        for nodeMtd in mtd.values():
+            for uid, actorMtd in nodeMtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
+                metadata[ uid ] = '%s/%s' % ( actorMtd[ 'realm' ], actorMtd[ 'name' ] )
+        info[ 'actor_mtd' ] = metadata
 
         unique_actors = Set()
         n_realms = 0

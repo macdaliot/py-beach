@@ -285,3 +285,26 @@ def test_multi_category():
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'newcat', {} ) ) )
 
     assert( beach.flush() )
+
+def test_pending_metric():
+    global beach
+
+    a1 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":15}, n_concurrent = 1 )
+    assert( isMessageSuccess( a1 ) )
+
+    vHandle = beach.getActorHandle( 'sleepers' )
+
+    # Sending a request that will stall for a bit
+    vHandle.shoot( 'sleep', data = {}, timeout = 20 )
+    # Make sure it's stalled
+    time.sleep( 2 )
+    # Make sure it's accounted for
+    pending = vHandle.getPending()
+
+    assert( 1 == len( pending ) )
+    assert( 1 == pending.values()[ 0 ] )
+
+    assert( beach.flush() )
+
+    vHandle.close()
+    assert( beach.flush() )
