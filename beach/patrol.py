@@ -76,7 +76,7 @@ class Patrol ( object ):
                     status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]),
                                                    **(actorEntry.actorArgs[ 1 ]) )
                     self._log( 'actor launched: %s' % status )
-                    if status is not None and status.get( 'status', {} ).get( 'success', False ):
+                    if type( status ) is dict and status.get( 'status', {} ).get( 'success', False ):
                         self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
             else:
                 self._log( 'actor %s is satisfied' % actorName )
@@ -128,7 +128,7 @@ class Patrol ( object ):
             self._log( 'running sync' )
             allActors = Set()
             directory = self._beach.getDirectory()
-            if directory is None:
+            if type( directory ) is not dict:
                 self._logCritical( 'error getting directory' )
                 continue
             for actorName, dirEntries in directory.get( 'realms', {} ).get( self._realm, {} ).iteritems():
