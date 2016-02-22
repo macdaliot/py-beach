@@ -51,24 +51,24 @@ class Patrol ( object ):
         mtd = self._beach.getAllNodeMetadata()
         for node_mtd in mtd.itervalues():
             if mtd is None: return {}
-            for mtd_data in node_mtd.get( 'data', {} ).get( 'mtd', {} ):
-                for aid, actor_mtd in mtd_data.iteritems():
-                    owner = actor_mtd.get( 'owner', None )
-                    if owner in self._entries:
-                        # Looks like a version of that actor was maintained by us before
-                        # so we'll add it to our roster.
-                        self._watch[ aid ] = self._entries[ owner ]
-                        self._log( 'adding pre-existing actor %s to patrol' % aid )
-                        tally.setdefault( self._entries[ owner ].name, 0 )
-                        tally[ self._entries[ owner ].name ] += 1
+            for aid, actor_mtd in node_mtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
+                owner = actor_mtd.get( 'owner', None )
+                if owner in self._entries:
+                    # Looks like a version of that actor was maintained by us before
+                    # so we'll add it to our roster.
+                    self._watch[ aid ] = self._entries[ owner ]
+                    self._log( 'adding pre-existing actor %s to patrol' % aid )
+                    tally.setdefault( self._entries[ owner ].name, 0 )
+                    tally[ self._entries[ owner ].name ] += 1
         return tally
 
     def _initializeMissingActors( self, existing ):
-        for actorName in self._entries.iterkeys():
+        for actorEntry in self._entries.itervalues():
+            actorName = actorEntry.name
             current = existing.get( actorName, 0 )
-            actorEntry = self._entries[ actorName ]
             targetNum = actorEntry.initialInstances
             if current < targetNum:
+                newOwner = '%s/%s' % ( self._owner, actorName )
                 self._log( 'actor %s has %d instances but requires %d, spawning' % ( actorName,
                                                                                      current,
                                                                                      targetNum ) )
@@ -111,6 +111,7 @@ class Patrol ( object ):
         record.maxInstances = maxInstances
         record.relaunchOnFailure = relaunchOnFailure
         record.onFailureCall = onFailureCall
+        actorKwArgs[ 'owner' ] = '%s/%s' % ( self._owner, name )
         record.actorArgs = ( actorArgs, actorKwArgs )
 
         self._entries[ '%s/%s' % ( self._owner, name ) ] = record
