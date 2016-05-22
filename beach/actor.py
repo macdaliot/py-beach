@@ -721,6 +721,8 @@ class ActorHandleGroup( object ):
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_periodicRefreshCats ) )
         self._handles = {}
+        self._asyncResponses = []
+        self._pendingAsync = None
 
     @classmethod
     def _setHostDirInfo( cls, zHostDir, private_key = None ):
@@ -800,6 +802,37 @@ class ActorHandleGroup( object ):
 
         for h in self._handles.values():
             h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries )
+
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+        '''Issue a message to the one actor in each sub-category and receive responses asynchronously.
+
+        :param requestType: the type of request to issue
+        :param data: a dict of the data associated with the request
+        :param timeout: the number of seconds to wait for a response
+        :param nRetries: the number of times the request will be re-sent if it
+            times out, meaning a timeout of 5 and a retry of 3 could result in
+            a request taking 15 seconds to return
+        :returns: True since no validation on the reception or reply
+            the endpoint is made
+        '''
+        self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
+
+        self._pendingAsync = gevent.pool.Group()
+
+        for h in self._handles.values():
+            self._pendingAsync.add( gevent.spawn( self._handleAsyncRequest, h, requestType, data = data, timeout = timeout, key = key, nRetries = nRetries ) )
+
+
+    def getNextAsyncResults( self ):
+        while 0 != len( self._pendingAsync ) or 0 != len( self._asyncResponses ):
+            tmp = self._asyncResponses
+            self._asyncResponses = []
+            yield tmp
+        self._pendingAsync = None
+
+    def _handleAsyncRequest( self, h, *args, **kwargs ):
+        resp = h.request( *args, **kwargs )
+        self._asyncResponses.append( resp )
 
     def getNumAvailable( self ):
         '''Checks to see the number of categories served by this HandleGroup.
