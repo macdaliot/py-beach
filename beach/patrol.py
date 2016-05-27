@@ -139,6 +139,7 @@ class Patrol ( object ):
         if actorEntry.relaunchOnFailure:
             self._log( 'actor is set to relaunch on failure' )
             status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
+            self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
             self._log( 'actor relaunched: %s' % status )
         else:
             self._log( 'actor is not set to relaunch on failure' )
@@ -154,6 +155,7 @@ class Patrol ( object ):
             for actorName, dirEntries in directory.get( 'realms', {} ).get( self._realm, {} ).iteritems():
                 for actorId in dirEntries.iterkeys():
                     allActors.add( actorId )
+            self._log( 'found %d actors, testing for %d' % ( len( allActors ), len( self._watch ) ) )
             for actorId in self._watch.keys():
                 if actorId not in allActors:
                     # An actor we were watching went down

@@ -434,18 +434,23 @@ class ActorHandle ( object ):
     def _getDirectory( cls, realm, cat ):
         msg = False
         if 0 != len( cls._zDir ):
-            z = cls._zDir[ random.randint( 0, len( cls._zDir ) - 1 ) ]
-            # These requests can be sent to the directory service of a HostManager
-            # or the ops service of the HostManager. Directory service is OOB from the
-            # ops but is only available locally to Actors. The ops is available from outside
-            # the host. So if the ActorHandle is created by an Actor, it goes to the dir_svc
-            # and if it's created from outside components through a Beach it goes to
-            # the ops.
-            msg = z.request( data = { 'req' : 'get_dir', 'realm' : realm, 'cat' : cat } )
-            if isMessageSuccess( msg ) and 'endpoints' in msg[ 'data' ]:
-                msg = msg[ 'data' ][ 'endpoints' ]
-            else:
-                msg = False
+            while msg is False:
+                iZ = random.randint( 0, len( cls._zDir ) - 1 )
+                z = cls._zDir[ iZ ]
+                # These requests can be sent to the directory service of a HostManager
+                # or the ops service of the HostManager. Directory service is OOB from the
+                # ops but is only available locally to Actors. The ops is available from outside
+                # the host. So if the ActorHandle is created by an Actor, it goes to the dir_svc
+                # and if it's created from outside components through a Beach it goes to
+                # the ops.
+                msg = z.request( data = { 'req' : 'get_dir', 'realm' : realm, 'cat' : cat } )
+                if isMessageSuccess( msg ) and 'endpoints' in msg[ 'data' ]:
+                    msg = msg[ 'data' ][ 'endpoints' ]
+                else:
+                    msg = False
+                    cls._zDir[ iZ ] = _ZMREQ( cls._zHostDir[ iZ ], isBind = False, private_key = cls._private_key )
+                    z.close()
+                    gevent.sleep( 1 )
         return msg
 
     @classmethod
