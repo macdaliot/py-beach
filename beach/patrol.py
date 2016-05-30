@@ -34,7 +34,8 @@ class Patrol ( object ):
                   identifier = 'default',
                   sync_frequency = 15.0,
                   logging_dest = '/dev/log',
-                  realm = 'global' ):
+                  realm = 'global',
+                  scale = None ):
         self._stopEvent = gevent.event.Event()
 
         self._logger = None
@@ -50,6 +51,8 @@ class Patrol ( object ):
         self._freq = sync_frequency
 
         self._beach = Beach( configFile, realm = realm )
+
+        self._scale = scale
 
 
     def _initLogging( self, level, dest ):
@@ -82,10 +85,27 @@ class Patrol ( object ):
         return tally
 
     def _initializeMissingActors( self, existing ):
+        if type( self._scale ) is int:
+            currentScale = self._scale
+        elif self._scale is not None:
+            currentScale = self._scale()
+        else:
+            currentScale = None
+
         for actorEntry in self._entries.itervalues():
             actorName = actorEntry.name
             current = existing.get( actorName, 0 )
             targetNum = actorEntry.initialInstances
+            if currentScale is not None and actorEntry.scalingFactor is not None:
+                targetNum = int( currentScale / actorEntry.scalingFactor )
+                if 0 != ( currentScale % actorEntry.scalingFactor ):
+                    targetNum += 1
+                if actorEntry.maxInstances is not None and targetNum > actorEntry.maxInstances:
+                    targetNum =  actor.maxInstances
+                self._log( 'actor %s scale %s / factor %s: %d' % ( actorName,
+                                                                   currentScale, 
+                                                                   actorEntry.scalingFactor,
+                                                                   targetNum ) )
             if current < targetNum:
                 newOwner = '%s/%s' % ( self._owner, actorName )
                 self._log( 'actor %s has %d instances but requires %d, spawning' % ( actorName,
@@ -121,6 +141,7 @@ class Patrol ( object ):
                  name,
                  initialInstances,
                  maxInstances = None,
+                 scalingFactor = None,
                  relaunchOnFailure = True,
                  onFailureCall = None,
                  actorArgs = [], actorKwArgs = {} ):
@@ -128,6 +149,7 @@ class Patrol ( object ):
         record.name = name
         record.initialInstances = initialInstances
         record.maxInstances = maxInstances
+        record.scalingFactor = scalingFactor
         record.relaunchOnFailure = relaunchOnFailure
         record.onFailureCall = onFailureCall
         actorKwArgs[ 'owner' ] = '%s/%s' % ( self._owner, name )
@@ -169,6 +191,7 @@ class _PatrolEntry ( object ):
         self.name = None
         self.initialInstances = 1
         self.maxInstances = None
+        self.scalingFactor = None
         self.relaunchOnFailure = True
         self.onFailureCall = None
         self.actorArgs = None
@@ -211,11 +234,18 @@ if __name__ == '__main__':
                          dest = 'logdest',
                          default = '/dev/log',
                          help = 'the destination for the logging for syslog' )
+    parser.add_argument( '--set-scale',
+                         type = int,
+                         required = False,
+                         dest = 'scale',
+                         default = None,
+                         help = 'the scale metric to use in conjunction with the actor\' scaling factor' )
     args = parser.parse_args()
     patrol = Patrol( args.configFile,
                      identifier = args.patrolName,
                      logging_dest =  args.logdest,
-                     realm = args.realm )
+                     realm = args.realm,
+                     scale = args.scale )
     exec( args.patrolFile.read(), { 'Patrol' : patrol.monitor,
                                     '__file__' : os.path.abspath( args.patrolFile.name ) } )
     patrol.start()
