@@ -172,13 +172,14 @@ def test_group():
     g1.forceRefresh()
     assert( 2 == g1.getNumAvailable() )
 
-    g1.request( 'ping', timeout = 2 )
+    results = g1.request( 'ping', timeout = 2 )
+
     nResponses = 0
-    for responses in g1.getNextAsyncResults():
-        if 0 != len( responses ):
-            nResponses += len( responses )
-        else:
-            gevent.sleep( 1 )
+    nMax = 0
+    while 2 > nResponses and 3 > nMax:
+        assert( results.waitForResults( 5 ) )
+        nResponses += len( results.getNewResults() )
+        nMax += 1
 
     assert( 2 == nResponses )
 
