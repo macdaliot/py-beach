@@ -88,6 +88,9 @@ class HostManager ( object ):
         self.isActorChanged = gevent.event.Event()
         self.isInstanceChanged = gevent.event.Event()
 
+        # Cleanup potentially old sockets
+        os.system( 'rm /tmp/py_beach*' )
+
         # Load default configs
         with open( self.configFilePath, 'r' ) as f:
             self.configFile = yaml.load( f )

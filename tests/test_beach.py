@@ -158,19 +158,30 @@ def test_trust():
 def test_group():
     global beach
 
-    a1 = beach.addActor( 'Pong', 'pongers/notrust/1.0', trustedIdents = [ 'def' ], parameters={"a":12} )
+    a1 = beach.addActor( 'Pong', 'pongers/trust/1.0', trustedIdents = [ 'def' ], parameters={"a":12} )
     assert( isMessageSuccess( a1 ) )
-    a2 = beach.addActor( 'Pong', 'pongers/notrust/2.0', trustedIdents = [ 'def' ], parameters={"a":13} )
+    a2 = beach.addActor( 'Pong', 'pongers/trust/2.0', trustedIdents = [ 'def' ], parameters={"a":13} )
     assert( isMessageSuccess( a2 ) )
 
-    g1 = beach.getActorHandleGroup( 'pongers/' )
+    g1 = beach.getActorHandleGroup( 'pongers/', ident = 'def' )
     assert( 1 == g1.getNumAvailable() )
 
-    a3 = beach.addActor( 'Pong', 'pongers/notrustalt/1.0', trustedIdents = [ 'def' ], parameters={"a":14} )
+    a3 = beach.addActor( 'Pong', 'pongers/trustalt/1.0', trustedIdents = [ 'def' ], parameters={"a":14} )
     assert( isMessageSuccess( a3 ) )
 
     g1.forceRefresh()
     assert( 2 == g1.getNumAvailable() )
+
+    results = g1.request( 'ping', timeout = 2 )
+
+    nResponses = 0
+    nMax = 0
+    while 2 > nResponses and 3 > nMax:
+        assert( results.waitForResults( 5 ) )
+        nResponses += len( results.getNewResults() )
+        nMax += 1
+
+    assert( 2 == nResponses )
 
     assert( beach.flush() )
 
