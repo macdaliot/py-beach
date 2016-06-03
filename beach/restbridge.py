@@ -110,7 +110,7 @@ class Bridge:
             handle = handle_cache[ cacheKey ]
 
         print( "Requesting: %s - %s" % ( action, req ) )
-        resp = handle.request( action, data = req, timeout = timeout )
+        resp = handle.request( action, data = req, timeout = timeout, key = key )
 
         if resp.isTimedOut:
             raise web.HTTPError( '500 Internal Server Error: Request timed out' )
