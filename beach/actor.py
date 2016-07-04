@@ -294,10 +294,11 @@ class Actor( gevent.Greenlet ):
                 self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
 
     def _initLogging( self, level, dest ):
-        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger( self.name )
         self._logger.setLevel( level )
-        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
+        handler = logging.handlers.SysLogHandler( address = dest )
+        handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
+        self._logger.addHandler( handler )
 
     def sleep( self, seconds ):
         gevent.sleep( seconds )

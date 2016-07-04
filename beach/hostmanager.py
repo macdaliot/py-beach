@@ -659,10 +659,11 @@ class HostManager ( object ):
                                                 'tombstones' : self.tombstones } )
 
     def _initLogging( self, level, dest ):
-        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger()
         self._logger.setLevel( level )
-        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
+        handler = logging.handlers.SysLogHandler( address = dest )
+        handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
+        self._logger.addHandler( handler )
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
