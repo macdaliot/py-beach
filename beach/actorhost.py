@@ -142,6 +142,7 @@ class ActorHost ( object ):
                         className = actorName[ actorName.rfind( '/' ) + 1 : ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
+                        resources = data.get( 'resources', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
                         n_concurrent = data.get( 'n_concurrent', 1 )
@@ -175,6 +176,7 @@ class ActorHost ( object ):
                                                           log_level,
                                                           log_dest,
                                                           parameters = parameters,
+                                                          resources = resources,
                                                           ident = ident,
                                                           trusted = trusted,
                                                           n_concurrent = n_concurrent,
@@ -232,10 +234,11 @@ class ActorHost ( object ):
             gevent.sleep( 30 )
 
     def _initLogging( self, level, dest ):
-        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger( self.instanceId )
         self._logger.setLevel( level )
-        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
+        handler = logging.handlers.SysLogHandler( address = dest )
+        handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
+        self._logger.addHandler( handler )
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )

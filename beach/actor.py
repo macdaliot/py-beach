@@ -114,6 +114,7 @@ class Actor( gevent.Greenlet ):
                   log_level,
                   log_dest,
                   parameters = {},
+                  resources = {},
                   ident = None,
                   trusted = [],
                   n_concurrent = 1,
@@ -132,6 +133,7 @@ class Actor( gevent.Greenlet ):
         self._port = port
         self._host = host
         self._parameters = parameters
+        self._resources = resources
         self._ident = ident
         self._trusted = trusted
         self._n_concurrent = n_concurrent
@@ -157,7 +159,7 @@ class Actor( gevent.Greenlet ):
 
         try:
             if hasattr( self, 'init' ):
-                self.init( self._parameters )
+                self.init( self._parameters, self._resources )
 
             # Initially Actors handle one concurrent request to avoid bad surprises
             # by users not thinking about concurrency. This can be bumped up by calling
@@ -294,10 +296,11 @@ class Actor( gevent.Greenlet ):
                 self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
 
     def _initLogging( self, level, dest ):
-        logging.basicConfig( format = "%(asctime)-15s %(message)s" )
         self._logger = logging.getLogger( self.name )
         self._logger.setLevel( level )
-        self._logger.addHandler( logging.handlers.SysLogHandler( address = dest ) )
+        handler = logging.handlers.SysLogHandler( address = dest )
+        handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
+        self._logger.addHandler( handler )
 
     def sleep( self, seconds ):
         gevent.sleep( seconds )

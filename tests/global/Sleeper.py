@@ -4,7 +4,7 @@ import time
 
 class Sleeper ( Actor ):
 
-    def init( self, parameters ):
+    def init( self, parameters, resources ):
         self.log( "Called init of actor." )
         self.handle( 'sleep', self.doSleep )
         self.handle( 'nosleep', self.noSleep )

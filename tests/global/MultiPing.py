@@ -4,7 +4,7 @@ import time
 
 class MultiPing ( Actor ):
 
-    def init( self, parameters ):
+    def init( self, parameters, resources ):
         self.log( "Called init of actor." )
         self.handle( 'ping', self.ponger )
         self.handle( 'oob', self.oobHandler )
