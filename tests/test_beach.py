@@ -46,12 +46,12 @@ def test_admin_privileges():
     tmpAdminToken = beach._admin_token
     beach._admin_token = None
 
-    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1} )
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1}, resources = {'pongers':'pongers'} )
     assert( ( not isMessageSuccess( a1 ) ) and ( a1.get( 'status', {} ).get( 'error', None ) == 'unprivileged' ) )
 
     beach._admin_token = tmpAdminToken
 
-    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1} )
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1}, resources = {'pongers':'pongers'} )
     assert( isMessageSuccess( a1 ) )
 
     d = beach.getDirectory()
@@ -62,7 +62,7 @@ def test_admin_privileges():
 def test_flushing_single_node_cluster():
     global beach
 
-    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":2} )
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":2}, resources = {'pongers':'pongers'} )
     assert( isMessageSuccess( a1 ) )
 
     f = beach.flush()
@@ -75,10 +75,10 @@ def test_flushing_single_node_cluster():
 def test_actor_creation():
     global beach
 
-    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":3}, strategy = 'roundrobin' )
+    a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":3}, resources = {'pongers':'pongers'}, strategy = 'roundrobin' )
     assert( isMessageSuccess( a1 ) )
 
-    a2 = beach.addActor( 'Pong', 'pongers', parameters={"a":4} )
+    a2 = beach.addActor( 'Pong', 'pongers', parameters={"a":4}, resources = {} )
     assert( isMessageSuccess( a2 ) )
 
     d = beach.getDirectory()
@@ -90,7 +90,7 @@ def test_actor_creation():
 def test_isolated_actor_creation():
     global beach
 
-    a1 = beach.addActor( 'Ping', 'pingers', isIsolated = True, parameters={"a":5} )
+    a1 = beach.addActor( 'Ping', 'pingers', isIsolated = True, parameters={"a":5}, resources = {'pongers':'pongers'} )
     assert( isMessageSuccess( a1 ) )
 
     d = beach.getDirectory()
@@ -102,7 +102,7 @@ def test_isolated_actor_creation():
 def test_virtual_handles():
     global beach
 
-    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":6} )
+    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":6}, resources = {} )
     assert( isMessageSuccess( a1 ) )
 
     vHandle = beach.getActorHandle( 'pongers' )
@@ -114,9 +114,9 @@ def test_virtual_handles():
 def test_prefix_virtual_handles():
     global beach
 
-    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":7} )
-    a2 = beach.addActor( 'Ping', 'pingers', parameters={"a":8} )
-    a3 = beach.addActor( 'Ping', 'pingers', parameters={"a":9} )
+    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":7}, resources = {} )
+    a2 = beach.addActor( 'Ping', 'pingers', parameters={"a":8}, resources = {'pongers':'pongers'} )
+    a3 = beach.addActor( 'Ping', 'pingers', parameters={"a":9}, resources = {'pongers':'pongers'} )
     assert( isMessageSuccess( a1 ) )
     assert( isMessageSuccess( a2 ) )
     assert( isMessageSuccess( a3 ) )
@@ -135,10 +135,10 @@ def test_prefix_virtual_handles():
 def test_trust():
     global beach
 
-    a1 = beach.addActor( 'Pong', 'pongers/trust', trustedIdents = [ 'abc' ], parameters={"a":10} )
+    a1 = beach.addActor( 'Pong', 'pongers/trust', trustedIdents = [ 'abc' ], parameters={"a":10}, resources = {} )
     assert( isMessageSuccess( a1 ) )
 
-    a2 = beach.addActor( 'Pong', 'pongers/notrust', trustedIdents = [ 'def' ], parameters={"a":11} )
+    a2 = beach.addActor( 'Pong', 'pongers/notrust', trustedIdents = [ 'def' ], parameters={"a":11}, resources = {} )
     assert( isMessageSuccess( a2 ) )
 
     vHandle = beach.getActorHandle( 'pongers/trust', ident = 'abc' )
@@ -158,15 +158,15 @@ def test_trust():
 def test_group():
     global beach
 
-    a1 = beach.addActor( 'Pong', 'pongers/trust/1.0', trustedIdents = [ 'def' ], parameters={"a":12} )
+    a1 = beach.addActor( 'Pong', 'pongers/trust/1.0', trustedIdents = [ 'def' ], parameters={"a":12}, resources = {} )
     assert( isMessageSuccess( a1 ) )
-    a2 = beach.addActor( 'Pong', 'pongers/trust/2.0', trustedIdents = [ 'def' ], parameters={"a":13} )
+    a2 = beach.addActor( 'Pong', 'pongers/trust/2.0', trustedIdents = [ 'def' ], parameters={"a":13}, resources = {} )
     assert( isMessageSuccess( a2 ) )
 
     g1 = beach.getActorHandleGroup( 'pongers/', ident = 'def' )
     assert( 1 == g1.getNumAvailable() )
 
-    a3 = beach.addActor( 'Pong', 'pongers/trustalt/1.0', trustedIdents = [ 'def' ], parameters={"a":14} )
+    a3 = beach.addActor( 'Pong', 'pongers/trustalt/1.0', trustedIdents = [ 'def' ], parameters={"a":14}, resources = {} )
     assert( isMessageSuccess( a3 ) )
 
     g1.forceRefresh()
@@ -188,7 +188,7 @@ def test_group():
 def test_concurrency():
     global beach
 
-    a1 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":15}, n_concurrent = 1 )
+    a1 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":15}, resources = {}, n_concurrent = 1 )
     assert( isMessageSuccess( a1 ) )
 
     vHandle = beach.getActorHandle( 'sleepers' )
@@ -209,7 +209,7 @@ def test_concurrency():
     vHandle.close()
     vHandle = beach.getActorHandle( 'sleepers' )
 
-    a2 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":16}, n_concurrent = 2 )
+    a2 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":16}, resources = {}, n_concurrent = 2 )
     assert( isMessageSuccess( a2 ) )
 
     # Now confirm first q does not block entire actor
@@ -223,7 +223,7 @@ def test_concurrency():
 def test_private_params():
     global beach
 
-    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":17,"_b":42,"c":43}, n_concurrent = 1 )
+    a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":17,"_b":42,"c":43}, resources = {}, n_concurrent = 1 )
     assert( isMessageSuccess( a1 ) )
 
     mtd = beach.getAllNodeMetadata()
@@ -243,7 +243,8 @@ def test_host_affinity():
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
     a1 = beach.addActor( 'Ping', 'pingers',
-                         parameters={"a":18},
+                         parameters={"a":18}, 
+                         resources = {},
                          strategy = 'host_affinity',
                          strategy_hint = 'nope' )
     assert( not isMessageSuccess( a1 ) )
@@ -253,6 +254,7 @@ def test_host_affinity():
         thisIface = _getIpv4ForIface( 'en0' )
     a1 = beach.addActor( 'Ping', 'pingers',
                          parameters={"a":19},
+                         resources = {'pongers':'pongers'},
                          strategy = 'host_affinity',
                          strategy_hint = thisIface )
     assert( isMessageSuccess( a1 ) )
@@ -271,7 +273,7 @@ def test_multi_category():
     d = beach.getDirectory()
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
-    a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers' ], parameters={"a":18} )
+    a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers' ], parameters={"a":18}, resources = {} )
     assert( isMessageSuccess( a1 ) )
 
     d = beach.getDirectory()
@@ -300,7 +302,7 @@ def test_multi_category():
 def test_pending_metric():
     global beach
 
-    a1 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":15}, n_concurrent = 1 )
+    a1 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":15}, resources = {}, n_concurrent = 1 )
     assert( isMessageSuccess( a1 ) )
 
     vHandle = beach.getActorHandle( 'sleepers' )

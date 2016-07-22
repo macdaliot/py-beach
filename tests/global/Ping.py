@@ -3,9 +3,9 @@ import time
 
 class Ping ( Actor ):
 
-    def init( self, parameters ):
+    def init( self, parameters, resources ):
         self.log( "Called init of actor." )
-        self.zPong = self.getActorHandle( category = 'pongers' )
+        self.zPong = self.getActorHandle( category = resources[ 'pongers' ] )
         self.schedule( 5, self.pinger )
 
     def deinit( self ):
