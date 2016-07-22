@@ -287,6 +287,7 @@ Patrol( 'BeaconProcessor',
         actorArgs = ( 'c2/BeaconProcessor',
                       'c2/beacon/1.0' ),
         actorKwArgs = { 'parameters' : {},
+                        'resources' : { 'analytics' : 'analytics/intake' },
                         'n_concurrent' : 5 } )
 ```
 

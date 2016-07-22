@@ -142,6 +142,7 @@ class ActorHost ( object ):
                         className = actorName[ actorName.rfind( '/' ) + 1 : ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
+                        resources = data.get( 'resources', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
                         n_concurrent = data.get( 'n_concurrent', 1 )
@@ -175,6 +176,7 @@ class ActorHost ( object ):
                                                           log_level,
                                                           log_dest,
                                                           parameters = parameters,
+                                                          resources = resources,
                                                           ident = ident,
                                                           trusted = trusted,
                                                           n_concurrent = n_concurrent,

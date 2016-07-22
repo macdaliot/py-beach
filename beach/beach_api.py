@@ -153,6 +153,7 @@ class Beach ( object ):
                   strategy_hint = None,
                   realm = None,
                   parameters = None,
+                  resources = None,
                   isIsolated = False,
                   secretIdent = None,
                   trustedIdents = [],
@@ -170,6 +171,7 @@ class Beach ( object ):
         :param realm: the realm to add the actor in, if different than main realm set
         :param parameters: a dict of parameters that will be given to the actor when it starts,
             usually used for configurations
+        :param resources: the mapping of internal resource name to categories in the beach cluster
         :param isIsolated: if True the Actor will be spawned in its own process space to further
             isolate it from potential crashes of other Actors
         :param secretIdent: a string used as a semi-secret token passed in requests sent by
@@ -250,6 +252,8 @@ class Beach ( object ):
                      'n_concurrent' : n_concurrent }
             if parameters is not None:
                 info[ 'parameters' ] = parameters
+            if resources is not None:
+                info[ 'resources' ] = resources
             if secretIdent is not None:
                 info[ 'ident' ] = secretIdent
             if trustedIdents is not None:

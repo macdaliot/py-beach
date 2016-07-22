@@ -280,13 +280,14 @@ class HostManager ( object ):
         
         return instance
 
-    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters ):
+    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources ):
         info = self.actorInfo.setdefault( uid, {} )
         info[ 'instance' ] = instance
         info[ 'name' ] = actorName
         info[ 'realm' ] = realm
         info[ 'isolated' ] = isIsolated
         info[ 'owner' ] = owner
+        info[ 'resources' ] = resources
         info[ 'params' ] = {}
         for k in parameters.keys():
             if k.startswith( '_' ):
@@ -347,6 +348,7 @@ class HostManager ( object ):
                         categories = data[ 'cat' ]
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
+                        resources = data.get( 'resources', {} )
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
                         n_concurrent = data.get( 'n_concurrent', 1 )
@@ -358,7 +360,7 @@ class HostManager ( object ):
                         port = self._getAvailablePortForUid( uid )
                         instance = self._getInstanceForActor( isIsolated )
                         if instance is not None:
-                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters )
+                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters, resources )
                             newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
                                                                      'actor_name' : actorName,
                                                                      'realm' : realm,
@@ -366,6 +368,7 @@ class HostManager ( object ):
                                                                      'ip' : self.ifaceIp4,
                                                                      'port' : port,
                                                                      'parameters' : parameters,
+                                                                     'resources' : resources,
                                                                      'ident' : ident,
                                                                      'trusted' : trusted,
                                                                      'n_concurrent' : n_concurrent,
