@@ -572,8 +572,11 @@ class HostManager ( object ):
                     data = False
 
                 if not isMessageSuccess( data ):
+                    if not self.initialProcesses and instance[ 'p' ] is not None:
+                        self._logCritical( "Instance %s is dead (%s)." % ( instance[ 'id' ], data ) )
                     isBrandNew = True
                     if instance[ 'p' ] is not None:
+                        self._logCritical( "Killing previous instance for %s" % instance[ 'id' ] )
                         instance[ 'p' ].kill()
                         # Instance died, it means all Actors within are no longer reachable
                         self._removeInstanceActorsFromDirectory( instance )

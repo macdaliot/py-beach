@@ -259,6 +259,13 @@ class Actor( gevent.Greenlet ):
         '''
         return not self.ready()
 
+    def getLastError( self ):
+        '''Returns the last exception that occured in the actor.
+
+        :returns: an exception or None
+        '''
+        return self.exception
+
     def handle( self, requestType, handlerFunction ):
         '''Initiates a callback for a specific type of request.
 
@@ -510,11 +517,14 @@ class ActorHandle ( object ):
             self._pending[ z_ident ] = 0
         self._pending[ z_ident ] += 1
 
-        ret = z.request( msg, timeout = timeout )
-
-        self._pending[ z_ident ] -= 1
-        if 0 == self._pending[ z_ident ]:
-            del( self._pending[ z_ident ] )
+        try:
+            ret = z.request( msg, timeout = timeout )
+        except:
+            raise
+        finally:
+            self._pending[ z_ident ] -= 1
+            if 0 == self._pending[ z_ident ]:
+                del( self._pending[ z_ident ] )
 
         return ret
 

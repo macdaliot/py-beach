@@ -129,6 +129,7 @@ class Patrol ( object ):
         self._log( '%d pre-existing actors' % len( existing ) )
         self._initializeMissingActors( existing )
         self._log( 'starting patrol' )
+        gevent.sleep(10)
         self._threads.add( gevent.spawn( self._sync ) )
 
     def stop( self ):
