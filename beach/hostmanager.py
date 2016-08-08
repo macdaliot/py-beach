@@ -381,6 +381,12 @@ class HostManager ( object ):
 
                         if isMessageSuccess( newMsg ):
                             self._log( "New actor loaded (isolation = %s, concurrent = %d), adding to directory" % ( isIsolated, n_concurrent ) )
+                            # We always add a hardcoded special category _ACTORS/actorUid to provide a way for certain special actors
+                            # to talk to specific instances directly, but this is discouraged.
+                            self.directory.setdefault( realm,
+                                                       PrefixDict() ).setdefault( '_ACTORS/%s' % ( uid, ),
+                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                  port )
                             for category in categories:
                                 self.directory.setdefault( realm,
                                                            PrefixDict() ).setdefault( category,

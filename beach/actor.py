@@ -634,7 +634,7 @@ class ActorHandle ( object ):
         return ret
 
     def broadcast( self, requestType, data = {} ):
-        '''Issue a request to the all actors in the category of this handle.
+        '''Issue a request to all actors in the category of this handle ignoring response.
 
         :param requestType: the type of request to issue
         :param data: a dict of the data associated with the request
@@ -659,6 +659,37 @@ class ActorHandle ( object ):
         gevent.sleep( 0 )
 
         return ret
+
+    def requestFromAll( self, requestType, data = {} ):
+        '''Issue a request to all actors in the category of this handle and get responses in a FutureResults.
+
+        :param requestType: the type of request to issue
+        :param data: a dict of the data associated with the request
+        :returns: True since no validation on the reception or reply from any
+            specific endpoint is made
+        '''
+        envelope = { 'data' : data,
+                     'mtd' : { 'ident' : self._ident,
+                               'req' : requestType,
+                               'id' : str( uuid.uuid4() ) } }
+
+        self._initialRefreshDone.wait( timeout = self._timeout )
+
+        toSockets = elf._endpoints.items()
+        futureResults = FutureResults( len( toSockets ) )
+        for z_ident, endpoint in toSockets:
+            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
+            if z is not None:
+                envelope[ 'mtd' ][ 'dst' ] = z_ident
+                gevent.spawn( self._requestToFuture, futureResults, z, envelope, z_ident, self._timeout )
+
+        gevent.sleep( 0 )
+
+        return futureResults
+
+    def _requestToFuture( self, futureResults, *args, **kwargs ):
+        resp = self._accountedSend( *args, **kwargs )
+        futureResults._addNewResult( resp )
 
     def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Send a message to the one actor without waiting for a response.
