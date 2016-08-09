@@ -25,6 +25,7 @@ import gevent
 import gevent.event
 import os
 from sets import Set
+import traceback
 
 
 class Patrol ( object ):
@@ -248,8 +249,13 @@ if __name__ == '__main__':
                      logging_dest =  args.logdest,
                      realm = args.realm,
                      scale = args.scale )
-    exec( args.patrolFile.read(), { 'Patrol' : patrol.monitor,
-                                    '__file__' : os.path.abspath( args.patrolFile.name ) } )
+
+    try:
+        exec( args.patrolFile.read(), { 'Patrol' : patrol.monitor,
+                                        '__file__' : os.path.abspath( args.patrolFile.name ) } )
+    except:
+        patrol._logCritical( traceback.format_exc() )
+
     patrol.start()
     timeToStopEvent.wait()
     patrol.stop()
