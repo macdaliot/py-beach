@@ -302,6 +302,16 @@ class Actor( gevent.Greenlet ):
             if not self.stopEvent.wait( 0 ):
                 self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
 
+    def delay( self, inDelay, func, *args, **kw_args ):
+        '''Delay the execution of a function.
+
+        :param inDelay: the number of seconds to execute into
+        :param func: the function to call
+        :param args: positional arguments to the function
+        :param kw_args: keyword arguments to the function
+        '''
+        self._threads.add( gevent.spawn_later( inDelay, func, *args, **kw_args ) )
+
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )
         self._logger.setLevel( level )
