@@ -538,7 +538,11 @@ class ActorHandle ( object ):
 
         return ret
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def _requestToFuture( self, futureResults, *args, **kwargs ):
+        resp = self.request( *args, **kwargs )
+        futureResults._addNewResult( resp )
+
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, isWithFuture = False ):
         '''Issue a request to the actor category of this handle.
 
         :param requestType: the type of request to issue
@@ -550,6 +554,7 @@ class ActorHandle ( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param isWithFuture: return a Future instead of the actual response
         :returns: the response to the request as an ActorResponse
         '''
         z = None
@@ -567,6 +572,18 @@ class ActorHandle ( object ):
             timeout = self._timeout
         if 0 == timeout:
             timeout = None
+
+        if isWithFuture:
+            futureResult = FutureResults( 1 )
+            gevent.spawn( self._requestToFuture, 
+                          futureResult, 
+                          requestType, 
+                          data = data, 
+                          timeout = timeout, 
+                          key = key, 
+                          nRetries = nRetries, 
+                          isWithFuture = False )
+            return futureResult
 
         while curRetry <= nRetries:
             try:
@@ -691,13 +708,13 @@ class ActorHandle ( object ):
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                gevent.spawn( self._requestToFuture, futureResults, z, envelope, z_ident, self._timeout )
+                gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout )
 
         gevent.sleep( 0 )
 
         return futureResults
 
-    def _requestToFuture( self, futureResults, *args, **kwargs ):
+    def _directToFuture( self, futureResults, *args, **kwargs ):
         resp = self._accountedSend( *args, **kwargs )
         futureResults._addNewResult( resp )
 
