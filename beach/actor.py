@@ -283,6 +283,17 @@ class Actor( gevent.Greenlet ):
         self._handlers[ requestType ] = handlerFunction
         return old
 
+    def unhandle( self, requestType ):
+        '''Stop handling requests for a specific type in this actor.
+        :param requetType: the string representing the type of request to stop handling
+        :returns True if a handler was removed
+        '''
+        if requestType in self._handlers:
+            del( self._handlers[ requestType ] )
+            return True
+        else:
+            return False
+
     def schedule( self, delay, func, *args, **kw_args ):
         '''Schedule a recurring function.
 
