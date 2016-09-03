@@ -31,6 +31,7 @@ except:
 class _TimeoutException(Exception): pass
 
 global_z_context = zmq.Context()
+global_z_context.set( zmq.MAX_SOCKETS, 1024 * 10 )
 
 def _sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):

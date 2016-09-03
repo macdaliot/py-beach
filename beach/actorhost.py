@@ -127,11 +127,11 @@ class ActorHost ( object ):
     def svc_receiveTasks( self ):
         z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
-            self.log( "Waiting for op" )
+            #self.log( "Waiting for op" )
             data = z.recv()
             if data is not False and data is not None and 'req' in data:
                 action = data[ 'req' ]
-                self.log( "Received new ops request: %s" % action )
+                #self.log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
                     z.send( successMessage() )
                 elif 'start_actor' == action:
@@ -227,7 +227,7 @@ class ActorHost ( object ):
     def svc_monitorActors( self ):
         z = self.hostOpsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
-            self.log( "Culling actors that stopped of themselves" )
+            #self.log( "Culling actors that stopped of themselves" )
             for uid, actor in self.actors.items():
                 if not actor.isRunning():
                     exc = actor.getLastException()
