@@ -313,7 +313,7 @@ class HostManager ( object ):
     
     def _svc_cullTombstones( self ):
         while not self.stopEvent.wait( 0 ):
-            self._log( "Culling tombstones" )
+            #self._log( "Culling tombstones" )
             currentTime = int( time.time() )
             maxTime = self.tombstone_culling_seconds
             nextTime = currentTime
@@ -332,7 +332,7 @@ class HostManager ( object ):
             data = z.recv()
             if data is not False and 'req' in data:
                 action = data[ 'req' ]
-                self._log( "Received new ops request: %s" % action )
+                #self._log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
                     if 'from' in data and data[ 'from' ] not in self.nodes:
                         self._log( "Discovered new node: %s" % data[ 'from' ] )
@@ -381,6 +381,12 @@ class HostManager ( object ):
 
                         if isMessageSuccess( newMsg ):
                             self._log( "New actor loaded (isolation = %s, concurrent = %d), adding to directory" % ( isIsolated, n_concurrent ) )
+                            # We always add a hardcoded special category _ACTORS/actorUid to provide a way for certain special actors
+                            # to talk to specific instances directly, but this is discouraged.
+                            self.directory.setdefault( realm,
+                                                       PrefixDict() ).setdefault( '_ACTORS/%s' % ( uid, ),
+                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                  port )
                             for category in categories:
                                 self.directory.setdefault( realm,
                                                            PrefixDict() ).setdefault( category,
@@ -551,7 +557,7 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 0 ):
             data = z.recv()
 
-            self._log( "Received directory request: %s/%s" % ( data[ 'realm' ], data[ 'cat' ] ) )
+            #self._log( "Received directory request: %s/%s" % ( data[ 'realm' ], data[ 'cat' ] ) )
             
             realm = data.get( 'realm', 'global' )
             if 'cat' in data:
@@ -562,7 +568,7 @@ class HostManager ( object ):
     def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
             for instance in self.processes:
-                self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
+                #self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
 
                 if self.initialProcesses and instance[ 'p' ] is not None:
                     # Only attempt keepalive if we know of a pid for it, otherwise it must be new
@@ -572,8 +578,11 @@ class HostManager ( object ):
                     data = False
 
                 if not isMessageSuccess( data ):
+                    if not self.initialProcesses and instance[ 'p' ] is not None:
+                        self._logCritical( "Instance %s is dead (%s)." % ( instance[ 'id' ], data ) )
                     isBrandNew = True
                     if instance[ 'p' ] is not None:
+                        self._logCritical( "Killing previous instance for %s" % instance[ 'id' ] )
                         instance[ 'p' ].kill()
                         # Instance died, it means all Actors within are no longer reachable
                         self._removeInstanceActorsFromDirectory( instance )
@@ -611,7 +620,7 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 0 ):
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
-                    self._log( "Issuing keepalive for node %s" % nodeName )
+                    #self._log( "Issuing keepalive for node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'keepalive',
                                                        'from' : self.ifaceIp4 }, timeout = 10 )
 
@@ -638,7 +647,7 @@ class HostManager ( object ):
                 nodeName = self.nodes.keys()[ nextNode ]
                 node = self.nodes[ nodeName ]
                 if nodeName != self.ifaceIp4:
-                    self._log( "Issuing directory sync with node %s" % nodeName )
+                    #self._log( "Issuing directory sync with node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
 
                     if isMessageSuccess( data ):
@@ -656,7 +665,7 @@ class HostManager ( object ):
             self.isActorChanged.clear()
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
-                    self._log( "Pushing new directory update to %s" % nodeName )
+                    #self._log( "Pushing new directory update to %s" % nodeName )
                     node[ 'socket' ].request( { 'req' : 'push_dir_sync',
                                                 'directory' : self.directory,
                                                 'tombstones' : self.tombstones } )

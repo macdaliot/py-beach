@@ -259,6 +259,13 @@ class Actor( gevent.Greenlet ):
         '''
         return not self.ready()
 
+    def getLastError( self ):
+        '''Returns the last exception that occured in the actor.
+
+        :returns: an exception or None
+        '''
+        return self.exception
+
     def handle( self, requestType, handlerFunction ):
         '''Initiates a callback for a specific type of request.
 
@@ -275,6 +282,17 @@ class Actor( gevent.Greenlet ):
             old = self._handlers[ requestType ]
         self._handlers[ requestType ] = handlerFunction
         return old
+
+    def unhandle( self, requestType ):
+        '''Stop handling requests for a specific type in this actor.
+        :param requetType: the string representing the type of request to stop handling
+        :returns True if a handler was removed
+        '''
+        if requestType in self._handlers:
+            del( self._handlers[ requestType ] )
+            return True
+        else:
+            return False
 
     def schedule( self, delay, func, *args, **kw_args ):
         '''Schedule a recurring function.
@@ -294,6 +312,16 @@ class Actor( gevent.Greenlet ):
 
             if not self.stopEvent.wait( 0 ):
                 self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
+
+    def delay( self, inDelay, func, *args, **kw_args ):
+        '''Delay the execution of a function.
+
+        :param inDelay: the number of seconds to execute into
+        :param func: the function to call
+        :param args: positional arguments to the function
+        :param kw_args: keyword arguments to the function
+        '''
+        self._threads.add( gevent.spawn_later( inDelay, func, *args, **kw_args ) )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )
@@ -510,15 +538,22 @@ class ActorHandle ( object ):
             self._pending[ z_ident ] = 0
         self._pending[ z_ident ] += 1
 
-        ret = z.request( msg, timeout = timeout )
-
-        self._pending[ z_ident ] -= 1
-        if 0 == self._pending[ z_ident ]:
-            del( self._pending[ z_ident ] )
+        try:
+            ret = z.request( msg, timeout = timeout )
+        except:
+            raise
+        finally:
+            self._pending[ z_ident ] -= 1
+            if 0 == self._pending[ z_ident ]:
+                del( self._pending[ z_ident ] )
 
         return ret
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def _requestToFuture( self, futureResults, *args, **kwargs ):
+        resp = self.request( *args, **kwargs )
+        futureResults._addNewResult( resp )
+
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, isWithFuture = False ):
         '''Issue a request to the actor category of this handle.
 
         :param requestType: the type of request to issue
@@ -530,6 +565,7 @@ class ActorHandle ( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param isWithFuture: return a Future instead of the actual response
         :returns: the response to the request as an ActorResponse
         '''
         z = None
@@ -547,6 +583,18 @@ class ActorHandle ( object ):
             timeout = self._timeout
         if 0 == timeout:
             timeout = None
+
+        if isWithFuture:
+            futureResult = FutureResults( 1 )
+            gevent.spawn( self._requestToFuture, 
+                          futureResult, 
+                          requestType, 
+                          data = data, 
+                          timeout = timeout, 
+                          key = key, 
+                          nRetries = nRetries, 
+                          isWithFuture = False )
+            return futureResult
 
         while curRetry <= nRetries:
             try:
@@ -624,7 +672,7 @@ class ActorHandle ( object ):
         return ret
 
     def broadcast( self, requestType, data = {} ):
-        '''Issue a request to the all actors in the category of this handle.
+        '''Issue a request to all actors in the category of this handle ignoring response.
 
         :param requestType: the type of request to issue
         :param data: a dict of the data associated with the request
@@ -649,6 +697,37 @@ class ActorHandle ( object ):
         gevent.sleep( 0 )
 
         return ret
+
+    def requestFromAll( self, requestType, data = {} ):
+        '''Issue a request to all actors in the category of this handle and get responses in a FutureResults.
+
+        :param requestType: the type of request to issue
+        :param data: a dict of the data associated with the request
+        :returns: True since no validation on the reception or reply from any
+            specific endpoint is made
+        '''
+        envelope = { 'data' : data,
+                     'mtd' : { 'ident' : self._ident,
+                               'req' : requestType,
+                               'id' : str( uuid.uuid4() ) } }
+
+        self._initialRefreshDone.wait( timeout = self._timeout )
+
+        toSockets = elf._endpoints.items()
+        futureResults = FutureResults( len( toSockets ) )
+        for z_ident, endpoint in toSockets:
+            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
+            if z is not None:
+                envelope[ 'mtd' ][ 'dst' ] = z_ident
+                gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout )
+
+        gevent.sleep( 0 )
+
+        return futureResults
+
+    def _directToFuture( self, futureResults, *args, **kwargs ):
+        resp = self._accountedSend( *args, **kwargs )
+        futureResults._addNewResult( resp )
 
     def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
         '''Send a message to the one actor without waiting for a response.

@@ -25,6 +25,7 @@ import gevent
 import gevent.event
 import os
 from sets import Set
+import traceback
 
 
 class Patrol ( object ):
@@ -129,6 +130,7 @@ class Patrol ( object ):
         self._log( '%d pre-existing actors' % len( existing ) )
         self._initializeMissingActors( existing )
         self._log( 'starting patrol' )
+        gevent.sleep(10)
         self._threads.add( gevent.spawn( self._sync ) )
 
     def stop( self ):
@@ -247,8 +249,13 @@ if __name__ == '__main__':
                      logging_dest =  args.logdest,
                      realm = args.realm,
                      scale = args.scale )
-    exec( args.patrolFile.read(), { 'Patrol' : patrol.monitor,
-                                    '__file__' : os.path.abspath( args.patrolFile.name ) } )
+
+    try:
+        exec( args.patrolFile.read(), { 'Patrol' : patrol.monitor,
+                                        '__file__' : os.path.abspath( args.patrolFile.name ) } )
+    except:
+        patrol._logCritical( traceback.format_exc() )
+
     patrol.start()
     timeToStopEvent.wait()
     patrol.stop()

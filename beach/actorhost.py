@@ -127,11 +127,11 @@ class ActorHost ( object ):
     def svc_receiveTasks( self ):
         z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
-            self.log( "Waiting for op" )
+            #self.log( "Waiting for op" )
             data = z.recv()
             if data is not False and data is not None and 'req' in data:
                 action = data[ 'req' ]
-                self.log( "Received new ops request: %s" % action )
+                #self.log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
                     z.send( successMessage() )
                 elif 'start_actor' == action:
@@ -156,14 +156,14 @@ class ActorHost ( object ):
                         if log_dest is None:
                             log_dest = self._log_dest
                         fileName = '%s/%s/%s.py' % ( self.codeDirectory, realm, actorName )
-                        with open( fileName, 'r' ) as hFile:
-                            fileHash = hashlib.sha1( hFile.read() ).hexdigest()
-                        self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
-                                                                            actorName,
-                                                                            self.codeDirectory,
-                                                                            realm,
-                                                                            actorName ) )
                         try:
+                            with open( fileName, 'r' ) as hFile:
+                                fileHash = hashlib.sha1( hFile.read() ).hexdigest()
+                            self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
+                                                                                actorName,
+                                                                                self.codeDirectory,
+                                                                                realm,
+                                                                                actorName ) )
                             actor = getattr( imp.load_source( '%s_%s_%s' % ( realm, actorName, fileHash ),
                                                               '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                 realm,
@@ -183,6 +183,7 @@ class ActorHost ( object ):
                                                           private_key = self.private_key )
                         except:
                             actor = None
+                            self.logCritical( "Error loading actor %s: %s" % ( actorName, traceback.format_exc() ) )
 
                         if actor is not None:
                             self.log( "Successfully loaded actor %s/%s" % ( realm, actorName ) )
@@ -226,9 +227,14 @@ class ActorHost ( object ):
     def svc_monitorActors( self ):
         z = self.hostOpsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
-            self.log( "Culling actors that stopped of themselves" )
+            #self.log( "Culling actors that stopped of themselves" )
             for uid, actor in self.actors.items():
                 if not actor.isRunning():
+                    exc = actor.getLastException()
+                    if exc is not None:
+                        self.logCritical("Actor %s exited with exception: %s" % str( exc ) )
+                    else:
+                        self.log( "Actor %s is no longer running" % uid )
                     del( self.actors[ uid ] )
                     z.send( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
@@ -256,4 +262,7 @@ if __name__ == '__main__':
 #    GreenletProfiler.set_clock_type('cpu')
 #    gevent.spawn_later( 60, _profileSave )
 #    GreenletProfiler.start()
-    host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ], sys.argv[ 5 ] )
+    try:
+        host = ActorHost( sys.argv[ 1 ], sys.argv[ 2 ], int( sys.argv[ 3 ] ), sys.argv[ 4 ], sys.argv[ 5 ] )
+    except:
+        host.logCritical( "Exception: %s" % str( traceback.format_exc() ) )
