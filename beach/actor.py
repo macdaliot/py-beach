@@ -636,7 +636,7 @@ class ActorHandle ( object ):
                                               self._endpoints[ z_ident ],
                                               private_key = self._private_key )
                         if z is None:
-                            gevent.sleep( 0.001 )
+                            gevent.sleep( 0.1 )
             except _TimeoutException:
                 curRetry += 1
 
