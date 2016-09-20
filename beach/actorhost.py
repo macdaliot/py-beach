@@ -31,7 +31,7 @@ from gevent.event import Event
 from beach.utils import *
 from beach.utils import _getIpv4ForIface
 from beach.utils import _ZMREP
-import imp
+from beach.utils import loadModuleFrom
 import zmq.green as zmq
 from beach.actor import *
 import yaml
@@ -91,7 +91,11 @@ class ActorHost ( object ):
                 self.private_key = f.read()
                 self.log( "Using shared key: %s" % key_path )
 
-        self.codeDirectory = os.path.abspath( self.configFile.get( 'code_directory', './' ) )
+        self.codeDirectory = self.configFile.get( 'code_directory', './' )
+        if '://' not in self.codeDirectory:
+            self.codeDirectory = os.path.abspath( self.codeDirectory )
+
+        Actor._code_directory_root = self.codeDirectory
 
         self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%s' % instanceId,
                                  isBind = True )
@@ -155,19 +159,15 @@ class ActorHost ( object ):
                             log_level = self._log_level
                         if log_dest is None:
                             log_dest = self._log_dest
-                        fileName = '%s/%s/%s.py' % ( self.codeDirectory, realm, actorName )
                         try:
-                            with open( fileName, 'r' ) as hFile:
-                                fileHash = hashlib.sha1( hFile.read() ).hexdigest()
                             self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
                                                                                 actorName,
                                                                                 self.codeDirectory,
                                                                                 realm,
                                                                                 actorName ) )
-                            actor = getattr( imp.load_source( '%s_%s_%s' % ( realm, actorName, fileHash ),
-                                                              '%s/%s/%s.py' % ( self.codeDirectory,
-                                                                                realm,
-                                                                                actorName ) ),
+                            actor = getattr( loadModuleFrom( '%s/%s/%s.py' % ( self.codeDirectory,
+                                                                               realm,
+                                                                               actorName ) ),
                                              className )( self,
                                                           realm,
                                                           ip,

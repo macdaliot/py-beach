@@ -25,6 +25,7 @@ from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 from beach.utils import _ZSocket
+from beach.utils import loadModuleFrom
 import random
 import logging
 import logging.handlers
@@ -32,6 +33,7 @@ import imp
 import hashlib
 import inspect
 import sys
+import urllib2
 from types import ModuleType
 
 class ActorRequest( object ):
@@ -62,6 +64,8 @@ class ActorRequest( object ):
 
 class Actor( gevent.Greenlet ):
 
+    _code_directory_root = None
+
     @classmethod
     def importLib( cls, libName, className = None ):
         '''Import a user-defined lib from the proper realm.
@@ -73,18 +77,20 @@ class Actor( gevent.Greenlet ):
 
         :returns: the module or element of the module loaded
         '''
-        initPath = os.path.dirname( os.path.abspath( inspect.stack()[ 1 ][ 1 ] ) )
-        fileName = '%s/%s.py' % ( initPath, libName )
-        if not os.path.isfile( fileName ):
+        if '://' in libName:
+            # This is an absolute path
+            fileName = libName
+        else:
+            # For relative paths we look at the parent's path
+            parentGlobals = inspect.currentframe().f_back.f_globals
+            initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
+            fileName = '%s/%s.py' % ( initPath, libName )
+
+        try:
+            mod = loadModuleFrom( fileName )
+        except:
             fileName = '%s/%s/__init__.py' % ( initPath, libName )
-            libName = os.path.basename( initPath )
-        with open( fileName, 'r' ) as hFile:
-            fileHash = hashlib.sha1( hFile.read() ).hexdigest()
-        libName = libName[ libName.rfind( '/' ) + 1 : ]
-        modName = '%s_%s' % ( libName, fileHash )
-        mod = sys.modules.get( modName, None )
-        if mod is None:
-            mod = imp.load_source( modName, fileName )
+            mod = loadModuleFrom( fileName )
 
         if className is not None and className != '*':
             mod = getattr( mod, className )
@@ -103,6 +109,17 @@ class Actor( gevent.Greenlet ):
             parentGlobals[ libName ] = mod
 
         return mod
+
+    @classmethod
+    def readRelativeFile( cls, relFilePath ):
+        '''Read the contents of a file relative to the caller in Beach.
+        
+        :param relFilePath: the path to the file to read
+
+        :returns: the content of the file
+        '''
+        _beach_path = inspect.currentframe().f_back.f_globals[ '_beach_path' ]
+        return urllib2.urlopen( '%s/%s' % ( _beach_path[ : _beach_path.rfind( '/' ) ], relFilePath ) ).read() 
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
     def __init__( self,
