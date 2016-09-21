@@ -42,7 +42,7 @@ def loadModuleFrom( path ):
     if path.startswith( 'file://' ):
         path = 'file://%s' % os.path.abspath( path[ 7 : ] )
     content = urllib2.urlopen( path ).read()
-    modHash = hashlib.sha1( content )
+    modHash = hashlib.sha1( content ).hexdigest()
     name = '%s_%s' % ( path, modHash )
     mod = sys.modules.get( name, None )
     if mod is None:
