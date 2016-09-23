@@ -83,7 +83,10 @@ class Actor( gevent.Greenlet ):
         else:
             # For relative paths we look at the parent's path
             parentGlobals = inspect.currentframe().f_back.f_globals
-            initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
+            if '_beach_path' not in parentGlobals:
+                initPath = 'file://%s' % parentGlobals[ '__file__' ][ : parentGlobals[ '__file__' ].rfind( '/' ) ]
+            else:
+                initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
             fileName = '%s/%s.py' % ( initPath, libName )
 
         try:
