@@ -225,7 +225,7 @@ class Actor( gevent.Greenlet ):
                 request = None
             if not self.stopEvent.wait( 0 ):
                 if request is not None:
-                    self.log( "Received: %s" % request.req )
+                    #self.log( "Received: %s" % request.req )
 
                     if request.dst != self.name:
                         ret = errorMessage( 'wrong dest' )
@@ -260,7 +260,7 @@ class Actor( gevent.Greenlet ):
                 else:
                     self.logCritical( 'invalid request: %s' % str( msg ) )
                     z.send( errorMessage( 'invalid request' ) )
-            self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
+            #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
         self._n_free_handlers -= 1
         self.log( "Stopping processing Actor ops requests" )
 

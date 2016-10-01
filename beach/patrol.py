@@ -188,6 +188,22 @@ class Patrol ( object ):
                     self._processFallenActor( self._watch[ actorId ] )
                     del( self._watch[ actorId ] )
 
+    def remove( self, name, isStopToo = True ):
+        removed = []
+        k ='%s/%s' % ( self._owner, name )
+        if k not in self._entries: return False
+
+        record = self._entries[ k ]
+
+        for uid, entry in self._watch.items():
+            if entry == record:
+                del( self._watch[ uid ] )
+                removed.append( uid )
+
+        if isStopToo:
+            self._beach.stopActors( withId = removed )
+
+        return removed
 
 class _PatrolEntry ( object ):
     def __init__( self ):
