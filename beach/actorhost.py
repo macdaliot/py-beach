@@ -144,6 +144,7 @@ class ActorHost ( object ):
                     else:
                         actorName = data[ 'actor_name' ]
                         className = actorName[ actorName.rfind( '/' ) + 1 : ]
+                        className = className[ : -3 ] if className.endswith( '.py' ) else className
                         realm = data.get( 'realm', 'global' )
                         parameters = data.get( 'parameters', {} )
                         resources = data.get( 'resources', {} )
@@ -160,14 +161,21 @@ class ActorHost ( object ):
                         if log_dest is None:
                             log_dest = self._log_dest
                         try:
-                            self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
-                                                                                actorName,
-                                                                                self.codeDirectory,
-                                                                                realm,
-                                                                                actorName ) )
-                            actor = getattr( loadModuleFrom( '%s/%s/%s.py' % ( self.codeDirectory,
-                                                                               realm,
-                                                                               actorName ) ),
+                            implementation = None
+                            if '://' in actorName:
+                                self.log( "Starting actor %s/%s at absolute %s" % ( realm, actorName, actorName ) )
+                                implementation = loadModuleFrom( actorName )
+                            else:
+                                self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
+                                                                                    actorName,
+                                                                                    self.codeDirectory,
+                                                                                    realm,
+                                                                                    actorName ) )
+                                implementation = loadModuleFrom( '%s/%s/%s.py' % ( self.codeDirectory,
+                                                                                   realm,
+                                                                                   actorName ) )
+
+                            actor = getattr( implementation,
                                              className )( self,
                                                           realm,
                                                           ip,
@@ -183,7 +191,7 @@ class ActorHost ( object ):
                                                           private_key = self.private_key )
                         except:
                             actor = None
-                            self.logCritical( "Error loading actor %s: %s" % ( actorName, traceback.format_exc() ) )
+                            self.logCritical( "Error loading actor %s: %s (%s)" % ( actorName, traceback.format_exc(), dir( implementation ) ) )
 
                         if actor is not None:
                             self.log( "Successfully loaded actor %s/%s" % ( realm, actorName ) )

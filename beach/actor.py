@@ -91,7 +91,7 @@ class Actor( gevent.Greenlet ):
 
         try:
             mod = loadModuleFrom( fileName )
-        except:
+        except urllib2.URLError:
             fileName = '%s/%s/__init__.py' % ( initPath, libName )
             mod = loadModuleFrom( fileName )
 
