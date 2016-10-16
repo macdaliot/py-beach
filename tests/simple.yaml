@@ -4,7 +4,7 @@ n_processes: 0
 
 # The directory that contain the python code
 # for the cloud
-code_directory: ./
+code_directory: file://.
 
 # The nodes that should be used as seeds in your
 # environment, they should be somewhat stable but

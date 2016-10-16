@@ -22,6 +22,12 @@ import zmq.green as zmq
 import netifaces
 from prefixtree import PrefixDict
 import msgpack
+import hashlib
+import imp
+import urllib2
+import sys
+import os
+import warnings
 try:
     import M2Crypto
     IV_LENGTH = 0x10
@@ -32,6 +38,24 @@ class _TimeoutException(Exception): pass
 
 global_z_context = zmq.Context()
 global_z_context.set( zmq.MAX_SOCKETS, 1024 * 10 )
+
+def loadModuleFrom( path ):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        if path.startswith( 'file://' ):
+            path = 'file://%s' % os.path.abspath( path[ 7 : ] )
+        content = urllib2.urlopen( path ).read()
+        modHash = hashlib.sha1( content ).hexdigest()
+        name = '%s_%s' % ( path, modHash )
+        mod = sys.modules.get( name, None )
+        if mod is None:
+            mod = imp.new_module( name )
+            mod.__dict__[ '_beach_path' ] = path
+            mod.__dict__[ '__file__' ] = path
+            exec( content, mod.__dict__ )
+            sys.modules[ name ] = mod
+    
+    return mod
 
 def _sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):
