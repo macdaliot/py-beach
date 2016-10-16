@@ -121,7 +121,10 @@ class Actor( gevent.Greenlet ):
 
         :returns: the content of the file
         '''
-        _beach_path = inspect.currentframe().f_back.f_globals[ '_beach_path' ]
+        if '_beach_path' in inspect.currentframe().f_back.f_globals:
+            _beach_path = inspect.currentframe().f_back.f_globals[ '_beach_path' ]
+        else:
+            _beach_path = 'file://%s' % inspect.currentframe().f_back.f_globals[ '__file__' ]
         return urllib2.urlopen( '%s/%s' % ( _beach_path[ : _beach_path.rfind( '/' ) ], relFilePath ) ).read() 
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
