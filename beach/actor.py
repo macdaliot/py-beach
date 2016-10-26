@@ -136,6 +136,7 @@ class Actor( gevent.Greenlet ):
                   uid,
                   log_level,
                   log_dest,
+                  beach_config_path,
                   parameters = {},
                   resources = {},
                   ident = None,
@@ -148,6 +149,7 @@ class Actor( gevent.Greenlet ):
 
         self._log_level = log_level
         self._log_dest = log_dest
+        self._beach_config_path = beach_config_path
         self._initLogging( log_level, log_dest )
 
         self.stopEvent = gevent.event.Event()
