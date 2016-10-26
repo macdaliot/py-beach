@@ -37,7 +37,8 @@ class Patrol ( object ):
                   sync_frequency = 15.0,
                   logging_dest = '/dev/log',
                   realm = 'global',
-                  scale = None ):
+                  scale = None,
+                  actorsRoot = None ):
         self._stopEvent = gevent.event.Event()
 
         self._logger = None
@@ -55,6 +56,9 @@ class Patrol ( object ):
         self._beach = Beach( configFile, realm = realm )
 
         self._scale = scale
+        self._actorsRoot = actorsRoot
+        if self._actorsRoot is not None and not self._actorsRoot.endswith( '/' ):
+            self._actorsRoot += '/'
 
 
     def _initLogging( self, level, dest ):
@@ -149,6 +153,8 @@ class Patrol ( object ):
                  relaunchOnFailure = True,
                  onFailureCall = None,
                  actorArgs = [], actorKwArgs = {} ):
+        if self._actorsRoot is not None:
+            name = self._actorsRoot + name
         record = _PatrolEntry()
         record.name = name
         record.initialInstances = initialInstances
@@ -205,6 +211,18 @@ class Patrol ( object ):
             self._beach.stopActors( withId = removed )
 
         return removed
+
+    def loadFromUrl( self, url ):
+        if '://' in url:
+            patrolFilePath = url
+            if patrolFilePath.startswith( 'file://' ):
+                patrolFilePath = 'file://%s' % os.path.abspath( patrolFilePath[ len( 'file://' ) : ] )
+            patrolFile = urllib2.urlopen( patrolFilePath )
+        else:
+            patrolFilePath = os.path.abspath( url )
+            patrolFile = open( patrolFilePath, 'r' )
+        exec( patrolFile.read(), { 'Patrol' : self.monitor,
+                                   '__file__' : patrolFilePath } )
 
 class _PatrolEntry ( object ):
     def __init__( self ):
@@ -268,16 +286,7 @@ if __name__ == '__main__':
                      scale = args.scale )
 
     try:
-        if '://' in args.patrolFile:
-            patrolFilePath = args.patrolFile
-            if patrolFilePath.startswith( 'file://' ):
-                patrolFilePath = 'file://%s' % os.path.abspath( patrolFilePath[ len( 'file://' ) : ] )
-            patrolFile = urllib2.urlopen( patrolFilePath )
-        else:
-            patrolFilePath = os.path.abspath( args.patrolFile.name )
-            patrolFile = open( patrolFilePath, 'r' )
-        exec( patrolFile.read(), { 'Patrol' : patrol.monitor,
-                                   '__file__' : patrolFilePath } )
+        patrol.loadFromUrl( args.patrolFile )
     except:
         patrol._logCritical( traceback.format_exc() )
 
