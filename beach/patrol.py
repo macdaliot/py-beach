@@ -26,6 +26,7 @@ import gevent.event
 import os
 from sets import Set
 import traceback
+import urllib2
 
 
 class Patrol ( object ):
@@ -232,7 +233,7 @@ if __name__ == '__main__':
                          type = str,
                          help = 'the main config file defining the beach cluster' )
     parser.add_argument( 'patrolFile',
-                         type = argparse.FileType( 'r' ),
+                         type = str,
                          help = 'file defining the actors to patrol' )
     parser.add_argument( '--patrol-name',
                          type = str,
@@ -267,8 +268,16 @@ if __name__ == '__main__':
                      scale = args.scale )
 
     try:
-        exec( args.patrolFile.read(), { 'Patrol' : patrol.monitor,
-                                        '__file__' : os.path.abspath( args.patrolFile.name ) } )
+        if '://' in args.patrolFile:
+            patrolFilePath = args.patrolFile
+            if patrolFilePath.startswith( 'file://' ):
+                patrolFilePath = 'file://%s' % os.path.abspath( patrolFilePath[ len( 'file://' ) : ] )
+            patrolFile = urllib2.urlopen( patrolFilePath )
+        else:
+            patrolFilePath = os.path.abspath( args.patrolFile.name )
+            patrolFile = open( patrolFilePath, 'r' )
+        exec( patrolFile.read(), { 'Patrol' : patrol.monitor,
+                                   '__file__' : patrolFilePath } )
     except:
         patrol._logCritical( traceback.format_exc() )
 

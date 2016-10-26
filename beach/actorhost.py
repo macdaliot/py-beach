@@ -183,6 +183,7 @@ class ActorHost ( object ):
                                                           uid,
                                                           log_level,
                                                           log_dest,
+                                                          self.configFilePath,
                                                           parameters = parameters,
                                                           resources = resources,
                                                           ident = ident,
