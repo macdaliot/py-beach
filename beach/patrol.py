@@ -153,8 +153,9 @@ class Patrol ( object ):
                  relaunchOnFailure = True,
                  onFailureCall = None,
                  actorArgs = [], actorKwArgs = {} ):
+        actorArgs = list( actorArgs )
         if self._actorsRoot is not None:
-            __name__e = self._actorsRoot + name
+            actorArgs = [ self._actorsRoot + actorArgs[ 0 ] ] + actorArgs[ 1 : ]
         record = _PatrolEntry()
         record.name = name
         record.initialInstances = initialInstances
