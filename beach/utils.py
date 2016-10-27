@@ -39,7 +39,7 @@ class _TimeoutException(Exception): pass
 global_z_context = zmq.Context()
 global_z_context.set( zmq.MAX_SOCKETS, 1024 * 10 )
 
-def loadModuleFrom( path ):
+def loadModuleFrom( path, realm ):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         if path.startswith( 'file://' ):
@@ -52,6 +52,7 @@ def loadModuleFrom( path ):
             mod = imp.new_module( name )
             mod.__dict__[ '_beach_path' ] = path
             mod.__dict__[ '__file__' ] = path
+            mod.__dict__[ '_beach_realm' ] = realm
             exec( content, mod.__dict__ )
             sys.modules[ name ] = mod
     

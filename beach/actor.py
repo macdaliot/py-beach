@@ -15,6 +15,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import os
+import os.path
 import gevent
 import gevent.event
 import gevent.pool
@@ -81,19 +82,27 @@ class Actor( gevent.Greenlet ):
             # This is an absolute path
             fileName = libName
         else:
-            # For relative paths we look at the parent's path
             parentGlobals = inspect.currentframe().f_back.f_globals
-            if '_beach_path' not in parentGlobals:
-                initPath = 'file://%s' % parentGlobals[ '__file__' ][ : parentGlobals[ '__file__' ].rfind( '/' ) ]
+            realm = parentGlobals.get( '_beach_realm', '' )
+            if libName.startswith( '.' ) or cls._code_directory_root is None:
+                # For relative paths we look at the parent's path
+                if '_beach_path' not in parentGlobals:
+                    initPath = 'file://%s' % parentGlobals[ '__file__' ][ : parentGlobals[ '__file__' ].rfind( '/' ) ]
+                else:
+                    initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
             else:
-                initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
+                # This is a realm-relative path
+                initPath = '%s/%s/' % ( cls._code_directory_root, realm )
+                
             fileName = '%s/%s.py' % ( initPath, libName )
 
         try:
-            mod = loadModuleFrom( fileName )
+            mod = loadModuleFrom( fileName, realm )
         except urllib2.URLError:
+            if os.path.isfile( fileName ):
+                raise
             fileName = '%s/%s/__init__.py' % ( initPath, libName )
-            mod = loadModuleFrom( fileName )
+            mod = loadModuleFrom( fileName, realm )
 
         if className is not None and className != '*':
             mod = getattr( mod, className )

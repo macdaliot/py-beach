@@ -163,8 +163,9 @@ class ActorHost ( object ):
                         try:
                             implementation = None
                             if '://' in actorName:
+                                actorName = actorName if actorName.endswith( '.py' ) else '%s.py' % actorName
                                 self.log( "Starting actor %s/%s at absolute %s" % ( realm, actorName, actorName ) )
-                                implementation = loadModuleFrom( actorName )
+                                implementation = loadModuleFrom( actorName, realm )
                             else:
                                 self.log( "Starting actor %s/%s at %s/%s/%s.py" % ( realm,
                                                                                     actorName,
@@ -173,7 +174,8 @@ class ActorHost ( object ):
                                                                                     actorName ) )
                                 implementation = loadModuleFrom( '%s/%s/%s.py' % ( self.codeDirectory,
                                                                                    realm,
-                                                                                   actorName ) )
+                                                                                   actorName ),
+                                                                 realm )
 
                             actor = getattr( implementation,
                                              className )( self,
