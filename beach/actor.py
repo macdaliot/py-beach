@@ -207,12 +207,12 @@ class Actor( gevent.Greenlet ):
 
             # Before we break the party, we ask gently to exit
             self.log( "Waiting for threads to finish" )
-            self._threads.join( timeout = 30 )
+            self._threads.join( timeout = 5 )
 
             # Finish all the handlers, in theory we could rely on GC to eventually
             # signal the Greenlets to quit, but it's nicer to control the exact timing
             self.log( "Killing any remaining threads" )
-            self._threads.kill( timeout = 10 )
+            self._threads.kill( timeout = 1 )
 
             for v in self._vHandles:
                 v.close()
