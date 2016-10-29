@@ -44,9 +44,11 @@ def loadModuleFrom( path, realm ):
         warnings.simplefilter("ignore", RuntimeWarning)
         if path.startswith( 'file://' ):
             path = 'file://%s' % os.path.abspath( path[ 7 : ] )
+        name = path[ path.rfind( '/' ) + 1 : ]
+        name = name if not name.endswith( '.py' ) else name[ : -3 ]
         content = urllib2.urlopen( path ).read()
         modHash = hashlib.sha1( content ).hexdigest()
-        name = '%s_%s' % ( path, modHash )
+        name = '%s_%s' % ( name, modHash )
         mod = sys.modules.get( name, None )
         if mod is None:
             mod = imp.new_module( name )

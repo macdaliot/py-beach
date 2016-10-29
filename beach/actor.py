@@ -87,7 +87,10 @@ class Actor( gevent.Greenlet ):
             if libName.startswith( '.' ) or cls._code_directory_root is None:
                 # For relative paths we look at the parent's path
                 if '_beach_path' not in parentGlobals:
-                    initPath = 'file://%s' % parentGlobals[ '__file__' ][ : parentGlobals[ '__file__' ].rfind( '/' ) ]
+                    if '/' in parentGlobals[ '__file__' ]:
+                        initPath = 'file://%s' % parentGlobals[ '__file__' ][ : parentGlobals[ '__file__' ].rfind( '/' ) ]
+                    else:
+                        initPath = 'file://.'
                 else:
                     initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
             else:
@@ -130,11 +133,20 @@ class Actor( gevent.Greenlet ):
 
         :returns: the content of the file
         '''
-        if '_beach_path' in inspect.currentframe().f_back.f_globals:
-            _beach_path = inspect.currentframe().f_back.f_globals[ '_beach_path' ]
+        parentGlobals = inspect.currentframe().f_back.f_globals
+        realm = parentGlobals.get( '_beach_realm', '' )
+        if relFilePath.startswith( '.' ) or cls._code_directory_root is None:
+            # For relative paths we look at the parent's path
+            if '_beach_path' not in parentGlobals:
+                initPath = 'file://%s' % parentGlobals[ '__file__' ][ : parentGlobals[ '__file__' ].rfind( '/' ) ]
+            else:
+                initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
         else:
-            _beach_path = 'file://%s' % inspect.currentframe().f_back.f_globals[ '__file__' ]
-        return urllib2.urlopen( '%s/%s' % ( _beach_path[ : _beach_path.rfind( '/' ) ], relFilePath ) ).read() 
+            # This is a realm-relative path
+            initPath = '%s/%s/' % ( cls._code_directory_root, realm )
+            
+        fileName = '%s/%s' % ( initPath, relFilePath )
+        return urllib2.urlopen( fileName ).read()
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
     def __init__( self,
