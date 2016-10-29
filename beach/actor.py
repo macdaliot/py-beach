@@ -143,9 +143,12 @@ class Actor( gevent.Greenlet ):
                 initPath = parentGlobals[ '_beach_path' ][ : parentGlobals[ '_beach_path' ].rfind( '/' ) ]
         else:
             # This is a realm-relative path
-            initPath = '%s/%s/' % ( cls._code_directory_root, realm )
-            
+            initPath = '%s/%s' % ( cls._code_directory_root, realm )
+
         fileName = '%s/%s' % ( initPath, relFilePath )
+        if fileName.startswith( 'file://' ):
+            fileName = 'file://%s' % os.path.abspath( fileName[ 7 : ] )
+            
         return urllib2.urlopen( fileName ).read()
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
