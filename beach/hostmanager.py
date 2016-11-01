@@ -130,7 +130,7 @@ class HostManager ( object ):
                     sys.exit( -1 )
 
         # Building a list of interfaces to auto-detect
-        defaultInterfaces = [ 'en0', 'eth0' ]
+        defaultInterfaces = [ 'en0', 'eth0', 'ens33' ]
         while self.ifaceIp4 is None and 0 != len( defaultInterfaces ):
             self.interface = defaultInterfaces.pop()
             self.ifaceIp4 = _getIpv4ForIface( self.interface )
