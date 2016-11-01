@@ -73,9 +73,14 @@ class Beach ( object ):
         self._admin_token = self._configFile.get( 'admin_token', None )
 
         if 0 == len( self._seedNodes ):
-            mainIfaceIp = _getIpv4ForIface( self._configFile.get( 'interface', 'eth0' ) )
+            if 'interface' not in self._configFile:
+                defaultInterfaces = [ 'en0', 'eth0', 'ens33' ]
+                mainIfaceIp = None
+                while mainIfaceIp is None and 0 != len( defaultInterfaces ):
+                    interface = defaultInterfaces.pop()
+                    mainIfaceIp = _getIpv4ForIface( interface )
             if mainIfaceIp is None:
-                mainIfaceIp = _getIpv4ForIface( 'en0' )
+                self._log( "Failed to use interface %s." % self.interface )
             self._seedNodes.append( mainIfaceIp )
 
         for s in self._seedNodes:
