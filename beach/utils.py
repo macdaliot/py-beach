@@ -442,3 +442,18 @@ def _getIpv4ForIface( iface ):
     except:
         pass
     return ip
+
+def _getPublicInterfaces():
+    interfaces = []
+
+    for iface in netifaces.interfaces():
+        ipv4s = netifaces.ifaddresses( iface ).get( netifaces.AF_INET, [] )
+        for entry in ipv4s:
+            addr = entry.get( 'addr' )
+            if not addr:
+                continue
+            if not ( iface.startswith( 'lo' ) or addr.startswith( '127.' ) ):
+                interfaces.append( iface )
+                break
+
+    return interfaces

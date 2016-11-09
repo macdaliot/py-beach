@@ -36,6 +36,7 @@ import gevent.event
 from beach.actor import ActorHandle
 from beach.actor import ActorHandleGroup
 from beach.utils import _getIpv4ForIface
+from beach.utils import _getPublicInterfaces
 
 class Beach ( object ):
 
@@ -74,7 +75,7 @@ class Beach ( object ):
 
         if 0 == len( self._seedNodes ):
             if 'interface' not in self._configFile:
-                defaultInterfaces = [ 'en0', 'eth0', 'ens33' ]
+                defaultInterfaces = _getPublicInterfaces()
                 mainIfaceIp = None
                 while mainIfaceIp is None and 0 != len( defaultInterfaces ):
                     interface = defaultInterfaces.pop()
