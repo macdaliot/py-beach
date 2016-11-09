@@ -28,6 +28,7 @@ import yaml
 import multiprocessing
 from beach.utils import *
 from beach.utils import _getIpv4ForIface
+from beach.utils import _getPublicInterfaces
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 import time
@@ -130,7 +131,7 @@ class HostManager ( object ):
                     sys.exit( -1 )
 
         # Building a list of interfaces to auto-detect
-        defaultInterfaces = [ 'en0', 'eth0', 'ens33' ]
+        defaultInterfaces = _getPublicInterfaces()
         while self.ifaceIp4 is None and 0 != len( defaultInterfaces ):
             self.interface = defaultInterfaces.pop()
             self.ifaceIp4 = _getIpv4ForIface( self.interface )
