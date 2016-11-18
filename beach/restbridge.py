@@ -36,7 +36,8 @@ from functools import wraps
 ###############################################################################
 # REFERENCE ELEMENTS
 ###############################################################################
-
+SECRET_TOKEN = None
+ENABLE_GET = False
 
 ###############################################################################
 # CORE HELPER FUNCTIONS
@@ -80,14 +81,45 @@ def jsonApi( f ):
 class Bridge:
     @jsonApi
     def GET( self, category ):
+        if not ENABLE_GET:
+            raise web.HTTPError( '405 Method Not Allowed' )
+        return self.action( category )
+
+    @jsonApi
+    def POST( self, category ):
+        return self.action( category )
+
+    def action( self, category ):
         data = {}
 
-        params = web.input( _timeout = None, _ident = None, _key = None, _action = None )
+        params = web.input( _timeout = None, _ident = None, _key = None, _action = None, _secret = None )
 
         ident = params._ident
         timeout = params._timeout
         key = params._key
         action = params._action
+        secret = params._secret
+
+        if action is None:
+            action = web.ctx.env.get( 'HTTP_BEACH_ACTION', None )
+            ident = web.ctx.env.get( 'HTTP_BEACH_IDENT', None )
+            timeout = web.ctx.env.get( 'HTTP_BEACH_TIMEOUT', None )
+            key = web.ctx.env.get( 'HTTP_BEACH_KEY', None )
+            secret = web.ctx.env.get( 'HTTP_BEACH_SECRET', None )
+
+        if SECRET_TOKEN is not None and secret != SECRET_TOKEN:
+            raise web.HTTPError( '401 Unauthorized' )
+
+        if action is None:
+            # We support api.ai
+            try:
+                data = json.loads( web.data() )
+                if data:
+                    action = data.get( 'result', {} ).get( 'action', None )
+                    if action is not None:
+                        params = data
+            except:
+                action = None
 
         if action is None:
             raise web.HTTPError( '400 Bad Request: _action parameter required for requestType' )
@@ -109,7 +141,8 @@ class Bridge:
             handle_cache[ cacheKey ] = beach.getActorHandle( category, ident = ident )
             handle = handle_cache[ cacheKey ]
 
-        print( "Requesting: %s - %s" % ( action, req ) )
+        #print( "Requesting: %s - %s" % ( action, req ) )
+        
         resp = handle.request( action, data = req, timeout = timeout, key = key )
 
         if resp.isTimedOut:
@@ -120,24 +153,47 @@ class Bridge:
 
         data = resp.data
 
+        #print( "Response: %s" % ( json.dumps( data, indent = 2 ), ) )
+
         return data
 
 
 ###############################################################################
 # BOILER PLATE
 ###############################################################################
-urls = ( r'/(.*)', 'Bridge', )
-web.config.debug = False
-app = web.application( urls, globals() )
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser( prog = 'RestBridge' )
+    parser.add_argument( 'port',
+                         type = int,
+                         help = 'the port to listen on' )
+    parser.add_argument( 'configFile',
+                         type = str,
+                         help = 'the main config file defining the beach cluster' )
+    parser.add_argument( 'realm',
+                         type = str,
+                         help = 'the realm to give access to' )
+    parser.add_argument( '-s', '--secret',
+                         type = str,
+                         required = False,
+                         dest = 'secret',
+                         help = 'an optional secret token that must be provided as the _secret header' )
+    parser.add_argument( '-g', '--withget',
+                         required = False,
+                         dest = 'withGet',
+                         action = 'store_true',
+                         default =  False,
+                         help = 'if set HTTP GET is also accepted' )
+    args = parser.parse_args()
 
-if len( sys.argv ) < 2:
-    print( "python -m beach.restbridge [port] beachConfigFilePath realm" )
-    sys.exit()
-realm = sys.argv[ -1 ]
-sys.argv.pop()
-beach = Beach( sys.argv[ -1 ], realm = realm )
-sys.argv.pop()
-handle_cache = {}
+    SECRET_TOKEN = args.secret
+    ENABLE_GET = args.withGet
 
-os.chdir( g_current_dir )
-app.run()
+    urls = ( r'/(.*)', 'Bridge', )
+    web.config.debug = False
+    app = web.application( urls, globals() )
+    beach = Beach( args.configFile, realm = args.realm )
+    handle_cache = {}
+
+    os.chdir( g_current_dir )
+    app.run()
