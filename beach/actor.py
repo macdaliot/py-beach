@@ -189,6 +189,7 @@ class Actor( gevent.Greenlet ):
         self._private_key = private_key
 
         self._n_free_handlers = 0
+        self._is_initted = False
 
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
@@ -205,10 +206,11 @@ class Actor( gevent.Greenlet ):
         self._vHandles = []
 
     def _run( self ):
-
         try:
             if hasattr( self, 'init' ):
                 self.init( self._parameters, self._resources )
+
+            self._is_initted = True
 
             # Initially Actors handle one concurrent request to avoid bad surprises
             # by users not thinking about concurrency. This can be bumped up by calling
@@ -217,7 +219,10 @@ class Actor( gevent.Greenlet ):
                 self.AddConcurrentHandler()
 
             self.stopEvent.wait()
-
+        except:
+            self.logCritical( traceback.format_exc() )
+        finally:
+            self.stop()
             self._opsSocket.close()
 
             # Before we break the party, we ask gently to exit
@@ -232,10 +237,8 @@ class Actor( gevent.Greenlet ):
             for v in self._vHandles:
                 v.close()
 
-            if hasattr( self, 'deinit' ):
+            if self._is_initted and hasattr( self, 'deinit' ):
                 self.deinit()
-        except:
-            self.logCritical( traceback.format_exc() )
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''

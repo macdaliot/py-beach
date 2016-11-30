@@ -74,6 +74,7 @@ def _sanitizeJson( obj ):
         if issubclass( type( obj ), dict ) or type( obj ) is PrefixDict:
             data = {}
             for key, value in obj.iteritems():
+                key = _sanitizeJsonValue( key )
                 try:
                     data[ key ] = _sanitizeJsonStruct( value )
                 except AttributeError:
