@@ -31,6 +31,7 @@ from beach.utils import _getIpv4ForIface
 from beach.utils import _getPublicInterfaces
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
+import socket
 import time
 import random
 from sets import Set
@@ -229,6 +230,7 @@ class HostManager ( object ):
             self._sendQuitToInstance( instance )
 
     def _connectToNode( self, ip ):
+        ip = socket.gethostbyname( ip )
         nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( ip, self.opsPort ),
                              isBind = False,
                              private_key = self.private_key )
