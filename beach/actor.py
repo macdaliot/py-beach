@@ -765,7 +765,7 @@ class ActorHandle ( object ):
 
         self._initialRefreshDone.wait( timeout = self._timeout )
 
-        toSockets = elf._endpoints.items()
+        toSockets = self._endpoints.items()
         futureResults = FutureResults( len( toSockets ) )
         for z_ident, endpoint in toSockets:
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
@@ -863,7 +863,7 @@ class FutureResults( object ):
     def _addNewResult( self, res ):
         self._results.append( res )
         if self._nExpectedResults <= self._nReceivedResults:
-            self.isAllReceived = True
+            self._isAllReceived = True
         self._newResultEvent.set()
 
     def getNewResults( self ):

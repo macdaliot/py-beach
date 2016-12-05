@@ -27,6 +27,7 @@ import yaml
 from beach.utils import *
 from beach.utils import _ZMREQ
 import zmq.green as zmq
+import socket
 import random
 import collections
 import operator
@@ -98,6 +99,7 @@ class Beach ( object ):
                                           private_key = self._private_key )
 
     def _connectToNode( self, host ):
+        host = socket.gethostbyname( host )
         nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ),
                              isBind = False,
                              private_key = self._private_key )
