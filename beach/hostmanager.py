@@ -56,6 +56,7 @@ def handleExceptions( f ):
             try:
                 res = f( *args, **kwargs )
             except:
+                print( traceback.format_exc() )
                 args[ 0 ]._logCritical( traceback.format_exc() )
             else:
                 break
@@ -254,15 +255,15 @@ class HostManager ( object ):
 
     def _removeUidFromDirectory( self, uid ):
         isFound = False
-        realm = self.actorInfo[ uid ][ 'realm' ]
-        if realm not in self.directory: return False
 
-        for cname, c in self.directory[ realm ].items():
-            if uid in c:
-                del( c[ uid ] )
-                isFound = True
-                if 0 == len( c ):
-                    del( self.directory[ realm ][ cname ] )
+        for realm in self.directory.keys():
+            for cname, c in self.directory[ realm ].items():
+                if uid in c:
+                    del( c[ uid ] )
+                    isFound = True
+                    if 0 == len( c ):
+                        del( self.directory[ realm ][ cname ] )
+            if isFound: break
         if isFound:
             self.tombstones[ uid ] = int( time.time() )
 
@@ -315,12 +316,24 @@ class HostManager ( object ):
                 info[ 'params' ][ k ] = parameters[ k ]
 
     def _updateDirectoryWith( self, curDir, newDir ):
+        ourNode = 'tcp://%s:' % ( self.ifaceIp4, )
+        isGhostActorsFound = False
         for realm, catMap in newDir.iteritems():
             curDir.setdefault( realm, PrefixDict() )
             for cat, endpoints in catMap.iteritems():
                 curDir[ realm ].setdefault( cat, {} )
-                for actorId, endpoint in endpoints.iteritems():
-                    curDir[ realm ][ cat ][ actorId ] = endpoint
+                for uid, endpoint in endpoints.iteritems():
+                    # Check for ghost directory entries that report to be from here
+                    # but are not, may be that this node restarted.
+                    if endpoint.startswith( ourNode ) and uid not in curDir[ realm ][ cat ]:
+                        self.tombstones[ uid ] = int( time.time() )
+                        isGhostActorsFound = True
+                    else:
+                        curDir[ realm ][ cat ][ uid ] = endpoint
+        
+        if isGhostActorsFound:
+            self.isActorChanged.set()
+
         return curDir
 
     def _getDirectoryEntriesFor( self, realm, category ):
@@ -663,8 +676,6 @@ class HostManager ( object ):
         while not self.stopEvent.wait( nextWait ):
             nNodes = len( self.nodes )
             if nNodes != 0:
-                if nextNode > nNodes:
-                    nextNode = 0
                 # We aim to manually fully sync with the directories
                 # of all the nodes in the cluster over directory_sync_seconds seconds.
                 nextWait = self.directory_sync_seconds / nNodes
@@ -679,6 +690,11 @@ class HostManager ( object ):
                         self._updateDirectoryWith( self.directory, data[ 'data' ][ 'directory' ] )
                         for uid in data[ 'data' ][ 'tombstones' ]:
                             self._removeUidFromDirectory( uid )
+                    else:
+                        self._log( "Failed to get directory sync with node %s" % nodeName )
+                nextNode += 1
+                if nextNode >= nNodes:
+                    nextNode = 0
             else:
                 nextWait = 1
 
