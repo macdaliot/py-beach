@@ -315,12 +315,12 @@ class HostManager ( object ):
                 info[ 'params' ][ k ] = parameters[ k ]
 
     def _updateDirectoryWith( self, curDir, newDir ):
-        for k, v in newDir.iteritems():
-            if isinstance( v, collections.Mapping ):
-                r = self._updateDirectoryWith( curDir.get( k, {} ), v )
-                curDir[k] = r
-            else:
-                curDir[k] = newDir[k]
+        for realm, catMap in newDir.iteritems():
+            curDir.setdefault( realm, PrefixDict() )
+            for cat, endpoints in catMap.iteritems():
+                curDir[ realm ].setdefault( cat, {} )
+                for actorId, endpoint in endpoints.iteritems():
+                    curDir[ realm ][ cat ][ actorId ] = endpoint
         return curDir
 
     def _getDirectoryEntriesFor( self, realm, category ):
