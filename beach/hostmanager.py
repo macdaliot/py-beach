@@ -43,8 +43,24 @@ import collections
 import uuid
 import syslog
 from prefixtree import PrefixDict
+from functools import wraps
+import traceback
 
 timeToStopEvent = gevent.event.Event()
+
+def handleExceptions( f ):
+    @wraps( f )
+    def wrapped( *args, **kwargs ):
+        while True:
+            res = None
+            try:
+                res = f( *args, **kwargs )
+            except:
+                args[ 0 ]._logCritical( traceback.format_exc() )
+            else:
+                break
+        return res
+    return wrapped
 
 def _stop():
     global timeToStopEvent
@@ -314,6 +330,7 @@ class HostManager ( object ):
             endpoints.update( cat )
         return endpoints
     
+    @handleExceptions
     def _svc_cullTombstones( self ):
         while not self.stopEvent.wait( 0 ):
             #self._log( "Culling tombstones" )
@@ -329,6 +346,7 @@ class HostManager ( object ):
 
             gevent.sleep( maxTime - ( currentTime - nextTime ) )
     
+    @handleExceptions
     def _svc_receiveOpsTasks( self ):
         z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
@@ -555,6 +573,7 @@ class HostManager ( object ):
                 z.send( errorMessage( 'invalid request' ) )
                 self._logCritical( "Received completely invalid request" )
     
+    @handleExceptions
     def _svc_directory_requests( self ):
         z = self.directoryPort.getChild()
         while not self.stopEvent.wait( 0 ):
@@ -568,6 +587,7 @@ class HostManager ( object ):
             else:
                 z.send( errorMessage( 'no category specified' ) )
     
+    @handleExceptions
     def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
             for instance in self.processes:
@@ -619,6 +639,7 @@ class HostManager ( object ):
             self.isInstanceChanged.wait( self.instance_keepalive_seconds )
             self.isInstanceChanged.clear()
     
+    @handleExceptions
     def _svc_host_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
             for nodeName, node in self.nodes.items():
@@ -635,6 +656,7 @@ class HostManager ( object ):
             
             gevent.sleep( self.peer_keepalive_seconds )
     
+    @handleExceptions
     def _svc_directory_sync( self ):
         nextWait = 0
         nextNode = 0
@@ -660,6 +682,7 @@ class HostManager ( object ):
             else:
                 nextWait = 1
 
+    @handleExceptions
     def _svc_pushDirChanges( self ):
         while not self.stopEvent.wait( 0 ):
             self.isActorChanged.wait()

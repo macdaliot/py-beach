@@ -38,7 +38,24 @@ import yaml
 import time
 import logging
 import logging.handlers
+from functools import wraps
 import traceback
+
+timeToStopEvent = gevent.event.Event()
+
+def handleExceptions( f ):
+    @wraps( f )
+    def wrapped( *args, **kwargs ):
+        while True:
+            res = None
+            try:
+                res = f( *args, **kwargs )
+            except:
+                args[ 0 ]._logCritical( traceback.format_exc() )
+            else:
+                break
+        return res
+    return wrapped
 
 timeToStopEvent = Event()
 
@@ -128,6 +145,7 @@ class ActorHost ( object ):
         gevent.joinall( self.actors.values() )
         self.log( "All Actors exiting, exiting." )
     
+    @handleExceptions
     def svc_receiveTasks( self ):
         z = self.opsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
@@ -235,6 +253,7 @@ class ActorHost ( object ):
                 self.logCritical( "Received completely invalid request" )
                 z.send( errorMessage( 'invalid request' ) )
 
+    @handleExceptions
     def svc_monitorActors( self ):
         z = self.hostOpsSocket.getChild()
         while not self.stopEvent.wait( 0 ):
