@@ -259,10 +259,10 @@ class HostManager ( object ):
         for realm in self.directory.keys():
             for cname, c in self.directory[ realm ].items():
                 if uid in c:
-                    del( c[ uid ] )
+                    del( self.directory[ realm ][ cname ][ uid ] )
                     isFound = True
-                    if 0 == len( c ):
-                        del( self.directory[ realm ][ cname ] )
+                if 0 == len( self.directory[ realm ][ cname ] ):
+                    del( self.directory[ realm ][ cname ] )
             if isFound: break
         if isFound:
             self.tombstones[ uid ] = int( time.time() )
