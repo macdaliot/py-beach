@@ -108,7 +108,7 @@ class Beach ( object ):
 
     def _getHostInfo( self, zSock ):
         info = None
-        resp = zSock.request( { 'req' : 'host_info' } )
+        resp = zSock.request( { 'req' : 'host_info' }, timeout = 10 )
         if isMessageSuccess( resp ):
             info = resp[ 'data' ][ 'info' ]
         return info

@@ -929,7 +929,7 @@ class ActorHandleGroup( object ):
 
     def _refreshCats( self ):
         cats = self._getCategories( self._realm, self._categoryRoot )
-        if cats is not False:
+        if cats is not None:
             categories = []
             for cat in cats:
                 cat = cat.replace( self._categoryRoot, '' ).split( '/' )
