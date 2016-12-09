@@ -332,15 +332,9 @@ class HostManager ( object ):
                         curDir[ realm ][ cat ][ uid ] = endpoint
         
         for realm in curDir:
-            for cat in curDir[ realm ].keys():
-                try:
-                    if 0 == len( curDir[ realm ][ cat ] ):
-                        del( curDir[ realm ][ cat ] )
-                except:
-                    print( realm )
-                    print( cat )
-                    print( curDir[ realm ] )
-                    raise
+            for cat in curDir[ realm ].iterkeys():
+                if 0 == len( curDir[ realm ][ cat ] ):
+                    curDir[ realm ].pop( cat, None )
 
         if isGhostActorsFound:
             self.isActorChanged.set()

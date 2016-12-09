@@ -955,7 +955,7 @@ class ActorHandleGroup( object ):
 
     def _svc_periodicRefreshCats( self ):
         cats = self._refreshCats()
-        if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
+        if cats is False or cats is None or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 10, self._svc_periodicRefreshCats ) )
