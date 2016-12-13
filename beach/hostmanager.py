@@ -333,7 +333,7 @@ class HostManager ( object ):
         
         for realm in curDir:
             for cat in curDir[ realm ].iterkeys():
-                if 0 == len( curDir[ realm ][ cat ] ):
+                if 0 == len( curDir[ realm ].get( cat, {} ) ):
                     curDir[ realm ].pop( cat, None )
 
         if isGhostActorsFound:
