@@ -261,7 +261,7 @@ class Actor( gevent.Greenlet ):
 
                     if request.dst != self.name:
                         ret = errorMessage( 'wrong dest' )
-                        self.log( "Request is for wrong destination." )
+                        self.log( "Request is for wrong destination from %s, requesting %s but we are %s." % ( request.ident, request.dst, self.name ) )
                     elif 0 != len( self._trusted ) and request.ident not in self._trusted:
                         ret = errorMessage( 'unauthorized' )
                         self.log( "Received unauthorized request." )
@@ -929,7 +929,7 @@ class ActorHandleGroup( object ):
 
     def _refreshCats( self ):
         cats = self._getCategories( self._realm, self._categoryRoot )
-        if cats is not False:
+        if cats is not None:
             categories = []
             for cat in cats:
                 cat = cat.replace( self._categoryRoot, '' ).split( '/' )
@@ -955,7 +955,7 @@ class ActorHandleGroup( object ):
 
     def _svc_periodicRefreshCats( self ):
         cats = self._refreshCats()
-        if cats is False or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
+        if cats is False or cats is None or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
             self._threads.add( gevent.spawn_later( 10, self._svc_periodicRefreshCats ) )

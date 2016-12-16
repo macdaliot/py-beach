@@ -262,7 +262,7 @@ class HostManager ( object ):
                     del( c[ uid ] )
                     isFound = True
                     if 0 == len( c ):
-                        del( self.directory[ realm ][ cname ] )
+                        self.directory[ realm ].pop( cname, None )
             if isFound: break
         if isFound:
             self.tombstones[ uid ] = int( time.time() )
@@ -325,12 +325,17 @@ class HostManager ( object ):
                 for uid, endpoint in endpoints.iteritems():
                     # Check for ghost directory entries that report to be from here
                     # but are not, may be that this node restarted.
-                    if endpoint.startswith( ourNode ) and uid not in curDir[ realm ][ cat ]:
+                    if endpoint.startswith( ourNode ) and ( uid not in curDir[ realm ][ cat ] or uid not in self.actorInfo):
                         self.tombstones[ uid ] = int( time.time() )
                         isGhostActorsFound = True
                     else:
                         curDir[ realm ][ cat ][ uid ] = endpoint
         
+        for realm in curDir:
+            for cat in curDir[ realm ].iterkeys():
+                if 0 == len( curDir[ realm ].get( cat, {} ) ):
+                    curDir[ realm ].pop( cat, None )
+
         if isGhostActorsFound:
             self.isActorChanged.set()
 
@@ -672,16 +677,12 @@ class HostManager ( object ):
     @handleExceptions
     def _svc_directory_sync( self ):
         nextWait = 0
-        nextNode = 0
         while not self.stopEvent.wait( nextWait ):
-            nNodes = len( self.nodes )
-            if nNodes != 0:
-                # We aim to manually fully sync with the directories
-                # of all the nodes in the cluster over directory_sync_seconds seconds.
-                nextWait = self.directory_sync_seconds / nNodes
-
-                nodeName = self.nodes.keys()[ nextNode ]
-                node = self.nodes[ nodeName ]
+            if 0 == len( self.nodes ):
+                nextWait = 1
+            else:
+                nextWait = self.directory_sync_seconds / len( self.nodes )
+            for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
                     #self._log( "Issuing directory sync with node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'get_dir_sync' } )
@@ -692,11 +693,6 @@ class HostManager ( object ):
                             self._removeUidFromDirectory( uid )
                     else:
                         self._log( "Failed to get directory sync with node %s" % nodeName )
-                nextNode += 1
-                if nextNode >= nNodes:
-                    nextNode = 0
-            else:
-                nextWait = 1
 
     @handleExceptions
     def _svc_pushDirChanges( self ):

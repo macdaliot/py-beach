@@ -86,7 +86,7 @@ class Beach ( object ):
             self._seedNodes.append( mainIfaceIp )
 
         for s in self._seedNodes:
-            self._connectToNode( s )
+            self._connectToNode( s, True )
 
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn( self._updateNodes ) )
@@ -98,38 +98,51 @@ class Beach ( object ):
         ActorHandleGroup._setHostDirInfo( [ 'tcp://%s:%d' % ( x, self._opsPort ) for x in self._nodes.keys() ],
                                           private_key = self._private_key )
 
-    def _connectToNode( self, host ):
+    def _connectToNode( self, host, isSeed = False ):
         host = socket.gethostbyname( host )
         nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ),
                              isBind = False,
                              private_key = self._private_key )
-        self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None }
+        self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None, 'is_seed' : isSeed }
         print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 
     def _getHostInfo( self, zSock ):
         info = None
-        resp = zSock.request( { 'req' : 'host_info' } )
+        resp = zSock.request( { 'req' : 'host_info' }, timeout = 10 )
         if isMessageSuccess( resp ):
             info = resp[ 'data' ][ 'info' ]
         return info
 
     def _updateNodes( self ):
         try:
-            toQuery = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-            nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
-            if isMessageSuccess( nodes ):
-                for k in nodes[ 'data' ][ 'nodes' ].keys():
-                    if k not in self._nodes:
-                        self._connectToNode( k )
+            while True:
+                srcNodeIndex = random.randint( 0, len( self._nodes ) - 1 )
+                srcNodeKey = self._nodes.keys()[ srcNodeIndex ]
+                toQuery = self._nodes[ srcNodeKey ][ 'socket' ]
+                nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
+                if isMessageSuccess( nodes ):
+                    for k in nodes[ 'data' ][ 'nodes' ].keys():
+                        if k not in self._nodes:
+                            self._connectToNode( k )
+                elif not self._nodes[ srcNodeKey ][ 'is_seed' ]:
+                    # Couldn't get node list, assuming it's dead.
+                    self._nodes.pop( srcNodeKey, None )
+                    continue
 
-            for nodeName, node in self._nodes.items():
-                self._nodes[ nodeName ][ 'info' ] = self._getHostInfo( node[ 'socket' ] )
+                for nodeName, node in self._nodes.items():
+                    newInfo = self._getHostInfo( node[ 'socket' ] )
+                    if newInfo is not None:
+                        self._nodes[ nodeName ][ 'info' ] = newInfo
+                    elif not self._nodes[ nodeName ][ 'is_seed' ]:
+                        # Assuming it's dead.
+                        self._nodes.pop( nodeName, None )
 
-            tmpDir = self.getDirectory()
-            if tmpDir is not False and 'realms' in tmpDir:
-                self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
+                tmpDir = self.getDirectory()
+                if tmpDir is not False and 'realms' in tmpDir:
+                    self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
 
-            self._isInited.set()
+                self._isInited.set()
+                break
         finally:
             gevent.spawn_later( 30, self._updateNodes )
 
