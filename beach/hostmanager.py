@@ -262,7 +262,7 @@ class HostManager ( object ):
                     del( c[ uid ] )
                     isFound = True
                     if 0 == len( c ):
-                        del( self.directory[ realm ][ cname ] )
+                        self.directory[ realm ].pop( cname, None )
             if isFound: break
         if isFound:
             self.tombstones[ uid ] = int( time.time() )
@@ -325,7 +325,7 @@ class HostManager ( object ):
                 for uid, endpoint in endpoints.iteritems():
                     # Check for ghost directory entries that report to be from here
                     # but are not, may be that this node restarted.
-                    if endpoint.startswith( ourNode ) and uid not in curDir[ realm ][ cat ]:
+                    if endpoint.startswith( ourNode ) and ( uid not in curDir[ realm ][ cat ] or uid not in self.actorInfo):
                         self.tombstones[ uid ] = int( time.time() )
                         isGhostActorsFound = True
                     else:
