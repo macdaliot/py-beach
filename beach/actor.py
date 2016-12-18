@@ -714,6 +714,8 @@ class ActorHandle ( object ):
                     z.close()
                     z = None
                     curRetry += 1
+                    if ret.error == 'wrong dest':
+                        self._updateDirectory()
 
         if z is not None:
             self._srcSockets.append( ( z, z_ident ) )

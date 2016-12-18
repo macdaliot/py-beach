@@ -664,7 +664,7 @@ class HostManager ( object ):
                 if nodeName != self.ifaceIp4:
                     #self._log( "Issuing keepalive for node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'keepalive',
-                                                       'from' : self.ifaceIp4 }, timeout = 10 )
+                                                       'from' : self.ifaceIp4 }, timeout = 30 )
 
                     if isMessageSuccess( data ):
                         node[ 'last_seen' ] = int( time.time() )

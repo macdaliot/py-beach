@@ -79,7 +79,7 @@ class Patrol ( object ):
 
         mtd = self._beach.getAllNodeMetadata()
         for node_mtd in mtd.itervalues():
-            if mtd is None: return {}
+            if node_mtd is False: continue
             for aid, actor_mtd in node_mtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
                 owner = actor_mtd.get( 'owner', None )
                 if owner in self._entries:
