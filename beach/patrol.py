@@ -169,16 +169,19 @@ class Patrol ( object ):
         self._entries[ '%s/%s' % ( self._owner, name ) ] = record
 
     def _processFallenActor( self, actorEntry ):
+        isRelaunch = False
         if actorEntry.relaunchOnFailure:
             self._log( 'actor is set to relaunch on failure' )
             status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
             if status is not False and status is not None:
                 self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
                 self._log( 'actor relaunched: %s' % status )
+                isRelaunch = True
             else:
                 self._log( 'failed to launch actor: %s' % status )
         else:
             self._log( 'actor is not set to relaunch on failure' )
+        return isRelaunch
 
     def _sync( self ):
         while not self._stopEvent.wait( self._freq ):
@@ -196,8 +199,8 @@ class Patrol ( object ):
                 if actorId not in allActors:
                     # An actor we were watching went down
                     self._log( 'actor %s has fallen' % actorId )
-                    self._processFallenActor( self._watch[ actorId ] )
-                    del( self._watch[ actorId ] )
+                    if self._processFallenActor( self._watch[ actorId ] ):
+                        del( self._watch[ actorId ] )
 
     def remove( self, name = None, isStopToo = True ):
         removed = []
