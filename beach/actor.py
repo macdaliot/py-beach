@@ -35,6 +35,7 @@ import hashlib
 import inspect
 import sys
 import urllib2
+from Queue import Queue
 from types import ModuleType
 
 class ActorRequest( object ):
@@ -526,7 +527,7 @@ class ActorHandle ( object ):
                 # the host. So if the ActorHandle is created by an Actor, it goes to the dir_svc
                 # and if it's created from outside components through a Beach it goes to
                 # the ops.
-                msg = z.request( data = { 'req' : 'get_dir', 'realm' : realm, 'cat' : cat } )
+                msg = z.request( data = { 'req' : 'get_dir', 'realm' : realm, 'cat' : cat }, timeout = 10 )
                 if isMessageSuccess( msg ) and 'endpoints' in msg[ 'data' ]:
                     msg = msg[ 'data' ][ 'endpoints' ]
                 else:
@@ -560,7 +561,7 @@ class ActorHandle ( object ):
         self._mode = mode
         self._ident = ident
         self._endpoints = {}
-        self._srcSockets = []
+        self._srcSockets = Queue()
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
         self._quick_refresh_timeout = 15
@@ -676,17 +677,21 @@ class ActorHandle ( object ):
                                 z = _ZSocket( zmq.REQ, z, private_key = self._private_key )
                                 if z is not None:
                                     self._affinityCache[ affinityKey ] = z, z_ident
-                        elif 0 != len( self._srcSockets ):
-                            # Prioritize existing connections, only create new one
-                            # based on the mode when we have no connections available
-                            z, z_ident = self._srcSockets.pop()
-                        elif 'random' == self._mode:
-                            endpoints = self._endpoints.keys()
-                            if 0 != len( endpoints ):
-                                z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
-                                z = _ZSocket( zmq.REQ,
-                                              self._endpoints[ z_ident ],
-                                              private_key = self._private_key )
+                        else:
+                            try:
+                                z, z_ident = self._srcSockets.get( block = False )
+                            except:
+                                z = None
+                                z_ident = None
+                            if z is None:
+                                # Try to create a new socket
+                                if 'random' == self._mode:
+                                    endpoints = self._endpoints.keys()
+                                    if 0 != len( endpoints ):
+                                        z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
+                                        z = _ZSocket( zmq.REQ,
+                                                      self._endpoints[ z_ident ],
+                                                      private_key = self._private_key )
                         if z is None:
                             gevent.sleep( 0.1 )
             except _TimeoutException:
@@ -702,11 +707,12 @@ class ActorHandle ( object ):
                 ret = self._accountedSend( z, envelope, z_ident, timeout )
 
                 ret = ActorResponse( ret )
+
                 # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
                     if 'affinity' != self._mode:
-                        self._srcSockets.append( ( z, z_ident ) )
+                        self._srcSockets.put( ( z, z_ident ) )
                     break
                 else:
                     if 'affinity' == self._mode:
@@ -716,9 +722,6 @@ class ActorHandle ( object ):
                     curRetry += 1
                     if ret.error == 'wrong dest':
                         self._updateDirectory()
-
-        if z is not None:
-            self._srcSockets.append( ( z, z_ident ) )
 
         if ret is None or ret is False:
             ret = ActorResponse( ret )
