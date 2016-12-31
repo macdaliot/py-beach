@@ -627,6 +627,10 @@ class ActorHandle ( object ):
         curRetry = 0
         affinityKey = None
 
+        # Short-circuit for cases where a category just isn't populated.
+        if self._initialRefreshDone.isSet() and 0 == len( self._endpoints ):
+            return False
+
         if nRetries is None:
             nRetries = self._nRetries
             if nRetries is None:
