@@ -47,7 +47,7 @@ function display_data( data )
         var node_name = k;
         var node_info = data.health[ k ];
 
-        if( node_info != null ){ continue; }
+        if( node_info == null ){ continue; }
 
         if( !(node_name in health_data_mem) )
         {
