@@ -76,12 +76,13 @@ class GetClusterInfo:
         unique_actors = Set()
         n_realms = 0
         n_cats = 0
-        for realm, categories in info[ 'dir' ][ 'realms' ].items():
-            n_realms += 1
-            for cat_name, actors in categories.items():
-                n_cats += 1
-                for actor_uid, endpoint in actors.items():
-                    unique_actors.add( actor_uid )
+        if info[ 'dir' ] is not False:
+            for realm, categories in info[ 'dir' ][ 'realms' ].items():
+                n_realms += 1
+                for cat_name, actors in categories.items():
+                    n_cats += 1
+                    for actor_uid, endpoint in actors.items():
+                        unique_actors.add( actor_uid )
 
         info[ 'n_actors' ] = len( unique_actors )
         info[ 'n_realms' ] = n_realms
