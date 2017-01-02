@@ -586,7 +586,7 @@ class ActorHandle ( object ):
         else:
             self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), self._svc_refreshDir ) )
 
-    def _accountedSend( self, z, msg, z_ident, timeout ):
+    def _accountedSend( self, z, msg, z_ident, timeout, isCloseSocket = False ):
         if z_ident not in self._pending:
             self._pending[ z_ident ] = 0
         self._pending[ z_ident ] += 1
@@ -599,6 +599,9 @@ class ActorHandle ( object ):
             self._pending[ z_ident ] -= 1
             if 0 == self._pending[ z_ident ]:
                 del( self._pending[ z_ident ] )
+
+        if isCloseSocket:
+            z.close()
 
         return ret
 
@@ -643,14 +646,14 @@ class ActorHandle ( object ):
 
         if isWithFuture:
             futureResult = FutureResults( 1 )
-            gevent.spawn( self._requestToFuture, 
-                          futureResult, 
-                          requestType, 
-                          data = data, 
-                          timeout = timeout, 
-                          key = key, 
-                          nRetries = nRetries, 
-                          isWithFuture = False )
+            self._threads.add( gevent.spawn( self._requestToFuture, 
+                                             futureResult, 
+                                             requestType, 
+                                             data = data, 
+                                             timeout = timeout, 
+                                             key = key, 
+                                             nRetries = nRetries, 
+                                             isWithFuture = False ) )
             return futureResult
 
         while curRetry <= nRetries:
@@ -753,7 +756,7 @@ class ActorHandle ( object ):
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout )
+                self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout, isCloseSocket = True ) )
 
         gevent.sleep( 0 )
 
@@ -780,13 +783,14 @@ class ActorHandle ( object ):
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout )
+                self._threads.add( gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout ) )
 
         gevent.sleep( 0 )
 
         return futureResults
 
     def _directToFuture( self, futureResults, *args, **kwargs ):
+        kwargs[ 'isCloseSocket' ] = True
         resp = self._accountedSend( *args, **kwargs )
         futureResults._addNewResult( resp )
 
@@ -807,7 +811,7 @@ class ActorHandle ( object ):
         '''
         ret = True
 
-        gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries )
+        self._threads.add( gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries ) )
         gevent.sleep( 0 )
 
         return ret

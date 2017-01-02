@@ -173,7 +173,7 @@ class Patrol ( object ):
         if actorEntry.relaunchOnFailure:
             self._log( 'actor is set to relaunch on failure' )
             status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
-            if status is not False and status is not None:
+            if status is not False and status is not None and 'data' in status and 'uid' in status[ 'data' ]:
                 self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
                 self._log( 'actor relaunched: %s' % status )
                 isRelaunch = True
