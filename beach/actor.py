@@ -35,6 +35,7 @@ import hashlib
 import inspect
 import sys
 import urllib2
+import copy
 from Queue import Queue
 from types import ModuleType
 
@@ -755,6 +756,7 @@ class ActorHandle ( object ):
         for z_ident, endpoint in self._endpoints.items():
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
+                envelope = copy.deepcopy( envelope )
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
                 self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout, isCloseSocket = True ) )
 
@@ -782,6 +784,7 @@ class ActorHandle ( object ):
         for z_ident, endpoint in toSockets:
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
+                envelope = copy.deepcopy( envelope )
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
                 self._threads.add( gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout ) )
 
