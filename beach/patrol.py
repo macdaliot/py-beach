@@ -109,6 +109,8 @@ class Patrol ( object ):
                     targetNum += 1
                 if actorEntry.maxInstances is not None and targetNum > actorEntry.maxInstances:
                     targetNum =  actor.maxInstances
+                if actorEntry.initialInstances is not None and targetNum < actorEntry.initialInstances:
+                    targetNum = actorEntry.initialInstances
                 self._log( 'actor %s scale %s / factor %s: %d' % ( actorName,
                                                                    currentScale, 
                                                                    actorEntry.scalingFactor,
