@@ -17,7 +17,7 @@
 import uuid
 import datetime
 import gevent
-import gevent.coros
+from gevent.lock import BoundedSemaphore
 import zmq.green as zmq
 import netifaces
 from prefixtree import PrefixDict
@@ -158,7 +158,7 @@ class _ZSocket( object ):
         else:
             self.s.connect( self._url )
         if self._isTransactionSocket:
-            self._lock = gevent.coros.BoundedSemaphore( 1 )
+            self._lock = BoundedSemaphore( 1 )
 
     def _rebuildIfNecessary( self ):
         if self._isTransactionSocket:
