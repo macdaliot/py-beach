@@ -35,6 +35,8 @@ import hashlib
 import inspect
 import sys
 import urllib2
+import copy
+from Queue import Queue
 from types import ModuleType
 
 class ActorRequest( object ):
@@ -526,7 +528,7 @@ class ActorHandle ( object ):
                 # the host. So if the ActorHandle is created by an Actor, it goes to the dir_svc
                 # and if it's created from outside components through a Beach it goes to
                 # the ops.
-                msg = z.request( data = { 'req' : 'get_dir', 'realm' : realm, 'cat' : cat } )
+                msg = z.request( data = { 'req' : 'get_dir', 'realm' : realm, 'cat' : cat }, timeout = 10 )
                 if isMessageSuccess( msg ) and 'endpoints' in msg[ 'data' ]:
                     msg = msg[ 'data' ][ 'endpoints' ]
                 else:
@@ -560,7 +562,7 @@ class ActorHandle ( object ):
         self._mode = mode
         self._ident = ident
         self._endpoints = {}
-        self._srcSockets = []
+        self._srcSockets = Queue()
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
         self._quick_refresh_timeout = 15
@@ -585,7 +587,7 @@ class ActorHandle ( object ):
         else:
             self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), self._svc_refreshDir ) )
 
-    def _accountedSend( self, z, msg, z_ident, timeout ):
+    def _accountedSend( self, z, msg, z_ident, timeout, isCloseSocket = False ):
         if z_ident not in self._pending:
             self._pending[ z_ident ] = 0
         self._pending[ z_ident ] += 1
@@ -598,6 +600,9 @@ class ActorHandle ( object ):
             self._pending[ z_ident ] -= 1
             if 0 == self._pending[ z_ident ]:
                 del( self._pending[ z_ident ] )
+
+        if isCloseSocket:
+            z.close()
 
         return ret
 
@@ -626,6 +631,10 @@ class ActorHandle ( object ):
         curRetry = 0
         affinityKey = None
 
+        # Short-circuit for cases where a category just isn't populated.
+        if self._initialRefreshDone.isSet() and 0 == len( self._endpoints ):
+            return False
+
         if nRetries is None:
             nRetries = self._nRetries
             if nRetries is None:
@@ -638,14 +647,14 @@ class ActorHandle ( object ):
 
         if isWithFuture:
             futureResult = FutureResults( 1 )
-            gevent.spawn( self._requestToFuture, 
-                          futureResult, 
-                          requestType, 
-                          data = data, 
-                          timeout = timeout, 
-                          key = key, 
-                          nRetries = nRetries, 
-                          isWithFuture = False )
+            self._threads.add( gevent.spawn( self._requestToFuture, 
+                                             futureResult, 
+                                             requestType, 
+                                             data = data, 
+                                             timeout = timeout, 
+                                             key = key, 
+                                             nRetries = nRetries, 
+                                             isWithFuture = False ) )
             return futureResult
 
         while curRetry <= nRetries:
@@ -676,17 +685,21 @@ class ActorHandle ( object ):
                                 z = _ZSocket( zmq.REQ, z, private_key = self._private_key )
                                 if z is not None:
                                     self._affinityCache[ affinityKey ] = z, z_ident
-                        elif 0 != len( self._srcSockets ):
-                            # Prioritize existing connections, only create new one
-                            # based on the mode when we have no connections available
-                            z, z_ident = self._srcSockets.pop()
-                        elif 'random' == self._mode:
-                            endpoints = self._endpoints.keys()
-                            if 0 != len( endpoints ):
-                                z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
-                                z = _ZSocket( zmq.REQ,
-                                              self._endpoints[ z_ident ],
-                                              private_key = self._private_key )
+                        else:
+                            try:
+                                z, z_ident = self._srcSockets.get( block = False )
+                            except:
+                                z = None
+                                z_ident = None
+                            if z is None:
+                                # Try to create a new socket
+                                if 'random' == self._mode:
+                                    endpoints = self._endpoints.keys()
+                                    if 0 != len( endpoints ):
+                                        z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
+                                        z = _ZSocket( zmq.REQ,
+                                                      self._endpoints[ z_ident ],
+                                                      private_key = self._private_key )
                         if z is None:
                             gevent.sleep( 0.1 )
             except _TimeoutException:
@@ -702,11 +715,12 @@ class ActorHandle ( object ):
                 ret = self._accountedSend( z, envelope, z_ident, timeout )
 
                 ret = ActorResponse( ret )
+
                 # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
                     if 'affinity' != self._mode:
-                        self._srcSockets.append( ( z, z_ident ) )
+                        self._srcSockets.put( ( z, z_ident ) )
                     break
                 else:
                     if 'affinity' == self._mode:
@@ -716,9 +730,6 @@ class ActorHandle ( object ):
                     curRetry += 1
                     if ret.error == 'wrong dest':
                         self._updateDirectory()
-
-        if z is not None:
-            self._srcSockets.append( ( z, z_ident ) )
 
         if ret is None or ret is False:
             ret = ActorResponse( ret )
@@ -745,8 +756,9 @@ class ActorHandle ( object ):
         for z_ident, endpoint in self._endpoints.items():
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
+                envelope = copy.deepcopy( envelope )
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout )
+                self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout, isCloseSocket = True ) )
 
         gevent.sleep( 0 )
 
@@ -772,14 +784,16 @@ class ActorHandle ( object ):
         for z_ident, endpoint in toSockets:
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
+                envelope = copy.deepcopy( envelope )
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout )
+                self._threads.add( gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout ) )
 
         gevent.sleep( 0 )
 
         return futureResults
 
     def _directToFuture( self, futureResults, *args, **kwargs ):
+        kwargs[ 'isCloseSocket' ] = True
         resp = self._accountedSend( *args, **kwargs )
         futureResults._addNewResult( resp )
 
@@ -800,7 +814,7 @@ class ActorHandle ( object ):
         '''
         ret = True
 
-        gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries )
+        self._threads.add( gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries ) )
         gevent.sleep( 0 )
 
         return ret

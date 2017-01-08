@@ -144,7 +144,7 @@ class Beach ( object ):
                 self._isInited.set()
                 break
         finally:
-            gevent.spawn_later( 30, self._updateNodes )
+            self._threads.add( gevent.spawn_later( 30, self._updateNodes ) )
 
     def close( self ):
         '''Close all threads and resources of the interface.

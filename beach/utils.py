@@ -28,6 +28,8 @@ import urllib2
 import sys
 import os
 import warnings
+from Queue import Queue
+import time
 try:
     import M2Crypto
     IV_LENGTH = 0x10
@@ -147,7 +149,8 @@ class _ZSocket( object ):
 
     def _buildSocket( self ):
         if self.s is not None:
-            self.s.close()
+            self.s.close( linger = 0 )
+            self.s = None
         self.s = self.ctx.socket( self._socketType )
         self.s.set( zmq.LINGER, 0 )
         if self._isBind:
@@ -163,6 +166,9 @@ class _ZSocket( object ):
     
     def send( self, data, timeout = None ):
         isSuccess = False
+
+        # If socket is None it means someone closed it.
+        if self.s is None: return False
 
         data = msgpack.packb( _sanitizeJson( data ) )
 
@@ -187,6 +193,8 @@ class _ZSocket( object ):
             self._rebuildIfNecessary()
         except zmq.ZMQError, e:
             self._buildSocket()
+        except Exception, e:
+            self._buildSocket()
         else:
             isSuccess = True
 
@@ -194,6 +202,9 @@ class _ZSocket( object ):
     
     def recv( self, timeout = None ):
         data = False
+
+        # If socket is None it means someone closed it.
+        if self.s is None: return False
 
         try:
             if timeout is not None:
@@ -229,8 +240,13 @@ class _ZSocket( object ):
     
     def request( self, data, timeout = None ):
         self._lock.acquire()
-        self.send( data, timeout )
-        data = self.recv( timeout = timeout )
+        # If socket is None it means someone closed it.
+        if self.s is None: return False
+
+        if self.send( data, timeout ):
+            data = self.recv( timeout = timeout )
+        else:
+            data = False
         # False indicates a timeout or failure, where the socket
         # would have been rebuilt
         if data is not False or not self._isTransactionSocket:
@@ -239,15 +255,17 @@ class _ZSocket( object ):
 
     def close( self ):
         self.s.close( linger = 0 )
+        self.s = None
 
 class _ZMREQ ( object ):
     def __init__( self, url, isBind, private_key = None ):
         global global_z_context
-        self._available = []
+        self._available = Queue()
         self._url = url
         self._isBind = isBind
         self._ctx = global_z_context
         self._private_key = private_key
+        self._isClosed = False
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REQ )
@@ -262,10 +280,11 @@ class _ZMREQ ( object ):
         result = False
         z = None
         try:
-            z = self._available.pop()
+            z = self._available.get( block = False )
         except:
             z = self._newSocket()
 
+        ts = time.time()
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
                 data = msgpack.packb( _sanitizeJson( data ) )
@@ -310,13 +329,24 @@ class _ZMREQ ( object ):
             z.close( linger = 0 )
             z = self._newSocket()
 
-        self._available.append( z )
+        if self._isClosed:
+            z.close( linger = 0 )
+        else:
+            self._available.put( z )
         return result
+
+    def close( self ):
+        while not self._available.empty():
+            try:
+                z = self._available.get( block = False )
+                z.close( linger = 0 )
+            except:
+                break
+        self._available = Queue()
 
 class _ZMREP ( object ):
     def __init__( self, url, isBind, private_key = None ):
         global global_z_context
-        self._available = []
         self._url = url
         self._isBind = isBind
         self._ctx = global_z_context
@@ -354,6 +384,11 @@ class _ZMREP ( object ):
             if self._z is not None:
                 self._z.close()
             self._z = self._z_func()
+
+        def close( self ):
+            if self._z is not None:
+                self._z.close()
+                self._z = None
 
         def send( self, data, timeout = None ):
             isSuccess = False
