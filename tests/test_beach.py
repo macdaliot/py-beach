@@ -273,7 +273,7 @@ def test_multi_category():
     d = beach.getDirectory()
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
-    a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers' ], parameters={"a":18}, resources = {} )
+    a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers', 'oobers2' ], parameters={"a":18}, resources = {} )
     assert( isMessageSuccess( a1 ) )
 
     d = beach.getDirectory()
@@ -292,6 +292,8 @@ def test_multi_category():
     assert( beach.removeFromCategory( a1[ 'data' ][ 'uid' ], 'oobers' ) )
     d = beach.getDirectory()
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
 
     assert( beach.addToCategory( a1[ 'data' ][ 'uid' ], 'newcat' ) )
     d = beach.getDirectory()

@@ -25,6 +25,7 @@ import gevent
 import gevent.event
 import os
 from sets import Set
+from collections import OrderedDict
 import traceback
 import urllib2
 
@@ -49,7 +50,7 @@ class Patrol ( object ):
         self._threads = gevent.pool.Group()
 
         self._owner = 'beach.patrol/%s' % ( identifier, )
-        self._entries = {}
+        self._entries = OrderedDict()
         self._watch = {}
         self._freq = sync_frequency
 
@@ -292,12 +293,19 @@ if __name__ == '__main__':
                          dest = 'scale',
                          default = None,
                          help = 'the scale metric to use in conjunction with the actor\' scaling factor' )
+    parser.add_argument( '--frequency',
+                         type = int,
+                         required = False,
+                         dest = 'freq',
+                         default = 15.0,
+                         help = 'the frequency in seconds at which the patrol occurs' )
     args = parser.parse_args()
     patrol = Patrol( args.configFile,
                      identifier = args.patrolName,
                      logging_dest =  args.logdest,
                      realm = args.realm,
-                     scale = args.scale )
+                     scale = args.scale,
+                     sync_frequency = args.freq )
 
     try:
         patrol.loadFromUrl( args.patrolFile )
