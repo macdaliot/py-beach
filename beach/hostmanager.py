@@ -31,6 +31,7 @@ from beach.utils import _getIpv4ForIface
 from beach.utils import _getPublicInterfaces
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
+from beach.utils import RWLock
 import socket
 import time
 import random
@@ -45,6 +46,7 @@ import syslog
 from prefixtree import PrefixDict
 from functools import wraps
 import traceback
+import copy
 
 timeToStopEvent = gevent.event.Event()
 
@@ -106,6 +108,7 @@ class HostManager ( object ):
         self.tombstone_culling_seconds = 0
         self.isActorChanged = gevent.event.Event()
         self.isInstanceChanged = gevent.event.Event()
+        self.dirLock = RWLock()
 
         # Cleanup potentially old sockets
         os.system( 'rm /tmp/py_beach*' )
@@ -131,8 +134,6 @@ class HostManager ( object ):
         if self.nProcesses == 0:
             self.nProcesses = multiprocessing.cpu_count()
         self._log( "Using %d instances per node" % self.nProcesses )
-
-
 
         if iface is not None:
             self.interface = iface
@@ -256,14 +257,16 @@ class HostManager ( object ):
     def _removeUidFromDirectory( self, uid ):
         isFound = False
 
-        for realm in self.directory.keys():
-            for cname, c in self.directory[ realm ].items():
-                if uid in c:
-                    del( c[ uid ] )
-                    isFound = True
-                    if 0 == len( c ):
-                        self.directory[ realm ].pop( cname, None )
-            if isFound: break
+        with self.dirLock.writer():
+            for realm in self.directory.keys():
+                for cname, c in self.directory[ realm ].items():
+                    if uid in c:
+                        del( c[ uid ] )
+                        isFound = True
+                        if 0 == len( c ):
+                            self.directory[ realm ].pop( cname, None )
+                if isFound: break
+
         if isFound:
             self.tombstones[ uid ] = int( time.time() )
 
@@ -318,23 +321,26 @@ class HostManager ( object ):
     def _updateDirectoryWith( self, curDir, newDir ):
         ourNode = 'tcp://%s:' % ( self.ifaceIp4, )
         isGhostActorsFound = False
-        for realm, catMap in newDir.iteritems():
-            curDir.setdefault( realm, PrefixDict() )
-            for cat, endpoints in catMap.iteritems():
-                curDir[ realm ].setdefault( cat, {} )
-                for uid, endpoint in endpoints.iteritems():
-                    # Check for ghost directory entries that report to be from here
-                    # but are not, may be that this node restarted.
-                    if endpoint.startswith( ourNode ) and ( uid not in curDir[ realm ][ cat ] or uid not in self.actorInfo):
-                        self.tombstones[ uid ] = int( time.time() )
-                        isGhostActorsFound = True
-                    else:
-                        curDir[ realm ][ cat ][ uid ] = endpoint
-        
-        for realm in curDir:
-            for cat in curDir[ realm ].iterkeys():
-                if 0 == len( curDir[ realm ].get( cat, {} ) ):
-                    curDir[ realm ].pop( cat, None )
+        with self.dirLock.writer():
+            for realm, catMap in newDir.iteritems():
+                curDir.setdefault( realm, PrefixDict() )
+                for cat, endpoints in catMap.iteritems():
+                    curDir[ realm ].setdefault( cat, {} )
+                    for uid, endpoint in endpoints.iteritems():
+                        # Check for ghost directory entries that report to be from here
+                        # but are not, may be that this node restarted.
+                        if endpoint.startswith( ourNode ) and uid not in self.actorInfo:
+                            self.tombstones[ uid ] = int( time.time() )
+                            isGhostActorsFound = True
+                        elif not endpoint.startswith( ourNode ):
+                            # Only add to this directory other node's info since
+                            # we are authoritative here.
+                            curDir[ realm ][ cat ][ uid ] = endpoint
+            
+            for realm in curDir:
+                for cat in curDir[ realm ].iterkeys():
+                    if 0 == len( curDir[ realm ].get( cat, {} ) ):
+                        curDir[ realm ].pop( cat, None )
 
         if isGhostActorsFound:
             self.isActorChanged.set()
@@ -343,9 +349,10 @@ class HostManager ( object ):
 
     def _getDirectoryEntriesFor( self, realm, category ):
         endpoints = {}
-        cats = self.directory.get( realm, PrefixDict() )[ category : category ]
-        for cat in cats:
-            endpoints.update( cat )
+        with self.dirLock.reader():
+            cats = self.directory.get( realm, PrefixDict() )[ category : category ]
+            for cat in cats:
+                endpoints.update( cat )
         return endpoints
     
     @handleExceptions
@@ -422,15 +429,16 @@ class HostManager ( object ):
                             self._log( "New actor loaded (isolation = %s, concurrent = %d), adding to directory" % ( isIsolated, n_concurrent ) )
                             # We always add a hardcoded special category _ACTORS/actorUid to provide a way for certain special actors
                             # to talk to specific instances directly, but this is discouraged.
-                            self.directory.setdefault( realm,
-                                                       PrefixDict() ).setdefault( '_ACTORS/%s' % ( uid, ),
-                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
-                                                                                                                  port )
-                            for category in categories:
+                            with self.dirLock.writer():
                                 self.directory.setdefault( realm,
-                                                           PrefixDict() ).setdefault( category,
+                                                           PrefixDict() ).setdefault( '_ACTORS/%s' % ( uid, ),
                                                                                       {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                                       port )
+                                for category in categories:
+                                    self.directory.setdefault( realm,
+                                                               PrefixDict() ).setdefault( category,
+                                                                                          {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                          port )
                             self.isActorChanged.set()
                         else:
                             self._logCritical( 'Error loading actor %s: %s.' % ( actorName, newMsg ) )
@@ -489,7 +497,8 @@ class HostManager ( object ):
                                                                                      interval = 2 ),
                                                          'mem' : psutil.virtual_memory().percent } } ) )
                 elif 'get_full_dir' == action:
-                    z.send( successMessage( { 'realms' : self.directory } ) )
+                    with self.dirLock.reader():
+                        z.send( successMessage( { 'realms' : self.directory } ) )
                 elif 'get_dir' == action:
                     realm = data.get( 'realm', 'global' )
                     if 'cat' in data:
@@ -499,7 +508,8 @@ class HostManager ( object ):
                 elif 'get_cats_under' == action:
                     realm = data.get( 'realm', 'global' )
                     if 'cat' in data:
-                        z.send( successMessage( data = { 'categories' : [ x for x in self.directory.get( realm, PrefixDict() ).startswith( data[ 'cat' ] ) if x != data[ 'cat' ] ] } ) )
+                        with self.dirLock.reader():
+                            z.send( successMessage( data = { 'categories' : [ x for x in self.directory.get( realm, PrefixDict() ).startswith( data[ 'cat' ] ) if x != data[ 'cat' ] ] } ) )
                     else:
                         z.send( errorMessage( 'no category specified' ) )
                 elif 'get_nodes' == action:
@@ -534,7 +544,8 @@ class HostManager ( object ):
                         if isMessageSuccess( resp ):
                             self.isActorChanged.set()
                 elif 'get_dir_sync' == action:
-                    z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones } ) )
+                    with self.dirLock.reader():
+                        z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones } ) )
                 elif 'push_dir_sync' == action:
                     if 'directory' in data and 'tombstones' in data:
                         self._updateDirectoryWith( self.directory, data[ 'directory' ] )
@@ -560,10 +571,11 @@ class HostManager ( object ):
                         category = data[ 'category' ]
                         try:
                             info = self.actorInfo[ uid ]
-                            self.directory.setdefault( info[ 'realm' ],
-                                                       PrefixDict() ).setdefault( category,
-                                                                                  {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
-                                                                                                                  info[ 'port' ] )
+                            with self.dirLock.writer():
+                                self.directory.setdefault( info[ 'realm' ],
+                                                           PrefixDict() ).setdefault( category,
+                                                                                      {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                      info[ 'port' ] )
                         except:
                             z.send( errorMessage( 'error associating, actor hosted here?' ) )
                         else:
@@ -577,9 +589,10 @@ class HostManager ( object ):
                         category = data[ 'category' ]
                         try:
                             info = self.actorInfo[ uid ]
-                            del( self.directory[ info[ 'realm' ] ][ category ][ uid ] )
-                            if 0 == len( self.directory[ info[ 'realm' ] ][ category ] ):
-                                del( self.directory[ info[ 'realm' ] ][ category ] )
+                            with self.dirLock.writer():
+                                del( self.directory[ info[ 'realm' ] ][ category ][ uid ] )
+                                if 0 == len( self.directory[ info[ 'realm' ] ][ category ] ):
+                                    del( self.directory[ info[ 'realm' ] ][ category ] )
                         except:
                             z.send( errorMessage( 'error associating, actor exists in category?' ) )
                         else:
@@ -701,12 +714,15 @@ class HostManager ( object ):
             # We "accumulate" updates for 5 seconds once they occur to limit updates pushed
             gevent.sleep( 5 )
             self.isActorChanged.clear()
+            with self.dirLock.reader():
+                tmpDir = copy.deepcopy( self.directory )
+                tmpTomb = copy.deepcopy( self.tombstones )
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
                     #self._log( "Pushing new directory update to %s" % nodeName )
                     node[ 'socket' ].request( { 'req' : 'push_dir_sync',
-                                                'directory' : self.directory,
-                                                'tombstones' : self.tombstones } )
+                                                'directory' : tmpDir,
+                                                'tombstones' : tmpTomb } )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger()

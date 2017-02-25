@@ -273,12 +273,16 @@ def test_multi_category():
     d = beach.getDirectory()
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
-    a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers' ], parameters={"a":18}, resources = {} )
+    a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers', 'oobers2' ], parameters={"a":18}, resources = {} )
     assert( isMessageSuccess( a1 ) )
+
+    a2 = beach.addActor( 'MultiPing', [ 'oobers', ], parameters={"a":19}, resources = {} )
+    assert( isMessageSuccess( a2 ) )
 
     d = beach.getDirectory()
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
-    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( 2 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
 
     vHandlePing = beach.getActorHandle( 'pingers' )
     vHandleOob = beach.getActorHandle( 'oobers' )
@@ -291,7 +295,9 @@ def test_multi_category():
 
     assert( beach.removeFromCategory( a1[ 'data' ][ 'uid' ], 'oobers' ) )
     d = beach.getDirectory()
-    assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
 
     assert( beach.addToCategory( a1[ 'data' ][ 'uid' ], 'newcat' ) )
     d = beach.getDirectory()
@@ -321,3 +327,20 @@ def test_pending_metric():
 
     vHandle.close()
     assert( beach.flush() )
+
+def test_tons_of_actors():
+    global beach
+
+    actors = []
+    total = 50
+    for i in range( total ):
+        a = beach.addActor( 'MultiPing', [ 'pingers', 'oobers', 'oobers2' ], parameters={"a":18}, resources = {} )
+        assert( isMessageSuccess( a ) )
+        actors.append( a )
+
+    d = beach.getDirectory()
+    assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
+    assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
+
+    beach.flush()

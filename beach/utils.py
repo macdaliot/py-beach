@@ -18,6 +18,7 @@ import uuid
 import datetime
 import gevent
 from gevent.lock import BoundedSemaphore
+from gevent.event import Event
 import zmq.green as zmq
 import netifaces
 from prefixtree import PrefixDict
@@ -494,3 +495,74 @@ def _getPublicInterfaces():
                 break
 
     return interfaces
+
+class _rwlock_w( object ):
+    def __init__( self, l ):
+        self.l = l
+    def __enter__( self ):
+        self.l.wLock()
+        return self
+    def __exit__( self, type, value, traceback ):
+        self.l.wUnlock()
+
+class _rwlock_r( object ):
+    def __init__( self, l ):
+        self.l = l
+    def __enter__( self ):
+        self.l.rLock()
+        return self
+    def __exit__( self, type, value, traceback ):
+        self.l.rUnlock()
+
+class RWLock( object ):
+    def __init__( self ):
+        self._canRead = Event()
+        self._canWrite = Event()
+        self._mutex = BoundedSemaphore( value = 1 )
+        self._readers = 0
+        self._isWriting = False
+        self._canRead.set()
+        self._canWrite.set()
+
+    def rLock( self ):
+        isReady = False
+        while not isReady:
+            self._canRead.wait()
+            self._mutex.acquire()
+            if not self._isWriting:
+                self._canWrite.clear()
+                self._readers += 1
+                isReady = True
+            self._mutex.release()
+
+    def rUnlock( self ):
+        self._mutex.acquire()
+        self._readers -= 1
+        if 0 == self._readers:
+            self._canWrite.set()
+        self._mutex.release()
+
+    def wLock( self ):
+        isReady = False
+        while not isReady:
+            self._canRead.clear()
+            self._canWrite.wait()
+            self._mutex.acquire()
+            if not self._isWriting and 0 == self._readers:
+                isReady = True
+                self._isWriting = True
+                self._canWrite.clear()
+            self._mutex.release()
+
+    def wUnlock( self ):
+        self._mutex.acquire()
+        self._isWriting = False
+        self._canWrite.set()
+        self._canRead.set()
+        self._mutex.release()
+
+    def writer( self ):
+        return _rwlock_w( self )
+
+    def reader( self ):
+        return _rwlock_r( self )
