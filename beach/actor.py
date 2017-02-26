@@ -633,7 +633,7 @@ class ActorHandle ( object ):
 
         # Short-circuit for cases where a category just isn't populated.
         if self._initialRefreshDone.isSet() and 0 == len( self._endpoints ):
-            return False
+            return ActorResponse( False )
 
         if nRetries is None:
             nRetries = self._nRetries

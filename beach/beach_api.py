@@ -448,9 +448,9 @@ class Beach ( object ):
             req[ 'admin_token' ] = self._admin_token
 
         for node in self._nodes.values():
-            self._threads.add( gevent.spawn( node[ 'socket' ].request, req, timeout = 30 ) )
-        
-        isSuccess = True
+            resp = node[ 'socket' ].request( req, timeout = 30 )
+            if isMessageSuccess( resp ):
+                isSuccess = True
 
         return isSuccess
 
