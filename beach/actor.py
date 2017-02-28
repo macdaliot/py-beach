@@ -193,6 +193,9 @@ class Actor( gevent.Greenlet ):
         self._n_free_handlers = 0
         self._is_initted = False
 
+        # We have some special magic parameters
+        self._trace_enabled = self._parameters.get( 'beach_trace_enabled', False )
+
         # We keep track of all the handlers for the user per message request type
         self._handlers = {}
 
@@ -270,6 +273,8 @@ class Actor( gevent.Greenlet ):
                     else:
                         handler = self._handlers.get( request.req, self._defaultHandler )
                         try:
+                            if self._trace_enabled:
+                                self.log( 'TRACE::(%s, %s, %s, %s)' % ( request.ident, request.id, request.req, request.dst ) )
                             ret = handler( request )
                         except gevent.GreenletExit:
                             raise

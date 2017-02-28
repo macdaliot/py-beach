@@ -191,7 +191,8 @@ class Beach ( object ):
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
         :param parameters: a dict of parameters that will be given to the actor when it starts,
-            usually used for configurations
+            usually used for configurations. Magic parameter 'beach_trace_enabled' if True will
+            trigger a log of the metadata of every request the Actor receives
         :param resources: the mapping of internal resource name to categories in the beach cluster
         :param isIsolated: if True the Actor will be spawned in its own process space to further
             isolate it from potential crashes of other Actors
