@@ -238,6 +238,9 @@ class Beach ( object ):
             node = self._nodes.get( strategy_hint, None )
             if node is not None:
                 node = node[ 'socket' ]
+            else:
+                # There is nothing in play, fall back to random
+                node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         elif 'repulsion' == strategy:
             possibleNodes = self._nodes.keys()
 
