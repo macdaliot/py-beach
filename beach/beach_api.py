@@ -292,7 +292,7 @@ class Beach ( object ):
 
         return resp
 
-    def getDirectory( self ):
+    def getDirectory( self, timeout = 10 ):
         '''Retrieve the directory from a random node, all nodes have a directory that
            is eventually-consistent. Side-effect of this call is to update the internal
            cache, so it can be used as a "forceRefresh".
@@ -300,7 +300,7 @@ class Beach ( object ):
         :returns: the realm directory of the cluster
         '''
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        resp = node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
+        resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
         if isMessageSuccess( resp ):
             resp = resp[ 'data' ]
             self._dirCache = resp
