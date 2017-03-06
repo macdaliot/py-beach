@@ -190,7 +190,7 @@ class Patrol ( object ):
         while not self._stopEvent.wait( self._freq ):
             self._log( 'running sync' )
             allActors = Set()
-            directory = self._beach.getDirectory()
+            directory = self._beach.getDirectory( timeout = 60 )
             if type( directory ) is not dict:
                 self._logCritical( 'error getting directory' )
                 continue

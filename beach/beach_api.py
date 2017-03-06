@@ -191,7 +191,8 @@ class Beach ( object ):
         :param strategy_hint: a parameter to help choose a node, meaning depends on the strategy
         :param realm: the realm to add the actor in, if different than main realm set
         :param parameters: a dict of parameters that will be given to the actor when it starts,
-            usually used for configurations
+            usually used for configurations. Magic parameter 'beach_trace_enabled' if True will
+            trigger a log of the metadata of every request the Actor receives
         :param resources: the mapping of internal resource name to categories in the beach cluster
         :param isIsolated: if True the Actor will be spawned in its own process space to further
             isolate it from potential crashes of other Actors
@@ -291,7 +292,7 @@ class Beach ( object ):
 
         return resp
 
-    def getDirectory( self ):
+    def getDirectory( self, timeout = 10 ):
         '''Retrieve the directory from a random node, all nodes have a directory that
            is eventually-consistent. Side-effect of this call is to update the internal
            cache, so it can be used as a "forceRefresh".
@@ -299,7 +300,7 @@ class Beach ( object ):
         :returns: the realm directory of the cluster
         '''
         node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
-        resp = node.request( { 'req' : 'get_full_dir' }, timeout = 10 )
+        resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
         if isMessageSuccess( resp ):
             resp = resp[ 'data' ]
             self._dirCache = resp
@@ -451,7 +452,6 @@ class Beach ( object ):
             resp = node[ 'socket' ].request( req, timeout = 30 )
             if isMessageSuccess( resp ):
                 isSuccess = True
-                break
 
         return isSuccess
 
