@@ -201,7 +201,8 @@ class HostManager ( object ):
         gevent.spawn( self._svc_host_keepalive )
         gevent.spawn( self._svc_directory_sync )
         gevent.spawn( self._svc_cullTombstones )
-        gevent.spawn( self._svc_receiveOpsTasks )
+        for _ in range( 5 ):
+            gevent.spawn( self._svc_receiveOpsTasks )
         gevent.spawn( self._svc_pushDirChanges )
         
         # Start the instances
