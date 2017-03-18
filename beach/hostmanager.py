@@ -422,7 +422,7 @@ class HostManager ( object ):
                                                                      'isolated' : isIsolated,
                                                                      'loglevel' : log_level,
                                                                      'logdest' : log_dest },
-                                                                   timeout = 10 )
+                                                                   timeout = 20 )
                         else:
                             newMsg = False
 
@@ -464,7 +464,7 @@ class HostManager ( object ):
                                 instance = self.actorInfo[ uid ][ 'instance' ]
                                 newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
                                                                          'uid' : uid },
-                                                                       timeout = 10 )
+                                                                       timeout = 20 )
                                 if not isMessageSuccess( newMsg ):
                                     failed.append( newMsg )
                                 else:
