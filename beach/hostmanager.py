@@ -201,7 +201,7 @@ class HostManager ( object ):
         gevent.spawn( self._svc_host_keepalive )
         gevent.spawn( self._svc_directory_sync )
         gevent.spawn( self._svc_cullTombstones )
-        for _ in range( 5 ):
+        for _ in range( 20 ):
             gevent.spawn( self._svc_receiveOpsTasks )
         gevent.spawn( self._svc_pushDirChanges )
         
@@ -622,7 +622,7 @@ class HostManager ( object ):
     @handleExceptions
     def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
-            for instance in self.processes:
+            for instance in self.processes[:]:
                 #self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
 
                 if self.initialProcesses and instance[ 'p' ] is not None:

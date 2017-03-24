@@ -130,7 +130,7 @@ class ActorHost ( object ):
         ActorHandleGroup._setHostDirInfo( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ),
                                           self.private_key )
         
-        for _ in range( 5 ):
+        for _ in range( 20 ):
             gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
 
