@@ -246,7 +246,7 @@ class ActorHost ( object ):
                 elif 'get_load_info' == action:
                     info = {}
                     for uid, actor in self.actors.items():
-                        info[ uid ] = ( actor._n_free_handlers, actor._n_concurrent, actor.getPending() )
+                        info[ uid ] = ( actor._n_free_handlers, actor._n_concurrent, actor.getPending(), actor._qps )
                     z.send( successMessage( data = info ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
@@ -261,9 +261,9 @@ class ActorHost ( object ):
             #self.log( "Culling actors that stopped of themselves" )
             for uid, actor in self.actors.items():
                 if not actor.isRunning():
-                    exc = actor.getLastException()
+                    exc = actor.getLastError()
                     if exc is not None:
-                        self.logCritical("Actor %s exited with exception: %s" % str( exc ) )
+                        self.logCritical("Actor %s exited with exception: %s" % ( uid, str( exc ) ) )
                     else:
                         self.log( "Actor %s is no longer running" % uid )
                     del( self.actors[ uid ] )

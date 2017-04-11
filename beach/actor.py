@@ -193,6 +193,10 @@ class Actor( gevent.Greenlet ):
         self._n_free_handlers = 0
         self._is_initted = False
 
+        self._qps = 0.0
+        self._q_counter = 0
+        self._last_qps_count = 0
+
         # We have some special magic parameters
         self._trace_enabled = self._parameters.get( 'beach_trace_enabled', False )
 
@@ -209,6 +213,7 @@ class Actor( gevent.Greenlet ):
                                   private_key = self._private_key )
 
         self._vHandles = []
+        self.schedule( 10, self._generateQpsCount )
 
     def _run( self ):
         try:
@@ -245,6 +250,12 @@ class Actor( gevent.Greenlet ):
             if self._is_initted and hasattr( self, 'deinit' ):
                 self.deinit()
 
+    def _generateQpsCount( self ):
+        now = time.time()
+        self._qps = round( self._q_counter / ( now - self._last_qps_count ), 3 )
+        self._last_qps_count = now
+        self._q_counter = 0
+
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
         self._threads.add( gevent.spawn( self._opsHandler ) )
@@ -272,6 +283,7 @@ class Actor( gevent.Greenlet ):
                         self.log( "Received unauthorized request." )
                     else:
                         handler = self._handlers.get( request.req, self._defaultHandler )
+                        self._q_counter += 1
                         try:
                             if self._trace_enabled:
                                 self.log( 'TRACE::(%s, %s, %s, %s)' % ( request.ident, request.id, request.req, request.dst ) )
@@ -281,6 +293,7 @@ class Actor( gevent.Greenlet ):
                         except:
                             ret = errorMessage( 'exception', { 'st' : traceback.format_exc() } )
                             self.logCritical( ret )
+                            self._exception = ret
                         else:
                             if ( not hasattr( ret, '__iter__' ) or
                                  0 == len( ret ) or
@@ -323,7 +336,7 @@ class Actor( gevent.Greenlet ):
 
         :returns: an exception or None
         '''
-        return self.exception
+        return self._exception
 
     def handle( self, requestType, handlerFunction ):
         '''Initiates a callback for a specific type of request.

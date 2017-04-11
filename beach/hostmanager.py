@@ -307,6 +307,7 @@ class HostManager ( object ):
     def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources ):
         info = self.actorInfo.setdefault( uid, {} )
         info[ 'instance' ] = instance
+        info[ 'instance_id' ] = instance[ 'id' ]
         info[ 'name' ] = actorName
         info[ 'realm' ] = realm
         info[ 'isolated' ] = isIsolated
