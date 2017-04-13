@@ -201,7 +201,8 @@ class HostManager ( object ):
         gevent.spawn( self._svc_host_keepalive )
         gevent.spawn( self._svc_directory_sync )
         gevent.spawn( self._svc_cullTombstones )
-        gevent.spawn( self._svc_receiveOpsTasks )
+        for _ in range( 20 ):
+            gevent.spawn( self._svc_receiveOpsTasks )
         gevent.spawn( self._svc_pushDirChanges )
         
         # Start the instances
@@ -306,6 +307,7 @@ class HostManager ( object ):
     def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources ):
         info = self.actorInfo.setdefault( uid, {} )
         info[ 'instance' ] = instance
+        info[ 'instance_id' ] = instance[ 'id' ]
         info[ 'name' ] = actorName
         info[ 'realm' ] = realm
         info[ 'isolated' ] = isIsolated
@@ -421,7 +423,7 @@ class HostManager ( object ):
                                                                      'isolated' : isIsolated,
                                                                      'loglevel' : log_level,
                                                                      'logdest' : log_dest },
-                                                                   timeout = 10 )
+                                                                   timeout = 20 )
                         else:
                             newMsg = False
 
@@ -463,7 +465,7 @@ class HostManager ( object ):
                                 instance = self.actorInfo[ uid ][ 'instance' ]
                                 newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
                                                                          'uid' : uid },
-                                                                       timeout = 10 )
+                                                                       timeout = 20 )
                                 if not isMessageSuccess( newMsg ):
                                     failed.append( newMsg )
                                 else:
@@ -621,7 +623,7 @@ class HostManager ( object ):
     @handleExceptions
     def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
-            for instance in self.processes:
+            for instance in self.processes[:]:
                 #self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
 
                 if self.initialProcesses and instance[ 'p' ] is not None:

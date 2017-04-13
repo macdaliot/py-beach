@@ -365,17 +365,18 @@ class Beach ( object ):
                 if not isinstance( withCategory, collections.Iterable ):
                     withCategory = ( withCategory, )
                 for cat in withCategory:
-                    toRemove += tmpDir[ 'realms' ].get( self._realm, {} ).get( cat, {} ).keys()
+                    for realmCat in tmpDir[ 'realms' ].get( self._realm, {} ).keys():
+                        if realmCat.startswith( cat ):
+                            toRemove += tmpDir[ 'realms' ].get( self._realm, {} ).get( realmCat, {} ).keys()
 
             # We take the easy way out for now by just spamming the kill to every node.
-            isSuccess = True
+            isSuccess = {}
             req = { 'req' : 'kill_actor', 'uid' : toRemove }
             if self._admin_token is not None:
                 req[ 'admin_token' ] = self._admin_token
-            for node in self._nodes.values():
+            for k, node in self._nodes.items():
                 resp = node[ 'socket' ].request( req, timeout = 30 )
-                if not isMessageSuccess( resp ):
-                    isSuccess = resp
+                isSuccess[ k ] = resp
 
         return isSuccess
 

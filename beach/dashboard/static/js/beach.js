@@ -1,9 +1,12 @@
 var health_data_mem = {};
 var health_data_cpu = {};
+var health_data_qps = {};
 var chart_data_mem = [];
 var chart_mem;
 var chart_data_cpu = [];
 var chart_cpu;
+var chart_data_qps = [];
+var chart_qps;
 var max_timeline_values = ((60/5)*60*24);
 
 
@@ -82,8 +85,32 @@ function display_data( data )
         }
     }
 
+    for( var k in data.load )
+    {
+        var actor_id = k;
+        var actor_name = data.actor_mtd[ k ];
+        var loads = data.load[ k ];
+
+        if( !(actor_name in health_data_qps) )
+        {
+            health_data_qps[ actor_name ] = { legendText: actor_name,
+                                             type: 'line',
+                                             showInLegend: true,
+                                             xValueType: "dateTime",
+                                             dataPoints: [] };
+            chart_data_qps.push( health_data_qps[ actor_name ] );
+        }
+        health_data_qps[ actor_name ].dataPoints.push( { x: (new Date).getTime(),
+                                                         y: loads[ 3 ] } );
+        if( health_data_qps[ actor_name ].dataPoints.length > max_timeline_values )
+        {
+            health_data_qps[ actor_name ].dataPoints.shift();
+        }
+    }
+
     chart_mem.render();
     chart_cpu.render();
+    chart_qps.render();
 
     $('#realm_dir').empty();
     for( var k in data.dir.realms )
@@ -111,7 +138,8 @@ function display_data( data )
                                                .append( $("<br>") )
                                                .append( $("<i>").text( actor_name ) ) )
                              .append( $("<td>").text( loads[ 0 ] ) )
-                             .append( $("<td>").text( loads[ 1 ] ) );
+                             .append( $("<td>").text( loads[ 1 ] ) )
+                             .append( $("<td>").text( loads[ 3 ] ) );
 
         if( loads[ 0 ] == 0 )
         {
@@ -168,8 +196,24 @@ $(function() {
         data : chart_data_cpu
     });
 
+    chart_qps = new CanvasJS.Chart("health_chart_qps", {
+        title : {
+            text : "QPS"
+        },
+        axisX:{
+            title: "Time",
+        },
+
+         axisY:{
+            title: "%",
+        },
+
+        data : chart_data_qps
+    });
+
 	chart_mem.render();
 	chart_cpu.render();
+    chart_qps.render();
 
     do_refresh();
 });
