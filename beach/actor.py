@@ -769,14 +769,15 @@ class ActorHandle ( object ):
                                'req' : requestType,
                                'id' : str( uuid.uuid4() ) } }
 
-        self._initialRefreshDone.wait( timeout = self._timeout )
+        # Broadcast is inherently very temporal so we assume timeout can be short and without retries.
+        self._initialRefreshDone.wait( timeout = 10 )
 
         for z_ident, endpoint in self._endpoints.items():
             z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
             if z is not None:
                 envelope = copy.deepcopy( envelope )
                 envelope[ 'mtd' ][ 'dst' ] = z_ident
-                self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, self._timeout, isCloseSocket = True ) )
+                self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, 10, isCloseSocket = True ) )
 
         gevent.sleep( 0 )
 
