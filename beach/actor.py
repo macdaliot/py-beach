@@ -196,6 +196,8 @@ class Actor( gevent.Greenlet ):
         self._qps = 0.0
         self._q_counter = 0
         self._last_qps_count = 0
+        self._q_total_time = 0.0
+        self._q_avg = 0.0
 
         # We have some special magic parameters
         self._trace_enabled = self._parameters.get( 'beach_trace_enabled', False )
@@ -253,8 +255,10 @@ class Actor( gevent.Greenlet ):
     def _generateQpsCount( self ):
         now = time.time()
         self._qps = round( self._q_counter / ( now - self._last_qps_count ), 3 )
+        self._q_avg = round( self._q_total_time / self._q_counter, 3 ) if 0 != self._q_counter else 0
         self._last_qps_count = now
         self._q_counter = 0
+        self._q_total_time = 0.0
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
@@ -280,7 +284,7 @@ class Actor( gevent.Greenlet ):
                         self.log( "Request is for wrong destination from %s, requesting %s but we are %s." % ( request.ident, request.dst, self.name ) )
                     elif 0 != len( self._trusted ) and request.ident not in self._trusted:
                         ret = errorMessage( 'unauthorized' )
-                        self.log( "Received unauthorized request." )
+                        self.log( "Received unauthorized request from %s." % ( request.ident, ) )
                     else:
                         handler = self._handlers.get( request.req, self._defaultHandler )
                         self._q_counter += 1
@@ -313,8 +317,10 @@ class Actor( gevent.Greenlet ):
                     self.logCritical( 'invalid request: %s' % str( msg ) )
                     z.send( errorMessage( 'invalid request' ) )
             #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
+            self._q_total_time += ( time.time() - start_time )
         self._n_free_handlers -= 1
         self.log( "Stopping processing Actor ops requests" )
+        z.close()
 
     def _defaultHandler( self, msg ):
         return ( False, 'request type not supported by actor' )
@@ -394,6 +400,15 @@ class Actor( gevent.Greenlet ):
         :param kw_args: keyword arguments to the function
         '''
         self._threads.add( gevent.spawn_later( inDelay, func, *args, **kw_args ) )
+
+    def newThread( self, func, *args, **kw_args ):
+        '''Starts a function in a new thread. The first argument to the function will be an event signaled when it is time to stop.
+
+        :param func: the function to call
+        :param args: positional arguments to the function
+        :param kw_args: keyword arguments to the function
+        '''
+        self._threads.add( gevent.spawn_later( 0, func, self.stopEvent, *args, **kw_args ) )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )

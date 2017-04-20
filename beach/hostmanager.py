@@ -268,8 +268,7 @@ class HostManager ( object ):
                             self.directory[ realm ].pop( cname, None )
                 if isFound: break
 
-        if isFound:
-            self.tombstones[ uid ] = int( time.time() )
+        self.tombstones[ uid ] = int( time.time() )
 
         if uid in self.actorInfo:
             port = self.actorInfo[ uid ][ 'port' ]
@@ -468,11 +467,12 @@ class HostManager ( object ):
                                                                        timeout = 20 )
                                 if not isMessageSuccess( newMsg ):
                                     failed.append( newMsg )
-                                else:
-                                    if not self._removeUidFromDirectory( uid ):
-                                        failed.append( errorMessage( 'error removing actor from directory after stop' ) )
-                                    else:
-                                        self.isActorChanged.set()
+
+                                if not self._removeUidFromDirectory( uid ):
+                                    failed.append( errorMessage( 'error removing actor from directory after stop' ) )
+
+                                if isMessageSuccess( newMsg ):
+                                    self.isActorChanged.set()
 
                                 self._removeInstanceIfIsolated( instance )
 
