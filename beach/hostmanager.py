@@ -191,7 +191,7 @@ class HostManager ( object ):
         self.ports_available.update( xrange( self.port_range[ 0 ], self.port_range[ 1 ] + 1 ) )
         
         self.peer_keepalive_seconds = self.configFile.get( 'peer_keepalive_seconds', 60 )
-        self.instance_keepalive_seconds = self.configFile.get( 'instance_keepalive_seconds', 60 )
+        self.instance_keepalive_seconds = self.configFile.get( 'instance_keepalive_seconds', 600 )
         self.directory_sync_seconds = self.configFile.get( 'directory_sync_seconds', 60 )
         self.tombstone_culling_seconds = self.configFile.get( 'tombstone_culling_seconds', 3600 )
         
@@ -203,12 +203,12 @@ class HostManager ( object ):
         
         # Start services
         self._log( "Starting services" )
-        gevent.spawn( self._svc_directory_requests )
-        gevent.spawn( self._svc_instance_keepalive )
-        gevent.spawn( self._svc_host_keepalive )
-        gevent.spawn( self._svc_directory_sync )
-        gevent.spawn( self._svc_cullTombstones )
-        gevent.spawn( self._svc_applyTombstones )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_directory_requests )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_instance_keepalive )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_host_keepalive )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_directory_sync )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_cullTombstones )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_applyTombstones )
         for _ in range( 20 ):
             gevent.spawn( self._svc_receiveOpsTasks )
         gevent.spawn( self._svc_pushDirChanges )
@@ -268,21 +268,26 @@ class HostManager ( object ):
 
         with self.dirLock.writer():
             if uid in self.reverseDir:
-                del( self.reverseDir[ uid ] )
-                for realm in self.directory.keys():
-                    for cname, c in self.directory[ realm ].items():
-                        if uid in c:
-                            del( c[ uid ] )
-                            isFound = True
-                            if 0 == len( c ):
-                                self.directory[ realm ].pop( cname, None )
-                    if isFound: break
+                self.reverseDir.pop( uid, None )
+                self.isActorChanged.set()
+            for realm in self.directory.keys():
+                for cname, c in self.directory[ realm ].items():
+                    if uid in c:
+                        c.pop( uid, None )
+                        isFound = True
+                        if 0 == len( c ):
+                            self._log( "REMOVE %s FROM %s" % ( uid, cname ) )
+                            self.directory[ realm ].pop( cname, None )
+                if isFound:
+                    self.isActorChanged.set()
+                    break
 
 
         if uid in self.actorInfo:
             port = self.actorInfo[ uid ][ 'port' ]
             self.ports_available.add( port )
-            del( self.actorInfo[ uid ] )
+            self.actorInfo.pop( uid, None )
+            self.isActorChanged.set()
 
         return isFound
 
@@ -290,6 +295,7 @@ class HostManager ( object ):
         if ts is None:
             ts = int( time.time() )
         if tb not in self.tombstones:
+            self._log( "ADD TOMBSTONE FOR %s" % tb )
             self.tombstones[ tb ] = ts
             self.isTombstoneChanged.set()
 
@@ -353,11 +359,13 @@ class HostManager ( object ):
             for uid, dest in newReverse.iteritems():
                 if uid not in self.reverseDir and uid not in self.tombstones:
                     self.reverseDir[ uid ] = dest
+                    self._log( "ADDING %s" % uid )
             for realm, catMap in newDir.iteritems():
                 curDir.setdefault( realm, PrefixDict() )
                 for cat, endpoints in catMap.iteritems():
                     curDir[ realm ].setdefault( cat, {} )
                     for uid, endpoint in endpoints.iteritems():
+                        if uid in self.tombstones: continue
                         # Check for ghost directory entries that report to be from here
                         # but are not, may be that this node restarted.
                         if endpoint.startswith( ourNode ) and uid not in self.actorInfo:
@@ -374,7 +382,7 @@ class HostManager ( object ):
                         curDir[ realm ].pop( cat, None )
 
         if isGhostActorsFound:
-            self.isActorChanged.set()
+            self._log( "GHOST ACTOR FOUND" )
 
         return curDir
 
@@ -412,10 +420,14 @@ class HostManager ( object ):
                 action = data[ 'req' ]
                 #self._log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
+                    z.send( successMessage() )
                     if 'from' in data and data[ 'from' ] not in self.nodes:
                         self._log( "Discovered new node: %s" % data[ 'from' ] )
                         self._connectToNode( data[ 'from' ] )
-                    z.send( successMessage() )
+                    for other in data.get( 'others', [] ):
+                        if other not in self.nodes:
+                            self._log( "Discovered new node: %s" % other )
+                            self._connectToNode( other )
                 elif 'start_actor' == action:
                     if not self._isPrivileged( data ):
                         z.send( errorMessage( 'unprivileged' ) )
@@ -472,6 +484,7 @@ class HostManager ( object ):
                                                                PrefixDict() ).setdefault( category,
                                                                                           {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                                           port )
+                            self._log( "ACTOR ADDED, SPREADING" )
                             self.isActorChanged.set()
                         else:
                             self._logCritical( 'Error loading actor %s: %s.' % ( actorName, newMsg ) )
@@ -507,10 +520,10 @@ class HostManager ( object ):
 
                                 self._addTombstone( uid )
 
-                                if isMessageSuccess( newMsg ):
-                                    self.isActorChanged.set()
-
                                 self._removeInstanceIfIsolated( instance )
+
+                        self._log( "KILLED, SPREAD" )
+                        self.isActorChanged.set()
 
                         if 0 != len( failed ):
                             z.send( errorMessage( 'some actors failed to stop', failed ) )
@@ -526,6 +539,7 @@ class HostManager ( object ):
                         instance = self.actorInfo.get( uid, {} ).get( 'instance', None )
                         if instance is not None and self._removeUidFromDirectory( uid ):
                             z.send( successMessage() )
+                            self._log( "REMOVED, SPREAD" )
                             self.isActorChanged.set()
                             self._removeInstanceIfIsolated( instance )
                         else:
@@ -536,7 +550,7 @@ class HostManager ( object ):
                                                          'mem' : psutil.virtual_memory().percent } } ) )
                 elif 'get_full_dir' == action:
                     with self.dirLock.reader():
-                        z.send( successMessage( { 'realms' : self.directory } ) )
+                        z.send( successMessage( { 'realms' : self.directory, 'reverse' : self.reverseDir } ) )
                 elif 'get_dir' == action:
                     realm = data.get( 'realm', 'global' )
                     if 'cat' in data:
@@ -586,10 +600,12 @@ class HostManager ( object ):
                         z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones, 'reverse' : self.reverseDir } ) )
                 elif 'push_dir_sync' == action:
                     if 'directory' in data and 'tombstones' in data and 'reverse' in data:
+                        z.send( successMessage() )
+                        self._log( "GETTING PUSH" )
                         for uid, ts in data[ 'tombstones' ].iteritems():
                             self._addTombstone( uid, ts )
                         self._updateDirectoryWith( self.directory, data[ 'directory' ], data[ 'reverse' ] )
-                        z.send( successMessage() )
+                        self._log( "FINISHED PARSING PUSH" )
                     else:
                         z.send( errorMessage( 'missing information to update directory' ) )
                 elif 'get_full_mtd' == action:
@@ -715,7 +731,8 @@ class HostManager ( object ):
                 if nodeName != self.ifaceIp4:
                     #self._log( "Issuing keepalive for node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'keepalive',
-                                                       'from' : self.ifaceIp4 }, timeout = 30 )
+                                                       'from' : self.ifaceIp4,
+                                                       'others' : self.nodes.keys() }, timeout = 30 )
 
                     if isMessageSuccess( data ):
                         node[ 'last_seen' ] = int( time.time() )
@@ -756,13 +773,16 @@ class HostManager ( object ):
                 tmpDir = copy.deepcopy( self.directory )
                 tmpTomb = copy.deepcopy( self.tombstones )
                 tmpReverse = copy.deepcopy( self.reverseDir )
+            self._log( "PUSHING ACTORS" )
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
+                    self._log( "PUSH" )
                     #self._log( "Pushing new directory update to %s" % nodeName )
                     node[ 'socket' ].request( { 'req' : 'push_dir_sync',
                                                 'directory' : tmpDir,
                                                 'tombstones' : tmpTomb,
                                                 'reverse' : tmpReverse } )
+            self._log( "FINISHED PUSHING" )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger()
