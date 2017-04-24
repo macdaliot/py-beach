@@ -267,16 +267,13 @@ class HostManager ( object ):
         isFound = False
 
         with self.dirLock.writer():
-            if uid in self.reverseDir:
-                self.reverseDir.pop( uid, None )
+            if self.reverseDir.pop( uid, None ) is not None:
                 self.isActorChanged.set()
             for realm in self.directory.keys():
                 for cname, c in self.directory[ realm ].items():
-                    if uid in c:
-                        c.pop( uid, None )
+                    if c.pop( uid, None ) is not None:
                         isFound = True
                         if 0 == len( c ):
-                            self._log( "REMOVE %s FROM %s" % ( uid, cname ) )
                             self.directory[ realm ].pop( cname, None )
                 if isFound:
                     self.isActorChanged.set()
@@ -295,7 +292,6 @@ class HostManager ( object ):
         if ts is None:
             ts = int( time.time() )
         if tb not in self.tombstones:
-            self._log( "ADD TOMBSTONE FOR %s" % tb )
             self.tombstones[ tb ] = ts
             self.isTombstoneChanged.set()
 
@@ -305,7 +301,7 @@ class HostManager ( object ):
             if self.isTombstoneChanged.wait( 0 ):
                 gevent.sleep( 5 )
                 self.isTombstoneChanged.clear()
-                for uid in self.tombstones:
+                for uid in self.tombstones.keys():
                     if uid in self.reverseDir:
                         self._removeUidFromDirectory( uid )
 
@@ -359,7 +355,6 @@ class HostManager ( object ):
             for uid, dest in newReverse.iteritems():
                 if uid not in self.reverseDir and uid not in self.tombstones:
                     self.reverseDir[ uid ] = dest
-                    self._log( "ADDING %s" % uid )
             for realm, catMap in newDir.iteritems():
                 curDir.setdefault( realm, PrefixDict() )
                 for cat, endpoints in catMap.iteritems():
@@ -375,14 +370,6 @@ class HostManager ( object ):
                             # Only add to this directory other node's info since
                             # we are authoritative here.
                             curDir[ realm ][ cat ][ uid ] = endpoint
-            
-            for realm in curDir:
-                for cat in curDir[ realm ].iterkeys():
-                    if 0 == len( curDir[ realm ].get( cat, {} ) ):
-                        curDir[ realm ].pop( cat, None )
-
-        if isGhostActorsFound:
-            self._log( "GHOST ACTOR FOUND" )
 
         return curDir
 
@@ -405,7 +392,6 @@ class HostManager ( object ):
             for uid, ts in self.tombstones.items():
                 if ts < currentTime - maxTime:
                     self.tombstones.pop( uid, None )
-                    self._log( "TONBSTONE %s EXPIRED: %s < %s" % ( uid, ts, currentTime - maxTime ) )
                 elif ts < nextTime:
                     nextTime = ts
 
@@ -484,7 +470,6 @@ class HostManager ( object ):
                                                                PrefixDict() ).setdefault( category,
                                                                                           {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                                           port )
-                            self._log( "ACTOR ADDED, SPREADING" )
                             self.isActorChanged.set()
                         else:
                             self._logCritical( 'Error loading actor %s: %s.' % ( actorName, newMsg ) )
@@ -522,7 +507,6 @@ class HostManager ( object ):
 
                                 self._removeInstanceIfIsolated( instance )
 
-                        self._log( "KILLED, SPREAD" )
                         self.isActorChanged.set()
 
                         if 0 != len( failed ):
@@ -539,7 +523,6 @@ class HostManager ( object ):
                         instance = self.actorInfo.get( uid, {} ).get( 'instance', None )
                         if instance is not None and self._removeUidFromDirectory( uid ):
                             z.send( successMessage() )
-                            self._log( "REMOVED, SPREAD" )
                             self.isActorChanged.set()
                             self._removeInstanceIfIsolated( instance )
                         else:
@@ -601,11 +584,9 @@ class HostManager ( object ):
                 elif 'push_dir_sync' == action:
                     if 'directory' in data and 'tombstones' in data and 'reverse' in data:
                         z.send( successMessage() )
-                        self._log( "GETTING PUSH" )
                         for uid, ts in data[ 'tombstones' ].iteritems():
                             self._addTombstone( uid, ts )
                         self._updateDirectoryWith( self.directory, data[ 'directory' ], data[ 'reverse' ] )
-                        self._log( "FINISHED PARSING PUSH" )
                     else:
                         z.send( errorMessage( 'missing information to update directory' ) )
                 elif 'get_full_mtd' == action:
@@ -773,16 +754,13 @@ class HostManager ( object ):
                 tmpDir = copy.deepcopy( self.directory )
                 tmpTomb = copy.deepcopy( self.tombstones )
                 tmpReverse = copy.deepcopy( self.reverseDir )
-            self._log( "PUSHING ACTORS" )
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
-                    self._log( "PUSH" )
                     #self._log( "Pushing new directory update to %s" % nodeName )
                     node[ 'socket' ].request( { 'req' : 'push_dir_sync',
                                                 'directory' : tmpDir,
                                                 'tombstones' : tmpTomb,
                                                 'reverse' : tmpReverse } )
-            self._log( "FINISHED PUSHING" )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger()
