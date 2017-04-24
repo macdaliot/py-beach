@@ -288,7 +288,7 @@ class Beach ( object ):
                 info[ 'logdest' ] = log_dest
             if self._admin_token is not None:
                 info[ 'admin_token' ] = self._admin_token
-            resp = node.request( info, timeout = 10 )
+            resp = node.request( info, timeout = 30 )
 
         return resp
 

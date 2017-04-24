@@ -82,6 +82,7 @@ class Patrol ( object ):
         for node_mtd in mtd.itervalues():
             if node_mtd is False: continue
             for aid, actor_mtd in node_mtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
+                if self._stopEvent.wait( 0 ): break
                 owner = actor_mtd.get( 'owner', None )
                 if owner in self._entries:
                     # Looks like a version of that actor was maintained by us before
@@ -101,6 +102,7 @@ class Patrol ( object ):
             currentScale = None
 
         for actorEntry in self._entries.itervalues():
+            if self._stopEvent.wait( 0 ): break
             actorName = actorEntry.name
             current = existing.get( actorName, 0 )
             targetNum = actorEntry.initialInstances
@@ -135,8 +137,10 @@ class Patrol ( object ):
         self._log( 'starting, patrolling %d actors' % len( self._entries ) )
         self._log( 'discovering pre-existing actors' )
         existing = self._scanForExistingActors()
+        if self._stopEvent.wait( 0 ): return
         self._log( '%d pre-existing actors' % len( existing ) )
         self._initializeMissingActors( existing )
+        if self._stopEvent.wait( 0 ): return
         self._log( 'starting patrol' )
         gevent.sleep(10)
         self._threads.add( gevent.spawn( self._sync ) )
@@ -189,18 +193,14 @@ class Patrol ( object ):
     def _sync( self ):
         while not self._stopEvent.wait( self._freq ):
             self._log( 'running sync' )
-            allActors = Set()
             directory = self._beach.getDirectory( timeout = 120 )
             if type( directory ) is not dict:
                 self._logCritical( 'error getting directory' )
                 continue
-            for actorName, dirEntries in directory.get( 'realms', {} ).get( self._realm, {} ).iteritems():
-                for actorId in dirEntries.iterkeys():
-                    allActors.add( actorId )
-            self._log( 'found %d actors, testing for %d' % ( len( allActors ), len( self._watch ) ) )
+            self._log( 'found %d actors, testing for %d' % ( len( directory[ 'reverse' ] ), len( self._watch ) ) )
             for actorId in self._watch.keys():
-                if actorId not in allActors:
-                    # An actor we were watching went down
+                if self._stopEvent.wait( 0 ): break
+                if actorId not in directory.get( 'reverse', {} ):
                     self._log( 'actor %s has fallen' % actorId )
                     if self._processFallenActor( self._watch[ actorId ] ):
                         del( self._watch[ actorId ] )
