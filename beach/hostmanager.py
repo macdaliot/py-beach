@@ -209,6 +209,7 @@ class HostManager ( object ):
         gevent.spawn_later( random.randint( 0, 3 ), self._svc_directory_sync )
         gevent.spawn_later( random.randint( 0, 3 ), self._svc_cullTombstones )
         gevent.spawn_later( random.randint( 0, 3 ), self._svc_applyTombstones )
+        gevent.spawn_later( random.randint( 0, 3 ), self._svc_cleanupCats )
         for _ in range( 20 ):
             gevent.spawn( self._svc_receiveOpsTasks )
         gevent.spawn( self._svc_pushDirChanges )
@@ -273,12 +274,9 @@ class HostManager ( object ):
                 for cname, c in self.directory[ realm ].items():
                     if c.pop( uid, None ) is not None:
                         isFound = True
-                        if 0 == len( c ):
-                            self.directory[ realm ].pop( cname, None )
                 if isFound:
                     self.isActorChanged.set()
                     break
-
 
         if uid in self.actorInfo:
             port = self.actorInfo[ uid ][ 'port' ]
@@ -304,6 +302,20 @@ class HostManager ( object ):
                 for uid in self.tombstones.keys():
                     if uid in self.reverseDir:
                         self._removeUidFromDirectory( uid )
+
+    @handleExceptions
+    def _svc_cleanupCats( self ):
+        while not self.stopEvent.wait( 300 ):
+            self._log( "Cleaning up directory" )
+            newDir = {}
+            with self.dirLock.reader():
+                for realmName, realm in self.directory.iteritems():
+                    newDir[ realmName ] = PrefixDict()
+                    for catName, cat in realm.iteritems():
+                        if 0 != len( cat ):
+                            newDir[ realmName ][ catName ] = cat
+            with self.dirLock.writer():
+                self.directory = newDir
 
     def _removeInstanceActorsFromDirectory( self, instance ):
         for uid, actor in self.actorInfo.items():

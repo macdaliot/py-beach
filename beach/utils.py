@@ -528,7 +528,7 @@ class RWLock( object ):
         isReady = False
         while not isReady:
             self._canRead.wait()
-            self._mutex.acquire()
+            self._mutex.acquire( blocking = True, timeout = None )
             if not self._isWriting:
                 self._canWrite.clear()
                 self._readers += 1
@@ -536,7 +536,7 @@ class RWLock( object ):
             self._mutex.release()
 
     def rUnlock( self ):
-        self._mutex.acquire()
+        self._mutex.acquire( blocking = True, timeout = None )
         self._readers -= 1
         if 0 == self._readers:
             self._canWrite.set()
@@ -547,7 +547,7 @@ class RWLock( object ):
         while not isReady:
             self._canRead.clear()
             self._canWrite.wait()
-            self._mutex.acquire()
+            self._mutex.acquire( blocking = True, timeout = None )
             if not self._isWriting and 0 == self._readers:
                 isReady = True
                 self._isWriting = True
@@ -555,7 +555,7 @@ class RWLock( object ):
             self._mutex.release()
 
     def wUnlock( self ):
-        self._mutex.acquire()
+        self._mutex.acquire( blocking = True, timeout = None )
         self._isWriting = False
         self._canWrite.set()
         self._canRead.set()
