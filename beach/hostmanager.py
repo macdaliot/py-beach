@@ -308,13 +308,12 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 300 ):
             self._log( "Cleaning up directory" )
             newDir = {}
-            with self.dirLock.reader():
+            with self.dirLock.writer():
                 for realmName, realm in self.directory.iteritems():
                     newDir[ realmName ] = PrefixDict()
                     for catName, cat in realm.iteritems():
                         if 0 != len( cat ):
                             newDir[ realmName ][ catName ] = cat
-            with self.dirLock.writer():
                 self.directory = newDir
 
     def _removeInstanceActorsFromDirectory( self, instance ):
@@ -370,6 +369,7 @@ class HostManager ( object ):
             for realm, catMap in newDir.iteritems():
                 curDir.setdefault( realm, PrefixDict() )
                 for cat, endpoints in catMap.iteritems():
+                    if 0 == len( endpoints ): continue
                     curDir[ realm ].setdefault( cat, {} )
                     for uid, endpoint in endpoints.iteritems():
                         if uid in self.tombstones: continue
