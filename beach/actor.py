@@ -1024,7 +1024,9 @@ class ActorHandleGroup( object ):
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
-        self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
+        if timeout is None:
+            timeout = self._timeout
+        self._initialRefreshDone.wait( timeout = timeout )
 
         for h in self._handles.values():
             h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries )
@@ -1040,7 +1042,9 @@ class ActorHandleGroup( object ):
             a request taking 15 seconds to return
         :returns: An instance of FutureResults that will receive the responses asynchronously.
         '''
-        self._initialRefreshDone.wait( timeout = timeout if timeout is not None else self._timeout )
+        if timeout is None:
+            timeout = self._timeout
+        self._initialRefreshDone.wait( timeout = timeout )
 
         futureResults = FutureResults( len( self._handles ) )
 

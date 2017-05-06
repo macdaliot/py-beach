@@ -24,6 +24,7 @@ gevent.monkey.patch_all()
 
 import os
 import yaml
+import uuid
 from beach.utils import *
 from beach.utils import _ZMREQ
 import zmq.green as zmq
@@ -214,6 +215,9 @@ class Beach ( object ):
 
         thisRealm = realm if realm is not None else self._realm
 
+        if type( category ) is str or type( category ) is unicode:
+            category = ( category, )
+
         if 'random' == strategy or strategy is None:
             node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
         elif 'resource' == strategy:
@@ -231,6 +235,9 @@ class Beach ( object ):
             if 0 != len( population ):
                 affinityNode = population.keys()[ random.randint( 0, len( population ) - 1 ) ]
                 node = self._nodes[ affinityNode ].get( 'socket', None )
+                # We create a temporary entry to allow us to do multiple Add in a row
+                for cat in category:
+                    self._dirCache.setdefault( cat, {} )[ str(uuid.uuid4()) ] = '%s:XXXX' % affinityNode
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -241,16 +248,21 @@ class Beach ( object ):
         elif 'repulsion' == strategy:
             possibleNodes = self._nodes.keys()
 
+            if strategy_hint is None:
+                strategy_hint = category[ 0 ]
             nodeList = self._dirCache.get( strategy_hint, {} ).values()
 
             for n in nodeList:
                 name = n.split( ':' )[ 1 ][ 2 : ]
                 if name in possibleNodes:
-                    del( possibleNodes[ name ] )
+                    possibleNodes.remove( name )
 
             if 0 != len( possibleNodes ):
                 affinityNode = possibleNodes[ random.randint( 0, len( possibleNodes ) - 1 ) ]
                 node = self._nodes[ affinityNode ].get( 'socket', None )
+                # We create a temporary entry to allow us to do multiple Add in a row
+                for cat in category:
+                    self._dirCache.setdefault( cat, {} )[ str(uuid.uuid4()) ] = 'tcp://%s:XXXX' % affinityNode
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -263,9 +275,6 @@ class Beach ( object ):
                 node = self._nodes.values()[ curI ][ 'socket' ]
 
         if node is not None:
-            if type( category ) is str or type( category ) is unicode:
-                category = ( category, )
-
             info = { 'req' : 'start_actor',
                      'actor_name' : actorName,
                      'realm' : thisRealm,
