@@ -719,6 +719,7 @@ class HostManager ( object ):
     
     @handleExceptions
     def _svc_host_keepalive( self ):
+        initialRefreshes = 5
         while not self.stopEvent.wait( 0 ):
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
@@ -733,7 +734,11 @@ class HostManager ( object ):
                         self._log( "Removing node %s because of timeout" % nodeName )
                         del( self.nodes[ nodeName ] )
             
-            gevent.sleep( self.peer_keepalive_seconds )
+            if 0 == initialRefreshes:
+                gevent.sleep( self.peer_keepalive_seconds )
+            else:
+                initialRefreshes -= 1
+                gevent.sleep( 1.0 )
     
     @handleExceptions
     def _svc_directory_sync( self ):
