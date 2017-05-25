@@ -266,9 +266,10 @@ class Actor( gevent.Greenlet ):
 
     def _opsHandler( self ):
         z = self._opsSocket.getChild()
-        self._n_free_handlers += 1
         while not self.stopEvent.wait( 0 ):
+            self._n_free_handlers += 1
             msg = z.recv( timeout = 10 )
+            self._n_free_handlers -= 1
             if msg is False: continue
             start_time = time.time()
             try:
@@ -318,7 +319,6 @@ class Actor( gevent.Greenlet ):
                     z.send( errorMessage( 'invalid request' ) )
             #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
             self._q_total_time += ( time.time() - start_time )
-        self._n_free_handlers -= 1
         self.log( "Stopping processing Actor ops requests" )
         z.close()
 
@@ -847,6 +847,9 @@ class ActorHandle ( object ):
             the endpoint is made
         '''
         ret = True
+
+        if timeout is None:
+            timeout = self._timeout
 
         self._threads.add( gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries ) )
         gevent.sleep( 0 )

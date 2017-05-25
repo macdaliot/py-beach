@@ -743,7 +743,7 @@ class HostManager ( object ):
     @handleExceptions
     def _svc_directory_sync( self ):
         nextWait = 0
-        while not self.stopEvent.wait( nextWait ):
+        while not self.stopEvent.wait( 0 ):
             if 0 == len( self.nodes ):
                 nextWait = 1
             else:
@@ -759,6 +759,8 @@ class HostManager ( object ):
                         self._updateDirectoryWith( self.directory, data[ 'data' ][ 'directory' ], data[ 'data' ][ 'reverse' ] )
                     else:
                         self._log( "Failed to get directory sync with node %s" % nodeName )
+                    if self.stopEvent.wait( nextWait ):
+                        break
 
     @handleExceptions
     def _svc_pushDirChanges( self ):

@@ -167,6 +167,8 @@ function do_refresh()
 $(function() {
 
     chart_mem = new CanvasJS.Chart("health_chart_mem", {
+        zoomEnabled : true,
+        panEnabled : true,
         title : {
             text : "Memory"
         },
@@ -182,6 +184,8 @@ $(function() {
     });
 
     chart_cpu = new CanvasJS.Chart("health_chart_cpu", {
+        zoomEnabled : true,
+        panEnabled : true,
         title : {
             text : "CPU"
         },
@@ -197,6 +201,8 @@ $(function() {
     });
 
     chart_qps = new CanvasJS.Chart("health_chart_qps", {
+        zoomEnabled : true,
+        panEnabled : true,
         title : {
             text : "QPS"
         },
@@ -205,7 +211,7 @@ $(function() {
         },
 
          axisY:{
-            title: "%",
+            title: "Queries",
         },
 
         data : chart_data_qps
