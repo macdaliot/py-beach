@@ -643,7 +643,7 @@ class ActorHandle ( object ):
         resp = self.request( *args, **kwargs )
         futureResults._addNewResult( resp )
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, isWithFuture = False ):
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, isWithFuture = False, onFailure = None ):
         '''Issue a request to the actor category of this handle.
 
         :param requestType: the type of request to issue
@@ -656,6 +656,8 @@ class ActorHandle ( object ):
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
         :param isWithFuture: return a Future instead of the actual response
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: the response to the request as an ActorResponse
         '''
         z = None
@@ -687,7 +689,8 @@ class ActorHandle ( object ):
                                              timeout = timeout, 
                                              key = key, 
                                              nRetries = nRetries, 
-                                             isWithFuture = False ) )
+                                             isWithFuture = False,
+                                             onFailure = onFailure ) )
             return futureResult
 
         while curRetry <= nRetries:
@@ -767,6 +770,9 @@ class ActorHandle ( object ):
         if ret is None or ret is False:
             ret = ActorResponse( ret )
 
+        if not ret.isSuccess and onFailure is not None:
+            onFailure( data )
+
         return ret
 
     def broadcast( self, requestType, data = {} ):
@@ -831,7 +837,7 @@ class ActorHandle ( object ):
         resp = self._accountedSend( *args, **kwargs )
         futureResults._addNewResult( resp )
 
-    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Send a message to the one actor without waiting for a response.
 
         :param requestType: the type of request to issue
@@ -843,6 +849,8 @@ class ActorHandle ( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
@@ -851,7 +859,7 @@ class ActorHandle ( object ):
         if timeout is None:
             timeout = self._timeout
 
-        self._threads.add( gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries ) )
+        self._threads.add( gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure ) )
         gevent.sleep( 0 )
 
         return ret
@@ -1015,7 +1023,7 @@ class ActorHandleGroup( object ):
         else:
             self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), self._svc_periodicRefreshCats ) )
 
-    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Send a message to the one actor in each sub-category without waiting for a response.
 
         :param requestType: the type of request to issue
@@ -1024,6 +1032,8 @@ class ActorHandleGroup( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
@@ -1032,9 +1042,9 @@ class ActorHandleGroup( object ):
         self._initialRefreshDone.wait( timeout = timeout )
 
         for h in self._handles.values():
-            h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries )
+            h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure )
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure ):
         '''Issue a message to the one actor in each sub-category and receive responses asynchronously.
 
         :param requestType: the type of request to issue
@@ -1043,6 +1053,8 @@ class ActorHandleGroup( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: An instance of FutureResults that will receive the responses asynchronously.
         '''
         if timeout is None:
@@ -1052,7 +1064,7 @@ class ActorHandleGroup( object ):
         futureResults = FutureResults( len( self._handles ) )
 
         for h in self._handles.values():
-            gevent.spawn( self._handleAsyncRequest, futureResults, h, requestType, data = data, timeout = timeout, key = key, nRetries = nRetries )
+            gevent.spawn( self._handleAsyncRequest, futureResults, h, requestType, data = data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure )
 
         return futureResults
 

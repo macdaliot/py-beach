@@ -161,7 +161,7 @@ function display_data( data )
 function do_refresh()
 {
     $.get( '/info', display_data, 'json' ).fail(function(){set_connected(false);})
-                                          .always(function(){setTimeout( do_refresh, 5000 );});
+                                          .always(function(){setTimeout( do_refresh, 10000 );});
 }
 
 $(function() {
