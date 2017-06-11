@@ -1044,7 +1044,7 @@ class ActorHandleGroup( object ):
         for h in self._handles.values():
             h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure )
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure ):
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Issue a message to the one actor in each sub-category and receive responses asynchronously.
 
         :param requestType: the type of request to issue
