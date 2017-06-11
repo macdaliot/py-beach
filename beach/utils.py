@@ -269,6 +269,7 @@ class _ZMREQ ( object ):
         self._threads = gevent.pool.Group()
         self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
         self._private_key = private_key
+        self.isCongested = False
 
         zFront = self._ctx.socket( zmq.ROUTER )
         zBack = self._ctx.socket( zmq.DEALER )
@@ -300,7 +301,10 @@ class _ZMREQ ( object ):
         try:
             z = self._available.get( block = False )
         except:
-            z = self._newSocket()
+            if not self.isCongested:
+                z = self._newSocket()
+            else:
+                z = self._available.get( block = True ) 
 
         ts = time.time()
         try:

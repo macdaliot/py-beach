@@ -25,7 +25,6 @@ from beach.utils import *
 from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
-from beach.utils import _ZSocket
 from beach.utils import loadModuleFrom
 import random
 import logging
@@ -187,13 +186,15 @@ class Actor( gevent.Greenlet ):
         self._resources = resources
         self._ident = ident
         self._trusted = trusted
-        self._n_concurrent = n_concurrent
+        self._n_initial_concurrent = n_concurrent
+        self._n_concurrent = 0
         self._private_key = private_key
 
         self._exception = None
 
         self._n_free_handlers = 0
         self._is_initted = False
+        self._is_congested = False
 
         self._qps = 0.0
         self._q_counter = 0
@@ -229,7 +230,7 @@ class Actor( gevent.Greenlet ):
             # Initially Actors handle one concurrent request to avoid bad surprises
             # by users not thinking about concurrency. This can be bumped up by calling
             # Actor.AddConcurrentHandler()
-            for i in xrange( self._n_concurrent ):
+            for i in xrange( self._n_initial_concurrent ):
                 self.AddConcurrentHandler()
 
             self.stopEvent.wait()
@@ -262,8 +263,17 @@ class Actor( gevent.Greenlet ):
         self._q_counter = 0
         self._q_total_time = 0.0
 
+    def setCongested( self, isCongested = True ):
+        tmp = self._is_congested
+        self._is_congested = isCongested
+        return tmp
+
+    def isCongested( self ):
+        return self._is_congested
+
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
+        self._n_concurrent += 1
         self._threads.add( gevent.spawn( self._opsHandler ) )
 
     def _opsHandler( self ):
@@ -272,6 +282,10 @@ class Actor( gevent.Greenlet ):
             self._n_free_handlers += 1
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
+
+            if 0 == self._n_free_handlers and not self._is_congested:
+                self.AddConcurrentHandler()
+
             if msg is False: continue
             start_time = time.time()
             try:
@@ -315,6 +329,8 @@ class Actor( gevent.Greenlet ):
                                     err = ret[ 1 ] if 2 <= len( ret ) else 'error'
                                     data = ret[ 2 ] if 3 == len( ret ) else {}
                                     ret = errorMessage( err, data = data )
+                    if self._is_congested:
+                        ret[ 'status' ][ 'congested' ] = True
                     z.send( ret )
                 else:
                     self.logCritical( 'invalid request: %s' % str( msg ) )
@@ -514,11 +530,13 @@ class ActorResponse( object ):
             self.isSuccess = False
             self.error = 'timeout'
             self.data = {}
+            self.isCongested = False
         else:
             self.isTimedOut = False
             self.isSuccess = msg[ 'status' ][ 'success' ]
             self.error = msg[ 'status' ].get( 'error', '' )
             self.data = msg.get( 'data', {} )
+            self.isCongested = msg[ 'status' ].get( 'congested', False )
 
     def __str__( self ):
         return 'ActorResponse( isSuccess: %s, isTimedOut: %s, error: %s, data: %s )' % ( self.isSuccess,
@@ -725,7 +743,7 @@ class ActorHandle ( object ):
                                 z, z_ident = self._affinityCache[ affinityKey ]
                             else:
                                 z_ident, z = orderedEndpoints[ affinityKey ]
-                                z = _ZSocket( zmq.REQ, z, private_key = self._private_key )
+                                z = _ZMREQ( z, isBind = False, private_key = self._private_key )
                                 if z is not None:
                                     self._affinityCache[ affinityKey ] = z, z_ident
                         else:
@@ -752,6 +770,8 @@ class ActorHandle ( object ):
                 ret = self._accountedSend( z, envelope, z_ident, timeout )
 
                 ret = ActorResponse( ret )
+
+                z.isCongested = ret.isCongested
 
                 # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
