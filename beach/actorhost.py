@@ -51,7 +51,7 @@ def handleExceptions( f ):
             try:
                 res = f( *args, **kwargs )
             except:
-                args[ 0 ]._logCritical( traceback.format_exc() )
+                args[ 0 ].logCritical( traceback.format_exc() )
             else:
                 break
         return res

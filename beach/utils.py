@@ -262,19 +262,36 @@ class _ZMREQ ( object ):
     def __init__( self, url, isBind, private_key = None ):
         global global_z_context
         self._available = Queue()
+        self._isClosed = False
         self._url = url
         self._isBind = isBind
         self._ctx = global_z_context
+        self._threads = gevent.pool.Group()
+        self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
         self._private_key = private_key
-        self._isClosed = False
+
+        zFront = self._ctx.socket( zmq.ROUTER )
+        zBack = self._ctx.socket( zmq.DEALER )
+        zFront.set( zmq.LINGER, 0 )
+        zBack.set( zmq.LINGER, 0 )
+        if self._isBind:
+            zBack.bind( self._url )
+        else:
+            zBack.connect( self._url )
+        zFront.bind( self._intUrl )
+        self._proxySocks = ( zFront, zBack )
+        self._threads.add( gevent.spawn( self._proxy, zFront, zBack ) )
+        self._threads.add( gevent.spawn( self._proxy, zBack, zFront ) )
+
+    def _proxy( self, zFrom, zTo ):
+        while True:
+            msg = zFrom.recv_multipart()
+            zTo.send_multipart( msg )
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REQ )
         z.set( zmq.LINGER, 0 )
-        if self._isBind:
-            z.bind( self._url )
-        else:
-            z.connect( self._url )
+        z.connect( self._intUrl )
         return z
 
     def request( self, data, timeout = None ):
@@ -344,6 +361,12 @@ class _ZMREQ ( object ):
             except:
                 break
         self._available = Queue()
+        self._threads.kill()
+        if self._proxySocks[ 0 ] is not None:
+            self._proxySocks[ 0 ].close()
+        if self._proxySocks[ 1 ] is not None:
+            self._proxySocks[ 1 ].close()
+        self._proxySocks = ( None, None )
 
 class _ZMREP ( object ):
     def __init__( self, url, isBind, private_key = None ):

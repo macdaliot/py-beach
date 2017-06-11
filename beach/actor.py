@@ -190,6 +190,8 @@ class Actor( gevent.Greenlet ):
         self._n_concurrent = n_concurrent
         self._private_key = private_key
 
+        self._exception = None
+
         self._n_free_handlers = 0
         self._is_initted = False
 
@@ -596,6 +598,7 @@ class ActorHandle ( object ):
         self._ident = ident
         self._endpoints = {}
         self._srcSockets = Queue()
+        self._peerSockets = {}
         self._threads = gevent.pool.Group()
         self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
         self._quick_refresh_timeout = 15
@@ -608,6 +611,10 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
+            if 'affinity' != self._mode or key is None:
+                for z_ident, z_url in self._endpoints.items():
+                    if z_ident not in self._peerSockets:
+                        self._peerSockets[ z_ident ] = _ZMREQ( z_url, isBind = False, private_key = self._private_key )
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -722,20 +729,14 @@ class ActorHandle ( object ):
                                 if z is not None:
                                     self._affinityCache[ affinityKey ] = z, z_ident
                         else:
-                            try:
-                                z, z_ident = self._srcSockets.get( block = False )
-                            except:
-                                z = None
-                                z_ident = None
-                            if z is None:
-                                # Try to create a new socket
-                                if 'random' == self._mode:
+                            if 'random' == self._mode:
+                                try:
                                     endpoints = self._endpoints.keys()
-                                    if 0 != len( endpoints ):
-                                        z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
-                                        z = _ZSocket( zmq.REQ,
-                                                      self._endpoints[ z_ident ],
-                                                      private_key = self._private_key )
+                                    z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
+                                    z = self._peerSockets[ z_ident ]
+                                except:
+                                    z = None
+                                    z_ident = None
                         if z is None:
                             gevent.sleep( 0.1 )
             except _TimeoutException:
@@ -755,12 +756,12 @@ class ActorHandle ( object ):
                 # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
-                    if 'affinity' != self._mode:
-                        self._srcSockets.put( ( z, z_ident ) )
                     break
                 else:
                     if 'affinity' == self._mode:
                         del( self._affinityCache[ affinityKey ] )
+                    else:
+                        del( self._peerSockets[ z_ident ] )
                     z.close()
                     z = None
                     curRetry += 1
@@ -793,12 +794,10 @@ class ActorHandle ( object ):
         # Broadcast is inherently very temporal so we assume timeout can be short and without retries.
         self._initialRefreshDone.wait( timeout = 10 )
 
-        for z_ident, endpoint in self._endpoints.items():
-            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
-            if z is not None:
-                envelope = copy.deepcopy( envelope )
-                envelope[ 'mtd' ][ 'dst' ] = z_ident
-                self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, 10, isCloseSocket = True ) )
+        for z_ident, z in self._peerSockets.items():
+            envelope = copy.deepcopy( envelope )
+            envelope[ 'mtd' ][ 'dst' ] = z_ident
+            self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, 10 ) )
 
         gevent.sleep( 0 )
 
@@ -819,21 +818,19 @@ class ActorHandle ( object ):
 
         self._initialRefreshDone.wait( timeout = self._timeout )
 
-        toSockets = self._endpoints.items()
+        toSockets = self._peerSockets.items()
         futureResults = FutureResults( len( toSockets ) )
-        for z_ident, endpoint in toSockets:
-            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
-            if z is not None:
-                envelope = copy.deepcopy( envelope )
-                envelope[ 'mtd' ][ 'dst' ] = z_ident
-                self._threads.add( gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout ) )
+        
+        for z_ident, z in toSockets:
+            envelope = copy.deepcopy( envelope )
+            envelope[ 'mtd' ][ 'dst' ] = z_ident
+            self._threads.add( gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout ) )
 
         gevent.sleep( 0 )
 
         return futureResults
 
     def _directToFuture( self, futureResults, *args, **kwargs ):
-        kwargs[ 'isCloseSocket' ] = True
         resp = self._accountedSend( *args, **kwargs )
         futureResults._addNewResult( resp )
 
