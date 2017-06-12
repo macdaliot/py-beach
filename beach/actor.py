@@ -641,7 +641,7 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
-            if 'affinity' != self._mode or key is None:
+            if 'affinity' != self._mode:
                 for z_ident, z_url in self._endpoints.items():
                     if z_ident not in self._peerSockets:
                         self._peerSockets[ z_ident ] = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
@@ -785,8 +785,10 @@ class ActorHandle ( object ):
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
                     break
                 else:
-                    if 999 == z.growthHist[ 0 ]:
-                        # There has been no new response in the last history timeframe.
+                    self._fromActor.log( "Received failure: %s" % str( ret ) )
+                    if 999 == z.growthHist[ 0 ] or ret.error == 'wrong dest':
+                        self._fromActor.log( "Bad destination, recycling." )
+                        # There has been no new response in the last history timeframe, or it's a wrong dest.
                         if 'affinity' == self._mode:
                             self._affinityCache.pop( affinityKey, None )
                         else:
