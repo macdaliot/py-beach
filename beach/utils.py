@@ -29,7 +29,7 @@ import urllib2
 import sys
 import os
 import warnings
-from Queue import Queue
+import Queue
 import time
 try:
     import M2Crypto
@@ -259,9 +259,9 @@ class _ZSocket( object ):
         self.s = None
 
 class _ZMREQ ( object ):
-    def __init__( self, url, isBind, private_key = None ):
+    def __init__( self, url, isBind, private_key = None, congestionCB = None ):
         global global_z_context
-        self._available = Queue()
+        self._available = Queue.Queue()
         self._isClosed = False
         self._url = url
         self._isBind = isBind
@@ -270,6 +270,10 @@ class _ZMREQ ( object ):
         self._intUrl = 'inproc://%s' % str( uuid.uuid4() )
         self._private_key = private_key
         self.isCongested = False
+        self._outQ = 0.0
+        self._inQ = 0.0
+        self.growthHist = [ 1.0, 1.0, 1.0, 1.0 ]
+        self._congestionCB = congestionCB
 
         zFront = self._ctx.socket( zmq.ROUTER )
         zBack = self._ctx.socket( zmq.DEALER )
@@ -283,11 +287,39 @@ class _ZMREQ ( object ):
         self._proxySocks = ( zFront, zBack )
         self._threads.add( gevent.spawn( self._proxy, zFront, zBack ) )
         self._threads.add( gevent.spawn( self._proxy, zBack, zFront ) )
+        self._threads.add( gevent.spawn_later( 5, self._updateStats ) )
 
     def _proxy( self, zFrom, zTo ):
         while True:
             msg = zFrom.recv_multipart()
             zTo.send_multipart( msg )
+
+    def _updateStats( self ):
+        inQ = self._inQ
+        outQ = self._outQ
+        if 0 == inQ:
+            if 0 == outQ:
+                growth = 0
+            else:
+                growth = 999
+        else:
+            growth = float( outQ ) / float( inQ )
+        self._outQ = 0.0
+        self._inQ = 0.0
+        self.growthHist.insert( 0, growth )
+        self.growthHist.pop()
+        if ( ( 1.05 < self.growthHist[ 0 ] and 1.05 < self.growthHist[ 1 ] ) or
+             ( 1.0 < self.growthHist[ 0 ] and 1.0 < self.growthHist[ 1 ] and 1.0 < self.growthHist[ 2 ] and 1.0 < self.growthHist[ 3 ] ) ):
+            if not self.isCongested:
+                self.isCongested = True
+                if self._congestionCB is not None:
+                    self._congestionCB( True )
+        elif 100 > self._available.qsize():
+            if self.isCongested:
+                self.isCongested = False
+                if self._congestionCB is not None:
+                    self._congestionCB( False )
+        self._threads.add( gevent.spawn_later( 5, self._updateStats ) )
 
     def _newSocket( self ):
         z = self._ctx.socket( zmq.REQ )
@@ -304,7 +336,10 @@ class _ZMREQ ( object ):
             if not self.isCongested:
                 z = self._newSocket()
             else:
-                z = self._available.get( block = True ) 
+                try:
+                    z = self._available.get( block = True, timeout = timeout ) 
+                except Queue.Empty:
+                    return False
 
         ts = time.time()
         try:
@@ -322,8 +357,10 @@ class _ZMREQ ( object ):
                     data = sym_iv + aes.update( data )
                     data += aes.final()
 
+                self._outQ += 1
                 z.send( data )
                 result = z.recv()
+                self._inQ += 1
 
                 if result is not None and result is not False:
                     if self._private_key is not None:
@@ -347,14 +384,19 @@ class _ZMREQ ( object ):
         except _TimeoutException:
             z.close( linger = 0 )
             z = self._newSocket()
-        except zmq.ZMQError, e:
+            result = False
+        except zmq.ZMQError:
             z.close( linger = 0 )
             z = self._newSocket()
+            result = False
 
-        if self._isClosed:
+        if self._isClosed or result is False or result is None:
             z.close( linger = 0 )
         else:
-            self._available.put( z )
+            if 10 < self._available.qsize():
+                z.close( linger = 0 )
+            else:
+                self._available.put( z )
         return result
 
     def close( self ):
@@ -364,7 +406,7 @@ class _ZMREQ ( object ):
                 z.close( linger = 0 )
             except:
                 break
-        self._available = Queue()
+        self._available = Queue.Queue()
         self._threads.kill()
         if self._proxySocks[ 0 ] is not None:
             self._proxySocks[ 0 ].close()
