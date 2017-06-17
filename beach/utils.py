@@ -19,6 +19,7 @@ import datetime
 import gevent
 from gevent.lock import BoundedSemaphore
 from gevent.event import Event
+import gevent.queue
 import zmq.green as zmq
 import netifaces
 from prefixtree import PrefixDict
@@ -29,7 +30,7 @@ import urllib2
 import sys
 import os
 import warnings
-import Queue
+import syslog
 import time
 try:
     import M2Crypto
@@ -261,7 +262,7 @@ class _ZSocket( object ):
 class _ZMREQ ( object ):
     def __init__( self, url, isBind, private_key = None, congestionCB = None ):
         global global_z_context
-        self._available = Queue.Queue()
+        self._available = gevent.queue.Queue()
         self._isClosed = False
         self._url = url
         self._isBind = isBind
@@ -308,17 +309,18 @@ class _ZMREQ ( object ):
         self._inQ = 0.0
         self.growthHist.insert( 0, growth )
         self.growthHist.pop()
-        if ( ( 1.05 < self.growthHist[ 0 ] and 1.05 < self.growthHist[ 1 ] ) or
-             ( 1.0 < self.growthHist[ 0 ] and 1.0 < self.growthHist[ 1 ] and 1.0 < self.growthHist[ 2 ] and 1.0 < self.growthHist[ 3 ] ) ):
+        if ( ( 1.05 < self.growthHist[ 0 ] and 1.05 < self.growthHist[ 1 ] and 999 != self.growthHist[ 0 ] and 999 != self.growthHist[ 1 ] ) or
+             ( 1.0 < self.growthHist[ 0 ] and 1.0 < self.growthHist[ 1 ] and 1.0 < self.growthHist[ 2 ] and 1.0 < self.growthHist[ 3 ] and 
+               999 != self.growthHist[ 0 ] and 999 != self.growthHist[ 1 ] and 999 != self.growthHist[ 2 ] and 999 != self.growthHist[ 3 ] ) ):
             if not self.isCongested:
                 self.isCongested = True
                 if self._congestionCB is not None:
-                    self._congestionCB( True )
+                    self._congestionCB( True, self.growthHist )
         elif 100 > self._available.qsize():
             if self.isCongested:
                 self.isCongested = False
                 if self._congestionCB is not None:
-                    self._congestionCB( False )
+                    self._congestionCB( False, self.growthHist )
         self._threads.add( gevent.spawn_later( 5, self._updateStats ) )
 
     def _newSocket( self ):
@@ -337,8 +339,9 @@ class _ZMREQ ( object ):
                 z = self._newSocket()
             else:
                 try:
+                    ttt = time.time()
                     z = self._available.get( block = True, timeout = timeout ) 
-                except Queue.Empty:
+                except gevent.queue.Empty:
                     return False
 
         ts = time.time()
@@ -358,9 +361,11 @@ class _ZMREQ ( object ):
                     data += aes.final()
 
                 self._outQ += 1
-                z.send( data )
-                result = z.recv()
-                self._inQ += 1
+                try:
+                    z.send( data )
+                    result = z.recv()
+                finally:
+                    self._inQ += 1
 
                 if result is not None and result is not False:
                     if self._private_key is not None:
@@ -406,7 +411,7 @@ class _ZMREQ ( object ):
                 z.close( linger = 0 )
             except:
                 break
-        self._available = Queue.Queue()
+        self._available = gevent.queue.Queue()
         self._threads.kill()
         if self._proxySocks[ 0 ] is not None:
             self._proxySocks[ 0 ].close()

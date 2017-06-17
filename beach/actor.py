@@ -293,15 +293,16 @@ class Actor( gevent.Greenlet ):
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
 
-            if 10 < self._n_free_handlers:
-                self._n_concurrent -= 1
-                isNaturalCleanup = True
-                break
-
-            if 0 == self._n_free_handlers:
+            if 3 > self._n_free_handlers:
                 self.AddConcurrentHandler()
 
-            if msg is False: continue
+            if msg is False: 
+                if 10 < self._n_free_handlers:
+                    self._n_concurrent -= 1
+                    isNaturalCleanup = True
+                    break
+                else:
+                    continue
             start_time = time.time()
             try:
                 request = ActorRequest( msg )
@@ -513,7 +514,8 @@ class Actor( gevent.Greenlet ):
                               mode,
                               ident = self._ident,
                               nRetries = nRetries,
-                              timeout = timeout )
+                              timeout = timeout,
+                              fromActor = self )
         self._vHandles.append( v )
         return v
 
@@ -657,7 +659,7 @@ class ActorHandle ( object ):
         else:
             self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
 
-    def _accountedSend( self, z, msg, z_ident, timeout ):
+    def _accountedSend( self, z, z_ident, msg, timeout ):
         if z_ident not in self._pending:
             self._pending[ z_ident ] = 0
         self._pending[ z_ident ] += 1
@@ -775,8 +777,9 @@ class ActorHandle ( object ):
                                        'req' : requestType,
                                        'id' : str( uuid.uuid4() ),
                                        'dst' : z_ident } }
+                qStart = time.time()
 
-                ret = self._accountedSend( z, envelope, z_ident, timeout )
+                ret = self._accountedSend( z, z_ident, envelope, timeout )
 
                 ret = ActorResponse( ret )
 
@@ -785,9 +788,9 @@ class ActorHandle ( object ):
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
                     break
                 else:
-                    self._fromActor.log( "Received failure: %s" % str( ret ) )
+                    self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
                     if 999 == z.growthHist[ 0 ] or ret.error == 'wrong dest':
-                        self._fromActor.log( "Bad destination, recycling." )
+                        self._log( "Bad destination, recycling." )
                         # There has been no new response in the last history timeframe, or it's a wrong dest.
                         if 'affinity' == self._mode:
                             self._affinityCache.pop( affinityKey, None )
@@ -807,9 +810,14 @@ class ActorHandle ( object ):
 
         return ret
 
-    def _reportCongestion( self, isCongested ):
+    def _log( self, msg ):
         if self._fromActor is not None:
-            self._fromActor.log( "Handle %s entering %s state." % ( self._cat, "CONGESTED" if isCongested else "CLEAR" ) )
+            self._fromActor.log( msg )
+        else:
+            syslog.syslog( msg )
+
+    def _reportCongestion( self, isCongested, history ):
+        self._log( "Handle %s entering %s state: %s." % ( self._cat, "CONGESTED" if isCongested else "CLEAR", str( history ) ) )
 
     def broadcast( self, requestType, data = {} ):
         '''Issue a request to all actors in the category of this handle ignoring response.
@@ -832,7 +840,7 @@ class ActorHandle ( object ):
         for z_ident, z in self._peerSockets.items():
             envelope = copy.deepcopy( envelope )
             envelope[ 'mtd' ][ 'dst' ] = z_ident
-            self._threads.add( gevent.spawn( withLogException( self._accountedSend, actor = self._fromActor ), z, envelope, z_ident, 10 ) )
+            self._threads.add( gevent.spawn( withLogException( self._accountedSend, actor = self._fromActor ), z, z_ident, envelope, 10 ) )
 
         gevent.sleep( 0 )
 
@@ -859,14 +867,29 @@ class ActorHandle ( object ):
         for z_ident, z in toSockets:
             envelope = copy.deepcopy( envelope )
             envelope[ 'mtd' ][ 'dst' ] = z_ident
-            self._threads.add( gevent.spawn( withLogException( self._directToFuture, actor = self._fromActor ), futureResults, z, envelope, z_ident, self._timeout ) )
+            self._threads.add( gevent.spawn( withLogException( self._directToFuture, actor = self._fromActor ), futureResults, z, z_ident, envelope, self._timeout ) )
 
         gevent.sleep( 0 )
 
         return futureResults
 
-    def _directToFuture( self, futureResults, *args, **kwargs ):
-        resp = self._accountedSend( *args, **kwargs )
+    def _directToFuture( self, futureResults, z, z_ident, *args, **kwargs ):
+        resp = self._accountedSend( z, z_ident, *args, **kwargs )
+
+        interpretedRet = ActorResponse( resp )
+        if not interpretedRet.isSuccess:
+            self._log( "Received failure (%s): %s" % ( self._cat, str( interpretedRet ) ) )
+            if 999 == z.growthHist[ 0 ] or interpretedRet.error == 'wrong dest':
+                self._log( "Bad destination, recycling." )
+                # There has been no new response in the last history timeframe, or it's a wrong dest.
+                if 'affinity' != self._mode:
+                    self._peerSockets.pop( z_ident, None )
+                z.close()
+            z = None
+            curRetry += 1
+            if ret.error == 'wrong dest':
+                self._updateDirectory()
+
         futureResults._addNewResult( resp )
 
     def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
