@@ -28,7 +28,7 @@ import time
 import json
 from functools import wraps
 from sets import Set
-
+import gevent
 
 ###############################################################################
 # CUSTOM EXCEPTIONS
@@ -38,7 +38,8 @@ from sets import Set
 ###############################################################################
 # REFERENCE ELEMENTS
 ###############################################################################
-
+SEC_PER_GEN = 10
+g_metrics = {}
 
 ###############################################################################
 # CORE HELPER FUNCTIONS
@@ -60,35 +61,59 @@ class Index:
 
 class GetClusterInfo:
     def GET( self ):
+        global g_metrics
+
         info = {}
         web.header( 'Content-Type', 'application/json' )
-        info[ 'dir' ] = beach.getDirectory()
-        info[ 'health' ] = beach.getClusterHealth()
-        info[ 'n_nodes' ] = beach.getNodeCount()
-        info[ 'load' ] = beach.getLoadInfo()
-        metadata = {}
-        mtd = beach.getAllNodeMetadata()
-        for nodeMtd in mtd.values():
-            if nodeMtd is False: continue
-            for uid, actorMtd in nodeMtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
-                metadata[ uid ] = '%s/%s' % ( actorMtd[ 'realm' ], actorMtd[ 'name' ] )
-        info[ 'actor_mtd' ] = metadata
 
-        unique_actors = Set()
-        n_realms = 0
-        n_cats = 0
-        if info[ 'dir' ] is not False:
-            for realm, categories in info[ 'dir' ][ 'realms' ].items():
-                n_realms += 1
-                for cat_name, actors in categories.items():
-                    n_cats += 1
-                    for actor_uid, endpoint in actors.items():
-                        unique_actors.add( actor_uid )
+        return json.dumps( g_metrics )
 
-        info[ 'n_actors' ] = len( unique_actors )
-        info[ 'n_realms' ] = n_realms
-        info[ 'n_cats' ] = n_cats
-        return json.dumps( info )
+###############################################################################
+# CORE LOOP
+# Loop that updates metrics constantly.
+###############################################################################
+def updateMetrics():
+    global g_metrics
+
+    print( "Fetching metrics..." )
+
+    info = {}
+    info[ 'ts' ] = int( time.time() )
+    info[ 'dir' ] = beach.getDirectory()
+    info[ 'health' ] = beach.getClusterHealth()
+    info[ 'n_nodes' ] = beach.getNodeCount()
+    info[ 'load' ] = beach.getLoadInfo()
+    metadata = {}
+    mtd = beach.getAllNodeMetadata()
+    for nodeMtd in mtd.values():
+        if nodeMtd is False: continue
+        for uid, actorMtd in nodeMtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
+            metadata[ uid ] = '%s/%s' % ( actorMtd[ 'realm' ], actorMtd[ 'name' ] )
+    info[ 'actor_mtd' ] = metadata
+
+    unique_actors = Set()
+    n_realms = 0
+    n_cats = 0
+    if info[ 'dir' ] is not False:
+        for realm, categories in info[ 'dir' ][ 'realms' ].items():
+            n_realms += 1
+            for cat_name, actors in categories.items():
+                n_cats += 1
+                for actor_uid, endpoint in actors.items():
+                    unique_actors.add( actor_uid )
+
+    info[ 'n_actors' ] = len( unique_actors )
+    info[ 'n_realms' ] = n_realms
+    info[ 'n_cats' ] = n_cats
+
+    g_metrics = info
+
+    print( "Done processing metris." )
+
+def periodicUpdate():
+    while True:
+        updateMetrics()
+        gevent.sleep( SEC_PER_GEN )
 
 ###############################################################################
 # BOILER PLATE
@@ -108,4 +133,7 @@ beach = Beach( sys.argv[ -1 ] )
 sys.argv.pop()
 
 os.chdir( g_current_dir )
+
+gevent.spawn( periodicUpdate )
+
 app.run()

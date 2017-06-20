@@ -25,7 +25,6 @@ from beach.utils import *
 from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
-from beach.utils import _ZSocket
 from beach.utils import loadModuleFrom
 import random
 import logging
@@ -36,8 +35,26 @@ import inspect
 import sys
 import urllib2
 import copy
-from Queue import Queue
+import Queue
 from types import ModuleType
+import syslog
+
+def withLogException( f, actor = None ):
+    def _tmp( *args, **kw_args ):
+        try:
+            try:
+                return f( *args, **kw_args )
+            except gevent.GreenletExit:
+                pass
+            except:
+                if actor is not None:
+                    actor.logCritical( traceback.format_exc() )
+                else:
+                    syslog.syslog( traceback.format_exc() )
+        except:
+            syslog.syslog( traceback.format_exc() )
+    return _tmp
+
 
 class ActorRequest( object ):
     '''Wrapper for requests to Actors. Not created directly.
@@ -187,8 +204,11 @@ class Actor( gevent.Greenlet ):
         self._resources = resources
         self._ident = ident
         self._trusted = trusted
-        self._n_concurrent = n_concurrent
+        self._n_initial_concurrent = n_concurrent
+        self._n_concurrent = 0
         self._private_key = private_key
+
+        self._exception = None
 
         self._n_free_handlers = 0
         self._is_initted = False
@@ -227,7 +247,7 @@ class Actor( gevent.Greenlet ):
             # Initially Actors handle one concurrent request to avoid bad surprises
             # by users not thinking about concurrency. This can be bumped up by calling
             # Actor.AddConcurrentHandler()
-            for i in xrange( self._n_concurrent ):
+            for i in xrange( self._n_initial_concurrent ):
                 self.AddConcurrentHandler()
 
             self.stopEvent.wait()
@@ -262,14 +282,27 @@ class Actor( gevent.Greenlet ):
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
-        self._threads.add( gevent.spawn( self._opsHandler ) )
+        self._n_concurrent += 1
+        self._threads.add( gevent.spawn( withLogException( self._opsHandler, actor = self ) ) )
 
     def _opsHandler( self ):
         z = self._opsSocket.getChild()
-        self._n_free_handlers += 1
+        isNaturalCleanup = False
         while not self.stopEvent.wait( 0 ):
+            self._n_free_handlers += 1
             msg = z.recv( timeout = 10 )
-            if msg is False: continue
+            self._n_free_handlers -= 1
+
+            if 3 > self._n_free_handlers:
+                self.AddConcurrentHandler()
+
+            if msg is False: 
+                if 10 < self._n_free_handlers:
+                    self._n_concurrent -= 1
+                    isNaturalCleanup = True
+                    break
+                else:
+                    continue
             start_time = time.time()
             try:
                 request = ActorRequest( msg )
@@ -312,14 +345,16 @@ class Actor( gevent.Greenlet ):
                                     err = ret[ 1 ] if 2 <= len( ret ) else 'error'
                                     data = ret[ 2 ] if 3 == len( ret ) else {}
                                     ret = errorMessage( err, data = data )
+
                     z.send( ret )
                 else:
                     self.logCritical( 'invalid request: %s' % str( msg ) )
                     z.send( errorMessage( 'invalid request' ) )
             #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
             self._q_total_time += ( time.time() - start_time )
-        self._n_free_handlers -= 1
-        self.log( "Stopping processing Actor ops requests" )
+
+        if not isNaturalCleanup:
+            self.log( "Stopping processing Actor ops requests" )
         z.close()
 
     def _defaultHandler( self, msg ):
@@ -381,15 +416,10 @@ class Actor( gevent.Greenlet ):
         :param kw_args: keyword arguments to the function
         '''
         if not self.stopEvent.wait( 0 ):
-            try:
-                func( *args, **kw_args )
-            except gevent.GreenletExit:
-                raise
-            except:
-                self.logCritical( traceback.format_exc() )
+            func( *args, **kw_args )
 
             if not self.stopEvent.wait( 0 ):
-                self._threads.add( gevent.spawn_later( delay, self.schedule, delay, func, *args, **kw_args ) )
+                self._threads.add( gevent.spawn_later( delay, withLogException( self.schedule, actor = self ), delay, func, *args, **kw_args ) )
 
     def delay( self, inDelay, func, *args, **kw_args ):
         '''Delay the execution of a function.
@@ -408,7 +438,7 @@ class Actor( gevent.Greenlet ):
         :param args: positional arguments to the function
         :param kw_args: keyword arguments to the function
         '''
-        self._threads.add( gevent.spawn_later( 0, func, self.stopEvent, *args, **kw_args ) )
+        self._threads.add( gevent.spawn_later( 0, withLogException( func, actor = self ), self.stopEvent, *args, **kw_args ) )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )
@@ -450,7 +480,8 @@ class Actor( gevent.Greenlet ):
                          mode,
                          ident = self._ident,
                          nRetries = nRetries,
-                         timeout = timeout )
+                         timeout = timeout,
+                         fromActor = self )
         self._vHandles.append( v )
         return v
 
@@ -483,7 +514,8 @@ class Actor( gevent.Greenlet ):
                               mode,
                               ident = self._ident,
                               nRetries = nRetries,
-                              timeout = timeout )
+                              timeout = timeout,
+                              fromActor = self )
         self._vHandles.append( v )
         return v
 
@@ -587,17 +619,20 @@ class ActorHandle ( object ):
                   mode = 'random',
                   nRetries = None,
                   timeout = None,
-                  ident = None ):
+                  ident = None,
+                  fromActor = None ):
         self._cat = category
         self._nRetries = nRetries
         self._timeout = timeout
         self._realm = realm
+        self._fromActor = fromActor
         self._mode = mode
         self._ident = ident
         self._endpoints = {}
-        self._srcSockets = Queue()
+        self._srcSockets = Queue.Queue()
+        self._peerSockets = {}
         self._threads = gevent.pool.Group()
-        self._threads.add( gevent.spawn_later( 0, self._svc_refreshDir ) )
+        self._threads.add( gevent.spawn_later( 0, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
         self._quick_refresh_timeout = 15
         self._initialRefreshDone = gevent.event.Event()
         self._affinityCache = {}
@@ -608,6 +643,10 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
+            if 'affinity' != self._mode:
+                for z_ident, z_url in self._endpoints.items():
+                    if z_ident not in self._peerSockets:
+                        self._peerSockets[ z_ident ] = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -616,11 +655,11 @@ class ActorHandle ( object ):
         if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
-            self._threads.add( gevent.spawn_later( 2, self._svc_refreshDir ) )
+            self._threads.add( gevent.spawn_later( 2, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
         else:
-            self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), self._svc_refreshDir ) )
+            self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
 
-    def _accountedSend( self, z, msg, z_ident, timeout, isCloseSocket = False ):
+    def _accountedSend( self, z, z_ident, msg, timeout ):
         if z_ident not in self._pending:
             self._pending[ z_ident ] = 0
         self._pending[ z_ident ] += 1
@@ -634,16 +673,13 @@ class ActorHandle ( object ):
             if 0 == self._pending[ z_ident ]:
                 del( self._pending[ z_ident ] )
 
-        if isCloseSocket:
-            z.close()
-
         return ret
 
     def _requestToFuture( self, futureResults, *args, **kwargs ):
         resp = self.request( *args, **kwargs )
         futureResults._addNewResult( resp )
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, isWithFuture = False ):
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, isWithFuture = False, onFailure = None ):
         '''Issue a request to the actor category of this handle.
 
         :param requestType: the type of request to issue
@@ -656,6 +692,8 @@ class ActorHandle ( object ):
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
         :param isWithFuture: return a Future instead of the actual response
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: the response to the request as an ActorResponse
         '''
         z = None
@@ -680,14 +718,15 @@ class ActorHandle ( object ):
 
         if isWithFuture:
             futureResult = FutureResults( 1 )
-            self._threads.add( gevent.spawn( self._requestToFuture, 
+            self._threads.add( gevent.spawn( withLogException( self._requestToFuture, actor = self._fromActor ), 
                                              futureResult, 
                                              requestType, 
                                              data = data, 
                                              timeout = timeout, 
                                              key = key, 
                                              nRetries = nRetries, 
-                                             isWithFuture = False ) )
+                                             isWithFuture = False,
+                                             onFailure = onFailure ) )
             return futureResult
 
         while curRetry <= nRetries:
@@ -715,24 +754,18 @@ class ActorHandle ( object ):
                                 z, z_ident = self._affinityCache[ affinityKey ]
                             else:
                                 z_ident, z = orderedEndpoints[ affinityKey ]
-                                z = _ZSocket( zmq.REQ, z, private_key = self._private_key )
+                                z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
                                 if z is not None:
                                     self._affinityCache[ affinityKey ] = z, z_ident
                         else:
-                            try:
-                                z, z_ident = self._srcSockets.get( block = False )
-                            except:
-                                z = None
-                                z_ident = None
-                            if z is None:
-                                # Try to create a new socket
-                                if 'random' == self._mode:
+                            if 'random' == self._mode:
+                                try:
                                     endpoints = self._endpoints.keys()
-                                    if 0 != len( endpoints ):
-                                        z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
-                                        z = _ZSocket( zmq.REQ,
-                                                      self._endpoints[ z_ident ],
-                                                      private_key = self._private_key )
+                                    z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
+                                    z = self._peerSockets[ z_ident ]
+                                except:
+                                    z = None
+                                    z_ident = None
                         if z is None:
                             gevent.sleep( 0.1 )
             except _TimeoutException:
@@ -744,21 +777,26 @@ class ActorHandle ( object ):
                                        'req' : requestType,
                                        'id' : str( uuid.uuid4() ),
                                        'dst' : z_ident } }
+                #qStart = time.time()
 
-                ret = self._accountedSend( z, envelope, z_ident, timeout )
+                ret = self._accountedSend( z, z_ident, envelope, timeout )
 
                 ret = ActorResponse( ret )
 
                 # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
-                    if 'affinity' != self._mode:
-                        self._srcSockets.put( ( z, z_ident ) )
                     break
                 else:
-                    if 'affinity' == self._mode:
-                        del( self._affinityCache[ affinityKey ] )
-                    z.close()
+                    #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
+                    if 999 == z.growthHist[ 0 ] or ret.error == 'wrong dest':
+                        self._log( "Bad destination, recycling." )
+                        # There has been no new response in the last history timeframe, or it's a wrong dest.
+                        if 'affinity' == self._mode:
+                            self._affinityCache.pop( affinityKey, None )
+                        else:
+                            self._peerSockets.pop( z_ident, None )
+                        z.close()
                     z = None
                     curRetry += 1
                     if ret.error == 'wrong dest':
@@ -767,7 +805,22 @@ class ActorHandle ( object ):
         if ret is None or ret is False:
             ret = ActorResponse( ret )
 
+        if ret.isTimedOut:
+            self._log( "Request failed after %s retries." % curRetry )
+
+        if not ret.isSuccess and onFailure is not None:
+            onFailure( data )
+
         return ret
+
+    def _log( self, msg ):
+        if self._fromActor is not None:
+            self._fromActor.log( msg )
+        else:
+            syslog.syslog( msg )
+
+    def _reportCongestion( self, isCongested, history ):
+        self._log( "Handle %s entering %s state: %s." % ( self._cat, "CONGESTED" if isCongested else "CLEAR", str( history ) ) )
 
     def broadcast( self, requestType, data = {} ):
         '''Issue a request to all actors in the category of this handle ignoring response.
@@ -787,12 +840,10 @@ class ActorHandle ( object ):
         # Broadcast is inherently very temporal so we assume timeout can be short and without retries.
         self._initialRefreshDone.wait( timeout = 10 )
 
-        for z_ident, endpoint in self._endpoints.items():
-            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
-            if z is not None:
-                envelope = copy.deepcopy( envelope )
-                envelope[ 'mtd' ][ 'dst' ] = z_ident
-                self._threads.add( gevent.spawn( self._accountedSend, z, envelope, z_ident, 10, isCloseSocket = True ) )
+        for z_ident, z in self._peerSockets.items():
+            envelope = copy.deepcopy( envelope )
+            envelope[ 'mtd' ][ 'dst' ] = z_ident
+            self._threads.add( gevent.spawn( withLogException( self._accountedSend, actor = self._fromActor ), z, z_ident, envelope, 10 ) )
 
         gevent.sleep( 0 )
 
@@ -813,25 +864,38 @@ class ActorHandle ( object ):
 
         self._initialRefreshDone.wait( timeout = self._timeout )
 
-        toSockets = self._endpoints.items()
+        toSockets = self._peerSockets.items()
         futureResults = FutureResults( len( toSockets ) )
-        for z_ident, endpoint in toSockets:
-            z = _ZSocket( zmq.REQ, endpoint, private_key = self._private_key )
-            if z is not None:
-                envelope = copy.deepcopy( envelope )
-                envelope[ 'mtd' ][ 'dst' ] = z_ident
-                self._threads.add( gevent.spawn( self._directToFuture, futureResults, z, envelope, z_ident, self._timeout ) )
+        
+        for z_ident, z in toSockets:
+            envelope = copy.deepcopy( envelope )
+            envelope[ 'mtd' ][ 'dst' ] = z_ident
+            self._threads.add( gevent.spawn( withLogException( self._directToFuture, actor = self._fromActor ), futureResults, z, z_ident, envelope, self._timeout ) )
 
         gevent.sleep( 0 )
 
         return futureResults
 
-    def _directToFuture( self, futureResults, *args, **kwargs ):
-        kwargs[ 'isCloseSocket' ] = True
-        resp = self._accountedSend( *args, **kwargs )
+    def _directToFuture( self, futureResults, z, z_ident, *args, **kwargs ):
+        resp = self._accountedSend( z, z_ident, *args, **kwargs )
+
+        interpretedRet = ActorResponse( resp )
+        if not interpretedRet.isSuccess:
+            self._log( "Received failure (%s): %s" % ( self._cat, str( interpretedRet ) ) )
+            if 999 == z.growthHist[ 0 ] or interpretedRet.error == 'wrong dest':
+                self._log( "Bad destination, recycling." )
+                # There has been no new response in the last history timeframe, or it's a wrong dest.
+                if 'affinity' != self._mode:
+                    self._peerSockets.pop( z_ident, None )
+                z.close()
+            z = None
+            curRetry += 1
+            if ret.error == 'wrong dest':
+                self._updateDirectory()
+
         futureResults._addNewResult( resp )
 
-    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Send a message to the one actor without waiting for a response.
 
         :param requestType: the type of request to issue
@@ -843,12 +907,17 @@ class ActorHandle ( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
         ret = True
 
-        self._threads.add( gevent.spawn( self.request, requestType, data, timeout = timeout, key = key, nRetries = nRetries ) )
+        if timeout is None:
+            timeout = self._timeout
+
+        self._threads.add( gevent.spawn( withLogException( self.request, actor = self._fromActor ), requestType, data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure ) )
         gevent.sleep( 0 )
 
         return ret
@@ -873,6 +942,7 @@ class ActorHandle ( object ):
         '''Close all threads and resources associated with this handle.
         '''
         self._threads.kill()
+        self._fromActor = None
 
     def forceRefresh( self ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
@@ -935,7 +1005,8 @@ class ActorHandleGroup( object ):
                   mode = 'random',
                   nRetries = None,
                   timeout = None,
-                  ident = None ):
+                  ident = None,
+                  fromActor = None ):
         self._realm = realm
         self._categoryRoot = categoryRoot
         if not self._categoryRoot.endswith( '/' ):
@@ -943,11 +1014,12 @@ class ActorHandleGroup( object ):
         self._mode = mode
         self._nRetries = nRetries
         self._timeout = timeout
+        self._fromActor = fromActor
         self._ident = ident
         self._quick_refresh_timeout = 15
         self._initialRefreshDone = gevent.event.Event()
         self._threads = gevent.pool.Group()
-        self._threads.add( gevent.spawn_later( 0, self._svc_periodicRefreshCats ) )
+        self._threads.add( gevent.spawn_later( 0, withLogException( self._svc_periodicRefreshCats, actor = self._fromActor ) ) )
         self._handles = {}
 
     @classmethod
@@ -993,7 +1065,8 @@ class ActorHandleGroup( object ):
                                                         mode = self._mode,
                                                         nRetries = self._nRetries,
                                                         timeout = self._timeout,
-                                                        ident = self._ident )
+                                                        ident = self._ident,
+                                                        fromActor = self._fromActor )
 
             for cat in self._handles.keys():
                 if cat not in categories:
@@ -1008,11 +1081,11 @@ class ActorHandleGroup( object ):
         if cats is False or cats is None or 0 == len( cats ) and 0 < self._quick_refresh_timeout:
             self._quick_refresh_timeout -= 1
             # No Actors yet, be more agressive to look for some
-            self._threads.add( gevent.spawn_later( 10, self._svc_periodicRefreshCats ) )
+            self._threads.add( gevent.spawn_later( 10, withLogException( self._svc_periodicRefreshCats, actor = self._fromActor ) ) )
         else:
-            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), self._svc_periodicRefreshCats ) )
+            self._threads.add( gevent.spawn_later( ( 60 * 5 ) + random.randint( 0, 10 ), withLogException( self._svc_periodicRefreshCats, actor = self._fromActor ) ) )
 
-    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Send a message to the one actor in each sub-category without waiting for a response.
 
         :param requestType: the type of request to issue
@@ -1021,6 +1094,8 @@ class ActorHandleGroup( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: True since no validation on the reception or reply
             the endpoint is made
         '''
@@ -1029,9 +1104,9 @@ class ActorHandleGroup( object ):
         self._initialRefreshDone.wait( timeout = timeout )
 
         for h in self._handles.values():
-            h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries )
+            h.shoot( requestType, data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure )
 
-    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None ):
+    def request( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Issue a message to the one actor in each sub-category and receive responses asynchronously.
 
         :param requestType: the type of request to issue
@@ -1040,6 +1115,8 @@ class ActorHandleGroup( object ):
         :param nRetries: the number of times the request will be re-sent if it
             times out, meaning a timeout of 5 and a retry of 3 could result in
             a request taking 15 seconds to return
+        :param onFailure: execute this function callback on failure with a single
+            argument that is the message
         :returns: An instance of FutureResults that will receive the responses asynchronously.
         '''
         if timeout is None:
@@ -1049,7 +1126,7 @@ class ActorHandleGroup( object ):
         futureResults = FutureResults( len( self._handles ) )
 
         for h in self._handles.values():
-            gevent.spawn( self._handleAsyncRequest, futureResults, h, requestType, data = data, timeout = timeout, key = key, nRetries = nRetries )
+            gevent.spawn( withLogException( self._handleAsyncRequest, actor = self._fromActor ), futureResults, h, requestType, data = data, timeout = timeout, key = key, nRetries = nRetries, onFailure = onFailure )
 
         return futureResults
 
@@ -1072,6 +1149,7 @@ class ActorHandleGroup( object ):
             h.close()
 
         self._threads.kill()
+        self._fromActor = None
 
     def forceRefresh( self ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
