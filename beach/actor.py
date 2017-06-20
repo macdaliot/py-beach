@@ -45,7 +45,7 @@ def withLogException( f, actor = None ):
             try:
                 return f( *args, **kw_args )
             except gevent.GreenletExit:
-                raise
+                pass
             except:
                 if actor is not None:
                     actor.logCritical( traceback.format_exc() )
@@ -777,7 +777,7 @@ class ActorHandle ( object ):
                                        'req' : requestType,
                                        'id' : str( uuid.uuid4() ),
                                        'dst' : z_ident } }
-                qStart = time.time()
+                #qStart = time.time()
 
                 ret = self._accountedSend( z, z_ident, envelope, timeout )
 
@@ -788,7 +788,7 @@ class ActorHandle ( object ):
                 if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
                     break
                 else:
-                    self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
+                    #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
                     if 999 == z.growthHist[ 0 ] or ret.error == 'wrong dest':
                         self._log( "Bad destination, recycling." )
                         # There has been no new response in the last history timeframe, or it's a wrong dest.
@@ -804,6 +804,9 @@ class ActorHandle ( object ):
 
         if ret is None or ret is False:
             ret = ActorResponse( ret )
+
+        if ret.isTimedOut:
+            self._log( "Request failed after %s retries." % curRetry )
 
         if not ret.isSuccess and onFailure is not None:
             onFailure( data )

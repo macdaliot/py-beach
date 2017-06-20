@@ -30,7 +30,6 @@ import urllib2
 import sys
 import os
 import warnings
-import syslog
 import time
 try:
     import M2Crypto
