@@ -749,14 +749,15 @@ class ActorHandle ( object ):
                             if self._affinityOrder is None or self._affinityOrder != orderHash:
                                 self._affinityOrder = orderHash
                                 self._affinityCache = {}
-                            affinityKey = ( hash( key ) % len( orderedEndpoints ) )
-                            if affinityKey in self._affinityCache:
-                                z, z_ident = self._affinityCache[ affinityKey ]
-                            else:
-                                z_ident, z = orderedEndpoints[ affinityKey ]
-                                z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
-                                if z is not None:
-                                    self._affinityCache[ affinityKey ] = z, z_ident
+                            if 0 != len( orderedEndpoints ):
+                                affinityKey = ( hash( key ) % len( orderedEndpoints ) )
+                                if affinityKey in self._affinityCache:
+                                    z, z_ident = self._affinityCache[ affinityKey ]
+                                else:
+                                    z_ident, z = orderedEndpoints[ affinityKey ]
+                                    z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                                    if z is not None:
+                                        self._affinityCache[ affinityKey ] = z, z_ident
                         else:
                             if 'random' == self._mode:
                                 try:
@@ -889,7 +890,6 @@ class ActorHandle ( object ):
                     self._peerSockets.pop( z_ident, None )
                 z.close()
             z = None
-            curRetry += 1
             if ret.error == 'wrong dest':
                 self._updateDirectory()
 
