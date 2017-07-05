@@ -335,10 +335,20 @@ class _ZMREQ ( object ):
             z = self._available.get( block = False )
         except:
             if not self.isCongested:
-                z = self._newSocket()
+                try:
+                    z = self._newSocket()
+                except zmq.ZMQError as e:
+                    if 'Too many open files' in str( e ):
+                        self.isCongested = True
+                        self._congestionCB( True, self.growthHist )
+                        try:
+                            z = self._available.get( block = True, timeout = timeout ) 
+                        except gevent.queue.Empty:
+                            return False
+                    else:
+                        raise
             else:
                 try:
-                    ttt = time.time()
                     z = self._available.get( block = True, timeout = timeout ) 
                 except gevent.queue.Empty:
                     return False
@@ -404,6 +414,7 @@ class _ZMREQ ( object ):
         return result
 
     def close( self ):
+        self._isClosed = True
         while not self._available.empty():
             try:
                 z = self._available.get( block = False )

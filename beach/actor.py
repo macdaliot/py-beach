@@ -632,6 +632,7 @@ class ActorHandle ( object ):
         self._srcSockets = Queue.Queue()
         self._peerSockets = {}
         self._threads = gevent.pool.Group()
+        self._lastDirUpdate = 0
         self._threads.add( gevent.spawn_later( 0, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
         self._quick_refresh_timeout = 15
         self._initialRefreshDone = gevent.event.Event()
@@ -639,14 +640,23 @@ class ActorHandle ( object ):
         self._affinityOrder = None
         self._pending = {}
 
-    def _updateDirectory( self ):
+    def _updateDirectory( self, isForced = False ):
+        if not isForced and self._lastDirUpdate > ( time.time() - 2 ):
+            return
+        else:
+            self._lastDirUpdate = time.time()
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
             if 'affinity' != self._mode:
                 for z_ident, z_url in self._endpoints.items():
                     if z_ident not in self._peerSockets:
-                        self._peerSockets[ z_ident ] = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                        # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
+                        newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                        if z_ident not in self._peerSockets:
+                            self._peerSockets[ z_ident ] = newSocket
+                        else:
+                            newSocket.close()
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -756,8 +766,7 @@ class ActorHandle ( object ):
                                 else:
                                     z_ident, z = orderedEndpoints[ affinityKey ]
                                     z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
-                                    if z is not None:
-                                        self._affinityCache[ affinityKey ] = z, z_ident
+                                    self._affinityCache[ affinityKey ] = z, z_ident
                         else:
                             if 'random' == self._mode:
                                 try:
@@ -948,7 +957,7 @@ class ActorHandle ( object ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
            since a periodic refresh is already at an interval frequent enough for most use.
         '''
-        self._updateDirectory()
+        self._updateDirectory( isForced = True )
 
     def getPending( self ):
         '''Get the number of pending requests made by this handle.
@@ -1157,7 +1166,7 @@ class ActorHandleGroup( object ):
         '''
         self._refreshCats()
         for handle in self._handles.values():
-            handle._updateDirectory()
+            handle._updateDirectory( isForced = True )
 
     def getPending( self ):
         '''Get the number of pending requests made by this handle group.
