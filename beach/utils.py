@@ -316,16 +316,22 @@ class _ZMREQ ( object ):
                 if self._congestionCB is not None:
                     self._congestionCB( True, self.growthHist )
         elif 100 > self._available.qsize():
-            if self.isCongested:
+            if self.isCongested and 1.0 > self.growthHist[ 0 ]:
                 self.isCongested = False
                 if self._congestionCB is not None:
                     self._congestionCB( False, self.growthHist )
         self._threads.add( gevent.spawn_later( 5, self._updateStats ) )
 
     def _newSocket( self ):
-        z = self._ctx.socket( zmq.REQ )
-        z.set( zmq.LINGER, 0 )
-        z.connect( self._intUrl )
+        try:
+            z = self._ctx.socket( zmq.REQ )
+            z.set( zmq.LINGER, 0 )
+            z.connect( self._intUrl )
+        except zmq.ZMQError as e:
+            if 'Too many open files' in str( e ):
+                z = None
+            else:
+                raise
         return z
 
     def request( self, data, timeout = None ):
@@ -335,19 +341,12 @@ class _ZMREQ ( object ):
             z = self._available.get( block = False )
         except:
             if not self.isCongested:
-                try:
-                    z = self._newSocket()
-                except zmq.ZMQError as e:
-                    if 'Too many open files' in str( e ):
-                        self.isCongested = True
-                        self._congestionCB( True, self.growthHist )
-                        try:
-                            z = self._available.get( block = True, timeout = timeout ) 
-                        except gevent.queue.Empty:
-                            return False
-                    else:
-                        raise
-            else:
+                z = self._newSocket()
+                if z is None:
+                    self.isCongested = True
+                    self._congestionCB( True, self.growthHist )
+
+            if z is None:
                 try:
                     z = self._available.get( block = True, timeout = timeout ) 
                 except gevent.queue.Empty:
@@ -404,13 +403,14 @@ class _ZMREQ ( object ):
             z = self._newSocket()
             result = False
 
-        if self._isClosed or result is False or result is None:
-            z.close( linger = 0 )
-        else:
-            if 10 < self._available.qsize():
+        if z is not None:
+            if self._isClosed or result is False or result is None:
                 z.close( linger = 0 )
             else:
-                self._available.put( z )
+                if 10 < self._available.qsize():
+                    z.close( linger = 0 )
+                else:
+                    self._available.put( z )
         return result
 
     def close( self ):

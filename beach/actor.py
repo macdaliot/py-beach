@@ -293,16 +293,11 @@ class Actor( gevent.Greenlet ):
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
 
-            if 3 > self._n_free_handlers:
+            if 3 > self._n_free_handlers and 100 > self._n_concurrent:
                 self.AddConcurrentHandler()
 
             if msg is False: 
-                if 10 < self._n_free_handlers:
-                    self._n_concurrent -= 1
-                    isNaturalCleanup = True
-                    break
-                else:
-                    continue
+                continue
             start_time = time.time()
             try:
                 request = ActorRequest( msg )
@@ -353,8 +348,7 @@ class Actor( gevent.Greenlet ):
             #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
             self._q_total_time += ( time.time() - start_time )
 
-        if not isNaturalCleanup:
-            self.log( "Stopping processing Actor ops requests" )
+        self.log( "Stopping processing Actor ops requests" )
         z.close()
 
     def _defaultHandler( self, msg ):
@@ -799,7 +793,8 @@ class ActorHandle ( object ):
                     break
                 else:
                     #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
-                    if 999 == z.growthHist[ 0 ] or ret.error == 'wrong dest':
+                    self._log( "Received failure (%s:%s): %s" % ( self._cat, requestType, str( ret ) ) )
+                    if ret.error == 'wrong dest':
                         self._log( "Bad destination, recycling." )
                         # There has been no new response in the last history timeframe, or it's a wrong dest.
                         if 'affinity' == self._mode:
@@ -892,7 +887,7 @@ class ActorHandle ( object ):
         interpretedRet = ActorResponse( resp )
         if not interpretedRet.isSuccess:
             self._log( "Received failure (%s): %s" % ( self._cat, str( interpretedRet ) ) )
-            if 999 == z.growthHist[ 0 ] or interpretedRet.error == 'wrong dest':
+            if interpretedRet.error == 'wrong dest':
                 self._log( "Bad destination, recycling." )
                 # There has been no new response in the last history timeframe, or it's a wrong dest.
                 if 'affinity' != self._mode:
