@@ -1058,8 +1058,9 @@ class ActorHandleGroup( object ):
         if cats is not None:
             categories = []
             for cat in cats:
-                cat = cat.replace( self._categoryRoot, '' ).split( '/' )
-                cat = cat[ 0 ] if ( 0 != len( cat ) or 1 == len( cat ) ) else cat[ 1 ]
+                cat = cat.replace( self._categoryRoot, '' ).split( '/' )[ 0 ]
+                if 0 == len( cat ):
+                    continue
                 categories.append( '%s%s/' % ( self._categoryRoot, cat ) )
 
             for cat in categories:

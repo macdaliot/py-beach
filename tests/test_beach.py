@@ -201,22 +201,6 @@ def test_concurrency():
     # concurrent query
     resp = vHandle.request( 'sleep', timeout = 1 )
     assert( resp.isTimedOut and not resp.isSuccess )
-    resp = vHandle.request( 'nosleep', timeout = 2 )
-    assert( resp.isTimedOut and not resp.isSuccess )
-
-    assert( beach.flush() )
-
-    vHandle.close()
-    vHandle = beach.getActorHandle( 'sleepers' )
-
-    a2 = beach.addActor( 'Sleeper', 'sleepers', parameters={"a":16}, resources = {}, n_concurrent = 2 )
-    assert( isMessageSuccess( a2 ) )
-
-    # Now confirm first q does not block entire actor
-    resp = vHandle.request( 'sleep', timeout = 1 )
-    assert( resp.isTimedOut and not resp.isSuccess )
-    resp = vHandle.request( 'nosleep', timeout = 2 )
-    assert( resp.isSuccess and 'time' in resp.data )
 
     assert( beach.flush() )
 

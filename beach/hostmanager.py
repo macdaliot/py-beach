@@ -274,6 +274,8 @@ class HostManager ( object ):
                 for cname, c in self.directory[ realm ].items():
                     if c.pop( uid, None ) is not None:
                         isFound = True
+                        if 0 == len( c ):
+                            self.directory.get( realm, {} ).pop( cname, None )
                 if isFound:
                     self.isActorChanged.set()
                     break
