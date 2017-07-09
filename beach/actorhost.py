@@ -73,6 +73,7 @@ class ActorHost ( object ):
         global timeToStopEvent
         gevent.signal( signal.SIGQUIT, _stopAllActors )
         gevent.signal( signal.SIGINT, _stopAllActors )
+        gevent.signal( signal.SIGTERM, _stopAllActors )
 
         self.instanceId = instanceId
 
@@ -240,6 +241,7 @@ class ActorHost ( object ):
                             if not actor.ready():
                                 actor.kill( timeout = 10 )
                                 info = { 'error' : 'timeout' }
+                                self.log( "Actor %s timedout while exiting" % uid )
                             z.send( successMessage( data = info ) )
                         else:
                             z.send( errorMessage( 'actor not found' ) )

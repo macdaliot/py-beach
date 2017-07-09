@@ -30,7 +30,7 @@ def beach_cluster( request ):
         global beach
         global h_hostmanager
         beach.close()
-        h_hostmanager.send_signal( signal.SIGQUIT )
+        h_hostmanager.send_signal( signal.SIGTERM )
 
         assert( 0 == h_hostmanager.wait() )
 

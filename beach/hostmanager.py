@@ -83,6 +83,7 @@ class HostManager ( object ):
         global timeToStopEvent
         gevent.signal( signal.SIGQUIT, _stop )
         gevent.signal( signal.SIGINT, _stop )
+        gevent.signal( signal.SIGTERM, _stop )
 
         self._logger = None
         self._log_level = logging_level
@@ -236,7 +237,7 @@ class HostManager ( object ):
 
     def _sendQuitToInstance( self, instance ):
         if instance[ 'p' ] is not None:
-            instance[ 'p' ].send_signal( signal.SIGQUIT )
+            instance[ 'p' ].send_signal( signal.SIGTERM )
             errorCode = instance[ 'p' ].wait()
             if 0 != errorCode:
                 self._logCritical( 'actor host exited with error code: %d' % errorCode )
