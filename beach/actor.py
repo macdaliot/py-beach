@@ -293,16 +293,11 @@ class Actor( gevent.Greenlet ):
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
 
-            if 3 > self._n_free_handlers:
+            if 3 > self._n_free_handlers and 100 > self._n_concurrent:
                 self.AddConcurrentHandler()
 
             if msg is False: 
-                if 10 < self._n_free_handlers:
-                    self._n_concurrent -= 1
-                    isNaturalCleanup = True
-                    break
-                else:
-                    continue
+                continue
             start_time = time.time()
             try:
                 request = ActorRequest( msg )
@@ -353,8 +348,7 @@ class Actor( gevent.Greenlet ):
             #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
             self._q_total_time += ( time.time() - start_time )
 
-        if not isNaturalCleanup:
-            self.log( "Stopping processing Actor ops requests" )
+        self.log( "Stopping processing Actor ops requests" )
         z.close()
 
     def _defaultHandler( self, msg ):
@@ -632,6 +626,7 @@ class ActorHandle ( object ):
         self._srcSockets = Queue.Queue()
         self._peerSockets = {}
         self._threads = gevent.pool.Group()
+        self._lastDirUpdate = 0
         self._threads.add( gevent.spawn_later( 0, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
         self._quick_refresh_timeout = 15
         self._initialRefreshDone = gevent.event.Event()
@@ -639,14 +634,23 @@ class ActorHandle ( object ):
         self._affinityOrder = None
         self._pending = {}
 
-    def _updateDirectory( self ):
+    def _updateDirectory( self, isForced = False ):
+        if not isForced and self._lastDirUpdate > ( time.time() - 2 ):
+            return
+        else:
+            self._lastDirUpdate = time.time()
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
             if 'affinity' != self._mode:
                 for z_ident, z_url in self._endpoints.items():
                     if z_ident not in self._peerSockets:
-                        self._peerSockets[ z_ident ] = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                        # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
+                        newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                        if z_ident not in self._peerSockets:
+                            self._peerSockets[ z_ident ] = newSocket
+                        else:
+                            newSocket.close()
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -756,8 +760,7 @@ class ActorHandle ( object ):
                                 else:
                                     z_ident, z = orderedEndpoints[ affinityKey ]
                                     z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
-                                    if z is not None:
-                                        self._affinityCache[ affinityKey ] = z, z_ident
+                                    self._affinityCache[ affinityKey ] = z, z_ident
                         else:
                             if 'random' == self._mode:
                                 try:
@@ -790,7 +793,8 @@ class ActorHandle ( object ):
                     break
                 else:
                     #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
-                    if 999 == z.growthHist[ 0 ] or ret.error == 'wrong dest':
+                    self._log( "Received failure (%s:%s): %s" % ( self._cat, requestType, str( ret ) ) )
+                    if ret.error == 'wrong dest':
                         self._log( "Bad destination, recycling." )
                         # There has been no new response in the last history timeframe, or it's a wrong dest.
                         if 'affinity' == self._mode:
@@ -883,7 +887,7 @@ class ActorHandle ( object ):
         interpretedRet = ActorResponse( resp )
         if not interpretedRet.isSuccess:
             self._log( "Received failure (%s): %s" % ( self._cat, str( interpretedRet ) ) )
-            if 999 == z.growthHist[ 0 ] or interpretedRet.error == 'wrong dest':
+            if interpretedRet.error == 'wrong dest':
                 self._log( "Bad destination, recycling." )
                 # There has been no new response in the last history timeframe, or it's a wrong dest.
                 if 'affinity' != self._mode:
@@ -948,7 +952,7 @@ class ActorHandle ( object ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
            since a periodic refresh is already at an interval frequent enough for most use.
         '''
-        self._updateDirectory()
+        self._updateDirectory( isForced = True )
 
     def getPending( self ):
         '''Get the number of pending requests made by this handle.
@@ -1054,8 +1058,9 @@ class ActorHandleGroup( object ):
         if cats is not None:
             categories = []
             for cat in cats:
-                cat = cat.replace( self._categoryRoot, '' ).split( '/' )
-                cat = cat[ 0 ] if ( 0 != len( cat ) or 1 == len( cat ) ) else cat[ 1 ]
+                cat = cat.replace( self._categoryRoot, '' ).split( '/' )[ 0 ]
+                if 0 == len( cat ):
+                    continue
                 categories.append( '%s%s/' % ( self._categoryRoot, cat ) )
 
             for cat in categories:
@@ -1157,7 +1162,7 @@ class ActorHandleGroup( object ):
         '''
         self._refreshCats()
         for handle in self._handles.values():
-            handle._updateDirectory()
+            handle._updateDirectory( isForced = True )
 
     def getPending( self ):
         '''Get the number of pending requests made by this handle group.

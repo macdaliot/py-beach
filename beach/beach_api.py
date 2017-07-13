@@ -127,7 +127,9 @@ class Beach ( object ):
                             self._connectToNode( k )
                 elif not self._nodes[ srcNodeKey ][ 'is_seed' ]:
                     # Couldn't get node list, assuming it's dead.
-                    self._nodes.pop( srcNodeKey, None )
+                    nodeInfo = self._nodes.pop( srcNodeKey, None )
+                    if nodeInfo is not None:
+                        nodeInfo[ 'socket' ].close()
                     continue
 
                 for nodeName, node in self._nodes.items():
@@ -136,7 +138,9 @@ class Beach ( object ):
                         self._nodes[ nodeName ][ 'info' ] = newInfo
                     elif not self._nodes[ nodeName ][ 'is_seed' ]:
                         # Assuming it's dead.
-                        self._nodes.pop( nodeName, None )
+                        nodeInfo = self._nodes.pop( nodeName, None )
+                        if nodeInfo is not None:
+                            nodeInfo[ 'socket' ].close()
 
                 tmpDir = self.getDirectory()
                 if tmpDir is not False and 'realms' in tmpDir:
