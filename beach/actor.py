@@ -893,8 +893,6 @@ class ActorHandle ( object ):
                 if 'affinity' != self._mode:
                     self._peerSockets.pop( z_ident, None )
                 z.close()
-            z = None
-            if ret.error == 'wrong dest':
                 self._updateDirectory()
 
         futureResults._addNewResult( resp )
