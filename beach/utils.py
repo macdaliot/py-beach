@@ -344,7 +344,8 @@ class _ZMREQ ( object ):
                 z = self._newSocket()
                 if z is None:
                     self.isCongested = True
-                    self._congestionCB( True, self.growthHist )
+                    if self._congestionCB is not None:
+                        self._congestionCB( True, self.growthHist )
 
             if z is None:
                 try:
