@@ -352,6 +352,7 @@ class Actor( gevent.Greenlet ):
         z.close()
 
     def _defaultHandler( self, msg ):
+        self.log( 'request type not supported by actor' )
         return ( False, 'request type not supported by actor' )
 
     def stop( self ):
