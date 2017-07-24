@@ -20,6 +20,7 @@
     python -m beach.beach_cli -h
 '''
 
+import sys
 import cmd
 import argparse
 import inspect
@@ -368,6 +369,41 @@ if __name__ == '__main__':
                          default = None,
                          help = 'cluster config file' )
 
+    parser.add_argument( '--req-realm',
+                         type = str,
+                         required = False,
+                         default = None,
+                         dest = 'req_realm',
+                         help = 'the realm to issue the request to' )
+
+    parser.add_argument( '--req-cat',
+                         type = str,
+                         required = False,
+                         default = None,
+                         dest = 'req_cat',
+                         help = 'category to issue a request against' )
+
+    parser.add_argument( '--req-cmd',
+                         type = str,
+                         required = False,
+                         default = None,
+                         dest = 'req_cmd',
+                         help = 'command to issue with request' )
+
+    parser.add_argument( '--req-data',
+                         type = json.loads,
+                         required = False,
+                         default = '{}',
+                         dest = 'req_data',
+                         help = 'data, as JSON to include in the request' )
+
+    parser.add_argument( '--req-ident',
+                         type = str,
+                         required = False,
+                         default = None,
+                         dest = 'req_ident',
+                         help = 'identity to assume while issuing the request' )
+
     args = parser.parse_args()
     if args.config is None:
         with open( '~/.beach', 'r' ) as f:
@@ -378,8 +414,22 @@ if __name__ == '__main__':
         conf = args.config
 
     if conf is None:
-        print( "Usage: beach_cli.py pathToBeachConfigFile\n"
-               "If no config file is present, the one defined in ~/.beach will be used." )
+        parser.error( 'no config specified and ~/.beach is not a valid config.' )
     else:
-        app = BeachShell( conf )
-        app.cmdloop()
+        if args.req_realm is None and args.req_cat is None and args.req_cmd is None and args.req_ident is None:
+            app = BeachShell( conf )
+            app.cmdloop()
+        elif args.req_realm is None or args.req_cat is None or args.req_cmd is None or args.req_ident is None:
+            parser.error( '--req-* components missing to execute a request.' )
+        else:
+            beach = Beach( conf, realm = args.req_realm )
+            h = beach.getActorHandle( args.req_cat, ident = args.req_ident )
+            resp = h.request( args.req_cmd, data = args.req_data )
+            h.close()
+            beach.close()
+            if not resp.isSuccess:
+                print( resp )
+                sys.exit( 1 )
+            else:
+                print( json.dumps( resp.data, indent = 4 ) )
+                sys.exit( 0 )
