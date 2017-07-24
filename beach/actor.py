@@ -352,6 +352,7 @@ class Actor( gevent.Greenlet ):
         z.close()
 
     def _defaultHandler( self, msg ):
+        self.log( 'request type not supported by actor' )
         return ( False, 'request type not supported by actor' )
 
     def stop( self ):
@@ -943,8 +944,10 @@ class ActorHandle ( object ):
     def close( self ):
         '''Close all threads and resources associated with this handle.
         '''
+        if self._fromActor is not None:
+            self._fromActor._vHandles.remove( self )
+            self._fromActor = None
         self._threads.kill()
-        self._fromActor = None
 
     def forceRefresh( self ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
@@ -1152,7 +1155,9 @@ class ActorHandleGroup( object ):
             h.close()
 
         self._threads.kill()
-        self._fromActor = None
+        if self._fromActor is not None:
+            self._fromActor._vHandles.remove( self )
+            self._fromActor = None
 
     def forceRefresh( self ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
