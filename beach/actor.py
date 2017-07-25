@@ -168,7 +168,10 @@ class Actor( gevent.Greenlet ):
         if fileName.startswith( 'file://' ):
             fileName = 'file://%s' % os.path.abspath( fileName[ 7 : ] )
             
-        return urllib2.urlopen( fileName ).read()
+        hUrl = urllib2.urlopen( fileName )
+        ret = hUrl.read()
+        hUrl.close()
+        return ret
 
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
     def __init__( self,
@@ -945,7 +948,10 @@ class ActorHandle ( object ):
         '''Close all threads and resources associated with this handle.
         '''
         if self._fromActor is not None:
-            self._fromActor._vHandles.remove( self )
+            try:
+                self._fromActor._vHandles.remove( self )
+            except:
+                pass
             self._fromActor = None
         self._threads.kill()
 
@@ -1156,7 +1162,10 @@ class ActorHandleGroup( object ):
 
         self._threads.kill()
         if self._fromActor is not None:
-            self._fromActor._vHandles.remove( self )
+            try:
+                self._fromActor._vHandles.remove( self )
+            except:
+                pass
             self._fromActor = None
 
     def forceRefresh( self ):
