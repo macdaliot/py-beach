@@ -351,6 +351,9 @@ class Actor( gevent.Greenlet ):
             #self.log( "Stub call took %s seconds." % ( time.time() - start_time ) )
             self._q_total_time += ( time.time() - start_time )
 
+            # Proactively try to be fair to all handlers.
+            self.yieldCpu()
+
         self.log( "Stopping processing Actor ops requests" )
         z.close()
 
@@ -627,7 +630,6 @@ class ActorHandle ( object ):
         self._mode = mode
         self._ident = ident
         self._endpoints = {}
-        self._srcSockets = Queue.Queue()
         self._peerSockets = {}
         self._threads = gevent.pool.Group()
         self._lastDirUpdate = 0
@@ -954,6 +956,11 @@ class ActorHandle ( object ):
                 pass
             self._fromActor = None
         self._threads.kill()
+        for s in self._peerSockets.values():
+            try:
+                s.close()
+            except:
+                pass
 
     def forceRefresh( self ):
         '''Force a refresh of the handle metadata with nodes in the cluster. This is optional
@@ -1157,10 +1164,14 @@ class ActorHandleGroup( object ):
     def close( self ):
         '''Close all threads and resources associated with this handle group.
         '''
-        for h in self._handles.values():
-            h.close()
-
         self._threads.kill()
+        
+        for h in self._handles.values():
+            try:
+                h.close()
+            except:
+                pass
+
         if self._fromActor is not None:
             try:
                 self._fromActor._vHandles.remove( self )

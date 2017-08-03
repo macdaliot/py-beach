@@ -687,7 +687,10 @@ class HostManager ( object ):
                     isBrandNew = True
                     if instance[ 'p' ] is not None:
                         self._logCritical( "Killing previous instance for %s" % instance[ 'id' ] )
-                        instance[ 'p' ].kill()
+                        try:
+                            instance[ 'p' ].kill()
+                        except:
+                            pass
                         # Instance died, it means all Actors within are no longer reachable
                         self._removeInstanceActorsFromDirectory( instance )
                         self.isActorChanged.set()
