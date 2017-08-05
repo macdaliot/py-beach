@@ -715,7 +715,10 @@ class HostManager ( object ):
                         # This means it's an isolated Actor that died, in this case
                         # we don't restart it, we leave it to higher layers to restarts it
                         # if they want.
-                        self.processes.remove( instance )
+                        try:
+                            self.processes.remove( instance )
+                        except:
+                            pass
 
             if not self.initialProcesses:
                 self.initialProcesses = True
@@ -751,7 +754,9 @@ class HostManager ( object ):
         nextWait = 0
         while not self.stopEvent.wait( 0 ):
             if 0 == len( self.nodes ):
-                nextWait = 1
+                if self.stopEvent.wait( 1 ):
+                    break
+                continue
             else:
                 nextWait = self.directory_sync_seconds / len( self.nodes )
             for nodeName, node in self.nodes.items():
@@ -767,6 +772,8 @@ class HostManager ( object ):
                         self._log( "Failed to get directory sync with node %s" % nodeName )
                     if self.stopEvent.wait( nextWait ):
                         break
+                elif 1 == len( self.nodes ) and self.stopEvent.wait( 1 ):
+                    break
 
     @handleExceptions
     def _svc_pushDirChanges( self ):
