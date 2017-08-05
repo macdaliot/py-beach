@@ -178,6 +178,7 @@ $(function() {
 
          axisY:{
             title: "%",
+            maximum: 100,
         },
 
         data : chart_data_mem
@@ -195,6 +196,7 @@ $(function() {
 
          axisY:{
             title: "%",
+            maximum: 100,
         },
 
         data : chart_data_cpu
