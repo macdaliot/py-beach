@@ -462,6 +462,8 @@ class _ZMREP ( object ):
         self._proxySocks = ( None, None )
 
     class _childSock( object ):
+        __slots__ = [ '_z_func', '_z', '_private_key' ]
+
         def __init__( self, z_func, private_key = None ):
             self._z_func = z_func
             self._z = None
