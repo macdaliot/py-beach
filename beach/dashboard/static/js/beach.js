@@ -94,10 +94,10 @@ function display_data( data )
         if( !(actor_name in health_data_qps) )
         {
             health_data_qps[ actor_name ] = { legendText: actor_name,
-                                             type: 'line',
-                                             showInLegend: true,
-                                             xValueType: "dateTime",
-                                             dataPoints: [] };
+                                              type: 'line',
+                                              showInLegend: true,
+                                              xValueType: "dateTime",
+                                              dataPoints: [] };
             chart_data_qps.push( health_data_qps[ actor_name ] );
         }
         health_data_qps[ actor_name ].dataPoints.push( { x: (new Date).getTime(),
@@ -175,7 +175,9 @@ $(function() {
         axisX:{
             title: "Time",
         },
-
+        toolTip: {
+            content: "{x}<br/> <span style='\"'color: {color};'\"'>{legendText}:</span> {y}",
+        },
          axisY:{
             title: "%",
             maximum: 100,
@@ -193,7 +195,9 @@ $(function() {
         axisX:{
             title: "Time",
         },
-
+        toolTip: {
+            content: "{x}<br/> <span style='\"'color: {color};'\"'>{legendText}:</span> {y}",
+        },
          axisY:{
             title: "%",
             maximum: 100,
@@ -211,7 +215,9 @@ $(function() {
         axisX:{
             title: "Time",
         },
-
+        toolTip: {
+            content: "{x}<br/> <span style='\"'color: {color};'\"'>{legendText}:</span> {y}",
+        },
          axisY:{
             title: "Queries",
         },
