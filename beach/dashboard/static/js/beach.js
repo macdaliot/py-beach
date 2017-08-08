@@ -85,6 +85,8 @@ function display_data( data )
         }
     }
 
+    var tmp_qps = {};
+
     for( var k in data.load )
     {
         var actor_id = k;
@@ -100,11 +102,20 @@ function display_data( data )
                                               dataPoints: [] };
             chart_data_qps.push( health_data_qps[ actor_name ] );
         }
-        health_data_qps[ actor_name ].dataPoints.push( { x: (new Date).getTime(),
-                                                         y: loads[ 3 ] } );
-        if( health_data_qps[ actor_name ].dataPoints.length > max_timeline_values )
+        if( !( actor_name in tmp_qps ) )
         {
-            health_data_qps[ actor_name ].dataPoints.shift();
+            tmp_qps[ actor_name ] = 0;
+        }
+        tmp_qps[ actor_name ] += loads[ 3 ];
+    }
+
+    for( var k in tmp_qps )
+    {
+        health_data_qps[ k ].dataPoints.push( { x: (new Date).getTime(),
+                                                         y: tmp_qps[ k ] } );
+        if( health_data_qps[ k ].dataPoints.length > max_timeline_values )
+        {
+            health_data_qps[ k ].dataPoints.shift();
         }
     }
 
