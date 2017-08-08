@@ -264,6 +264,12 @@ class BeachShell ( cmd.Cmd ):
                              required = False,
                              nargs = '+',
                              help = 'the categories of actors to stop.' )
+        parser.add_argument( '-d', '--delay',
+                             type = int,
+                             dest = 'delay',
+                             required = False,
+                             default = None,
+                             help = 'the number of seconds between stopping each actor.' )
 
         arguments = self.parse( parser, s )
 
@@ -272,7 +278,7 @@ class BeachShell ( cmd.Cmd ):
         if arguments.id is None and arguments.cat is None:
             argparse.error( 'Must specify one of -i or -c.' )
 
-        resp = self.beach.stopActors( withId = arguments.id, withCategory = arguments.cat )
+        resp = self.beach.stopActors( withId = arguments.id, withCategory = arguments.cat, delay = arguments.delay )
 
         self.printOut( resp )
 

@@ -803,7 +803,7 @@ class ActorHandle ( object ):
                     break
                 else:
                     #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
-                    self._log( "Received failure (%s:%s): %s" % ( self._cat, requestType, str( ret ) ) )
+                    #self._log( "Received failure (%s:%s): %s" % ( self._cat, requestType, str( ret ) ) )
                     if ret.error == 'wrong dest':
                         self._log( "Bad destination, recycling." )
                         # There has been no new response in the last history timeframe, or it's a wrong dest.

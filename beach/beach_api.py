@@ -354,11 +354,12 @@ class Beach ( object ):
         self._vHandles.append( v )
         return v
 
-    def stopActors( self, withId = None, withCategory = None ):
+    def stopActors( self, withId = None, withCategory = None, delay = None ):
         '''Stop specific actors based on a criteria.
 
         :param withId: a single, or list of actor IDs to be stopped
         :param withCategory: a category name to be stopped
+        :param delay: number of seconds to wait between each actor stopped
 
         :returns: True if the actors were stopped normally
         '''
@@ -390,6 +391,8 @@ class Beach ( object ):
             for k, node in self._nodes.items():
                 resp = node[ 'socket' ].request( req, timeout = 30 )
                 isSuccess[ k ] = resp
+                if delay is not None:
+                    gevent.sleep( delay )
 
         return isSuccess
 
