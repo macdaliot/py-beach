@@ -7,7 +7,7 @@ var chart_data_cpu = [];
 var chart_cpu;
 var chart_data_qps = [];
 var chart_qps;
-var max_timeline_values = ((60/5)*60*24);
+var max_timeline_values = ((60/10)*60*12);
 
 
 function avg_array( arr )
