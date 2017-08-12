@@ -32,6 +32,7 @@ from beach.utils import _getPublicInterfaces
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 from beach.utils import RWLock
+from beach.utils import parallelExec
 import socket
 import time
 import random
@@ -117,6 +118,8 @@ class HostManager ( object ):
         self.isInstanceChanged = gevent.event.Event()
         self.isTombstoneChanged = gevent.event.Event()
         self.dirLock = RWLock()
+        self.lastHostInfo = None
+        self.lastHostInfoCheck = 0
 
         # Cleanup potentially old sockets
         os.system( 'rm /tmp/py_beach*' )
@@ -193,10 +196,12 @@ class HostManager ( object ):
         
         self.peer_keepalive_seconds = self.configFile.get( 'peer_keepalive_seconds', 60 )
         self.instance_keepalive_seconds = self.configFile.get( 'instance_keepalive_seconds', 600 )
-        self.directory_sync_seconds = self.configFile.get( 'directory_sync_seconds', 60 )
+        self.directory_sync_seconds = self.configFile.get( 'directory_sync_seconds', 600 )
         self.tombstone_culling_seconds = self.configFile.get( 'tombstone_culling_seconds', 3600 )
         
         self.instance_strategy = self.configFile.get( 'instance_strategy', 'random' )
+
+        self.highMemWatermark = self.configFile.get( 'high_mem_watermark', 80 )
         
         # Bootstrap the seeds
         for s in self.seedNodes:
@@ -211,6 +216,7 @@ class HostManager ( object ):
         gevent.spawn_later( random.randint( 0, 3 ), self._svc_cullTombstones )
         gevent.spawn_later( random.randint( 0, 3 ), self._svc_applyTombstones )
         gevent.spawn_later( random.randint( 0, 3 ), self._svc_cleanupCats )
+        gevent.spawn_later( random.randint( 0, 60 * 5 ), self._svc_instance_draining )
         for _ in range( 20 ):
             gevent.spawn( self._svc_receiveOpsTasks )
         gevent.spawn( self._svc_pushDirChanges )
@@ -245,7 +251,11 @@ class HostManager ( object ):
     def _startInstance( self, isIsolated = False ):
         instanceId = str( uuid.uuid4() )
         procSocket = _ZMREQ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, isBind = False )
-        instance = { 'socket' : procSocket, 'p' : None, 'isolated' : isIsolated, 'id' : instanceId }
+        instance = { 'socket' : procSocket, 
+                     'p' : None, 
+                     'isolated' : isIsolated, 
+                     'id' : instanceId, 
+                     'start' : time.time() }
         self.processes.append( instance )
         self._log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
         return instance
@@ -419,6 +429,7 @@ class HostManager ( object ):
             data = z.recv()
             if data is not False and 'req' in data:
                 action = data[ 'req' ]
+                #start = time.time()
                 #self._log( "Received new ops request: %s" % action )
                 if 'keepalive' == action:
                     z.send( successMessage() )
@@ -443,6 +454,7 @@ class HostManager ( object ):
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
                         n_concurrent = data.get( 'n_concurrent', 1 )
+                        is_drainable = data.get( 'is_drainable', False )
                         owner = data.get( 'owner', None )
                         isIsolated = data.get( 'isolated', False )
                         log_level = data.get( 'loglevel', None )
@@ -463,6 +475,7 @@ class HostManager ( object ):
                                                                      'ident' : ident,
                                                                      'trusted' : trusted,
                                                                      'n_concurrent' : n_concurrent,
+                                                                     'is_drainable' : is_drainable,
                                                                      'isolated' : isIsolated,
                                                                      'loglevel' : log_level,
                                                                      'logdest' : log_dest },
@@ -543,9 +556,12 @@ class HostManager ( object ):
                         else:
                             z.send( errorMessage( 'actor to stop not found' ) )
                 elif 'host_info' == action:
-                    z.send( successMessage( { 'info' : { 'cpu' : psutil.cpu_percent( percpu = True,
+                    if self.lastHostInfo is None or time.time() >= self.lastHostInfoCheck + 10:
+                        self.lastHostInfoCheck = time.time()
+                        self.lastHostInfo = { 'info' : { 'cpu' : psutil.cpu_percent( percpu = True,
                                                                                      interval = 2 ),
-                                                         'mem' : psutil.virtual_memory().percent } } ) )
+                                                         'mem' : psutil.virtual_memory().percent } }
+                    z.send( successMessage( self.lastHostInfo ) )
                 elif 'get_full_dir' == action:
                     with self.dirLock.reader():
                         z.send( successMessage( { 'realms' : self.directory, 'reverse' : self.reverseDir } ) )
@@ -650,16 +666,19 @@ class HostManager ( object ):
                             z.send( successMessage() )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
+
+                #self._log( "Action %s done after %s seconds." % ( action, time.time() - start ) )
             else:
                 z.send( errorMessage( 'invalid request' ) )
                 self._logCritical( "Received completely invalid request" )
+
     
     @handleExceptions
     def _svc_directory_requests( self ):
         z = self.directoryPort.getChild()
         while not self.stopEvent.wait( 0 ):
             data = z.recv()
-
+            #start = time.time()
             #self._log( "Received directory request: %s/%s" % ( data[ 'realm' ], data[ 'cat' ] ) )
             
             realm = data.get( 'realm', 'global' )
@@ -667,7 +686,50 @@ class HostManager ( object ):
                 z.send( successMessage( data = { 'endpoints' : self._getDirectoryEntriesFor( realm, data[ 'cat' ] ) } ) )
             else:
                 z.send( errorMessage( 'no category specified' ) )
+            #self._log( "Served directory request for %s/%s in %s" % ( data[ 'realm' ], data[ 'cat' ], time.time() - start ) )
     
+    def _isDrainable( self, p ):
+        if p[ 'p' ] is not None:
+            resp = p[ 'socket' ].request( { 'req' : 'is_drainable' }, timeout = 60 )
+            if isMessageSuccess( resp ) and resp[ 'data' ][ 'is_drainable' ]:
+                return p
+        return None
+
+    @handleExceptions
+    def _svc_instance_draining( self ):
+        while not self.stopEvent.wait( 60 * 10 ):
+            currentMemory = psutil.virtual_memory()
+            # We start looking at draining if we hit more than 80% usage globally.
+            if currentMemory.percent < self.highMemWatermark:
+                self._log( "Memory usage at %s percent, nothing to do." % currentMemory.percent )
+                continue
+            self._log( "High memory watermark reached, trying to drain some instances." )
+            now = time.time()
+            drainable = [ x for x in parallelExec( self._isDrainable, self.processes[:] ) if type( x ) is dict ]
+            self._log( "Found %d instances available for draining." % len( drainable ) )
+            oldest = None
+            for instance in drainable:
+                if instance[ 'p' ] is not None:
+                    if oldest is None:
+                        oldest = instance
+                    elif oldest[ 'start' ] > instance[ 'start' ]:
+                        oldest = instance
+
+            # Drain the oldest if we have one.
+            if oldest is not None:
+                self._log( 'Trying to drain %s' % oldest[ 'id' ] )
+                # Remove all actors in that instance from the directory before draining.
+                self._removeInstanceActorsFromDirectory( oldest )
+                resp = oldest[ 'socket' ].request( { 'req' : 'drain' }, timeout = 60 )
+                if isMessageSuccess( resp ):
+                    if resp[ 'data' ][ 'is_drained' ]:
+                        self._log( 'Drained successfully.' )
+                    else:
+                        self._log( 'Failed to drain: %s.' % str( resp ) )
+                else:
+                    self._log( 'Error asking instance to drain: %s.' % str( resp ) )
+                self.isInstanceChanged.set()
+
     @handleExceptions
     def _svc_instance_keepalive( self ):
         while not self.stopEvent.wait( 0 ):
@@ -686,9 +748,11 @@ class HostManager ( object ):
                         self._logCritical( "Instance %s is dead (%s)." % ( instance[ 'id' ], data ) )
                     isBrandNew = True
                     if instance[ 'p' ] is not None:
+                        tmpInstance = instance[ 'p' ]
+                        instance[ 'p' ] = None
                         self._logCritical( "Killing previous instance for %s" % instance[ 'id' ] )
                         try:
-                            instance[ 'p' ].kill()
+                            tmpInstance.kill()
                         except:
                             pass
                         # Instance died, it means all Actors within are no longer reachable
@@ -706,6 +770,7 @@ class HostManager ( object ):
                                                     self.interface ] )
 
                         instance[ 'p' ] = proc
+                        instance[ 'start' ] = time.time()
 
                         if not isBrandNew:
                             self._logCritical( "Instance %s died, restarting it, pid %d" % ( instance[ 'id' ], proc.pid ) )
@@ -832,4 +897,17 @@ if __name__ == '__main__':
                          default = '/dev/log',
                          help = 'the destination for the logging for syslog' )
     args = parser.parse_args()
+
+    #from guppy import hpy 
+    #h = hpy()
+    #cnt = 1
+    #def printProfile():
+    #    global cnt
+    #    if cnt == 1:
+    #        h.setrelheap()
+    #    print h.heap()
+    #    gevent.spawn_later( 60 * 30, printProfile )
+    #    cnt += 1
+    #gevent.spawn_later( 60 * 30, printProfile )
+
     hostManager = HostManager( args.configFile, args.loglevel, args.logdest, iface = args.iface )

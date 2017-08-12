@@ -229,6 +229,11 @@ class BeachShell ( cmd.Cmd ):
                              required = False,
                              default = 1,
                              help = 'the number of concurrent requests handled by the actor.' )
+        parser.add_argument( '-d', '--isdrainable',
+                             dest = 'isDrainable',
+                             default = False,
+                             action = 'store_true',
+                             help = 'if the Actor can be requested to drain gracefully.' )
         arguments = self.parse( parser, s )
 
         if arguments is None:
@@ -243,6 +248,7 @@ class BeachShell ( cmd.Cmd ):
                                     secretIdent = arguments.ident,
                                     trustedIdents = arguments.trusted,
                                     n_concurrent = arguments.n_concurrent,
+                                    is_drainable = arguments.isDrainable,
                                     log_level = arguments.log_level,
                                     log_dest = arguments.log_dest )
 

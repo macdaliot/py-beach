@@ -190,7 +190,8 @@ class Actor( gevent.Greenlet ):
                   ident = None,
                   trusted = [],
                   n_concurrent = 1,
-                  private_key = None ):
+                  private_key = None,
+                  is_drainable = False ):
         gevent.Greenlet.__init__( self )
 
         self.name = uid
@@ -212,6 +213,7 @@ class Actor( gevent.Greenlet ):
         self._n_initial_concurrent = n_concurrent
         self._n_concurrent = 0
         self._private_key = private_key
+        self._is_drainable = is_drainable
 
         self._exception = None
 
@@ -897,8 +899,8 @@ class ActorHandle ( object ):
         interpretedRet = ActorResponse( resp )
         if not interpretedRet.isSuccess:
             self._log( "Received failure (%s): %s" % ( self._cat, str( interpretedRet ) ) )
-            if interpretedRet.error == 'wrong dest':
-                self._log( "Bad destination, recycling." )
+            if interpretedRet.error == 'wrong dest' or interpretedRet.isTimedOut:
+                self._log( "Bad destination, recycling or timeout." )
                 # There has been no new response in the last history timeframe, or it's a wrong dest.
                 if 'affinity' != self._mode:
                     self._peerSockets.pop( z_ident, None )

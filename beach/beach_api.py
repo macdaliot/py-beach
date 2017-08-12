@@ -112,6 +112,8 @@ class Beach ( object ):
         resp = zSock.request( { 'req' : 'host_info' }, timeout = 10 )
         if isMessageSuccess( resp ):
             info = resp[ 'data' ][ 'info' ]
+        else:
+            print( "HOSTINFO: %s" % resp )
         return info
 
     def _updateNodes( self ):
@@ -184,6 +186,7 @@ class Beach ( object ):
                   secretIdent = None,
                   trustedIdents = [],
                   n_concurrent = 1,
+                  is_drainable = False,
                   owner = None,
                   log_level = None,
                   log_dest = None ):
@@ -206,6 +209,7 @@ class Beach ( object ):
             originating from untrusted machines
         :param trustedIdents: list of idents to be trusted, if an empty list ALL will be trusted
         :param n_concurrent: number of concurrent requests handled by actor
+        :param is_drainable: True if the actor can be requested to drain gracefully
         :param owner: an identifier for the owner of the Actor, useful for shared environments
         :param log_level: a logging.* value indicating the custom logging level for the actor
         :param log_dest: a destination string for the syslog custom to the actor for the actor
@@ -284,7 +288,8 @@ class Beach ( object ):
                      'realm' : thisRealm,
                      'cat' : category,
                      'isolated' : isIsolated,
-                     'n_concurrent' : n_concurrent }
+                     'n_concurrent' : n_concurrent,
+                     'is_drainable' : is_drainable }
             if parameters is not None:
                 info[ 'parameters' ] = parameters
             if resources is not None:
