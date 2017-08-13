@@ -292,15 +292,15 @@ class ActorHost ( object ):
         isDrained = True
         if actor.isRunning() and hasattr( actor, 'drain' ):
             actor.drain()
-            while not self.stopEvent.wait( 5 ):
-                if self._n_free_handlers != self._n_concurrent:
-                    continue
-                isDrained = True
-                for h in actor.getPending():
-                    if 0 == len( h ): 
-                        isDrained = False
-                        break
-                if isDrained: break
+        while not self.stopEvent.wait( 5 ):
+            if actor._n_free_handlers != actor._n_concurrent:
+                continue
+            isDrained = True
+            for h in actor.getPending():
+                if 0 == len( h ): 
+                    isDrained = False
+                    break
+            if isDrained: break
         return isDrained
 
     @handleExceptions
