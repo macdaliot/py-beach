@@ -720,7 +720,7 @@ class HostManager ( object ):
                 self._log( 'Trying to drain %s' % oldest[ 'id' ] )
                 # Remove all actors in that instance from the directory before draining.
                 self._removeInstanceActorsFromDirectory( oldest )
-                resp = oldest[ 'socket' ].request( { 'req' : 'drain' }, timeout = 60 )
+                resp = oldest[ 'socket' ].request( { 'req' : 'drain' }, timeout = 600 )
                 if isMessageSuccess( resp ):
                     if resp[ 'data' ][ 'is_drained' ]:
                         self._log( 'Drained successfully.' )

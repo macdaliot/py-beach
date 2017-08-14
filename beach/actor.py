@@ -823,7 +823,7 @@ class ActorHandle ( object ):
             ret = ActorResponse( ret )
 
         if ret.isTimedOut:
-            self._log( "Request failed after %s retries." % curRetry )
+            self._log( "Request failed after %s retries %s:%s." % ( curRetry, self._cat, requestType) )
 
         if not ret.isSuccess and onFailure is not None:
             onFailure( data )
