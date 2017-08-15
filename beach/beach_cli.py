@@ -229,6 +229,11 @@ class BeachShell ( cmd.Cmd ):
                              required = False,
                              default = 1,
                              help = 'the number of concurrent requests handled by the actor.' )
+        parser.add_argument( '-d', '--isdrainable',
+                             dest = 'isDrainable',
+                             default = False,
+                             action = 'store_true',
+                             help = 'if the Actor can be requested to drain gracefully.' )
         arguments = self.parse( parser, s )
 
         if arguments is None:
@@ -243,6 +248,7 @@ class BeachShell ( cmd.Cmd ):
                                     secretIdent = arguments.ident,
                                     trustedIdents = arguments.trusted,
                                     n_concurrent = arguments.n_concurrent,
+                                    is_drainable = arguments.isDrainable,
                                     log_level = arguments.log_level,
                                     log_dest = arguments.log_dest )
 
@@ -264,6 +270,12 @@ class BeachShell ( cmd.Cmd ):
                              required = False,
                              nargs = '+',
                              help = 'the categories of actors to stop.' )
+        parser.add_argument( '-d', '--delay',
+                             type = int,
+                             dest = 'delay',
+                             required = False,
+                             default = None,
+                             help = 'the number of seconds between stopping each actor.' )
 
         arguments = self.parse( parser, s )
 
@@ -272,7 +284,7 @@ class BeachShell ( cmd.Cmd ):
         if arguments.id is None and arguments.cat is None:
             argparse.error( 'Must specify one of -i or -c.' )
 
-        resp = self.beach.stopActors( withId = arguments.id, withCategory = arguments.cat )
+        resp = self.beach.stopActors( withId = arguments.id, withCategory = arguments.cat, delay = arguments.delay )
 
         self.printOut( resp )
 

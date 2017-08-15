@@ -65,6 +65,20 @@ def loadModuleFrom( path, realm ):
     
     return mod
 
+def _retExecOrExc( f, o, r ):
+    try:
+        r.append( f( o ) )
+    except Exception as e:
+        r.append( e )
+
+def parallelExec( f, objects, timeout = None ):
+    g = gevent.pool.Group()
+    results = []
+    for o in objects:
+        g.add( gevent.spawn_later( 0, _retExecOrExc, f, o, results ) )
+    g.join( timeout = timeout )
+    return results
+
 def _sanitizeJson( obj ):
     def _sanitizeJsonValue( value ):
         if type( value ) is uuid.UUID:
@@ -462,6 +476,8 @@ class _ZMREP ( object ):
         self._proxySocks = ( None, None )
 
     class _childSock( object ):
+        __slots__ = [ '_z_func', '_z', '_private_key' ]
+
         def __init__( self, z_func, private_key = None ):
             self._z_func = z_func
             self._z = None

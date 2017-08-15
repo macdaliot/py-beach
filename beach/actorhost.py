@@ -34,6 +34,7 @@ from beach.utils import _ZMREP
 from beach.utils import loadModuleFrom
 import zmq.green as zmq
 from beach.actor import *
+from beach.utils import parallelExec
 import yaml
 import time
 import logging
@@ -84,6 +85,7 @@ class ActorHost ( object ):
         self.log( "Initializing" )
         
         self.stopEvent = timeToStopEvent
+        self.isOpen = True
 
         self.actors = {}
 
@@ -159,6 +161,8 @@ class ActorHost ( object ):
                 if 'keepalive' == action:
                     z.send( successMessage() )
                 elif 'start_actor' == action:
+                    if not self.isOpen:
+                        z.send( errorMessage( 'draining' ) )
                     if 'actor_name' not in data or 'port' not in data or 'uid' not in data:
                         z.send( errorMessage( 'missing information to start actor' ) )
                     else:
@@ -171,6 +175,7 @@ class ActorHost ( object ):
                         ident = data.get( 'ident', None )
                         trusted = data.get( 'trusted', [] )
                         n_concurrent = data.get( 'n_concurrent', 1 )
+                        is_drainable = data.get( 'is_drainable', False )
                         ip = data[ 'ip' ]
                         port = data[ 'port' ]
                         uid = data[ 'uid' ]
@@ -211,7 +216,8 @@ class ActorHost ( object ):
                                                           ident = ident,
                                                           trusted = trusted,
                                                           n_concurrent = n_concurrent,
-                                                          private_key = self.private_key )
+                                                          private_key = self.private_key,
+                                                          is_drainable = is_drainable )
                         except:
                             actor = None
                             self.logCritical( "Error loading actor %s: %s (%s)" % ( actorName, traceback.format_exc(), dir( implementation ) ) )
@@ -250,6 +256,10 @@ class ActorHost ( object ):
                     for uid, actor in self.actors.items():
                         info[ uid ] = ( actor._n_free_handlers, actor._n_concurrent, actor.getPending(), actor._qps, actor._q_avg )
                     z.send( successMessage( data = info ) )
+                elif 'is_drainable' == action:
+                    z.send( successMessage( { 'is_drainable' : self.isDrainable() } ) )
+                elif 'drain' == action:
+                    z.send( successMessage( { 'is_drained' : self.drain() } ) )
                 else:
                     z.send( errorMessage( 'unknown request', data = { 'req' : action } ) )
             else:
@@ -271,6 +281,40 @@ class ActorHost ( object ):
                     del( self.actors[ uid ] )
                     z.send( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
+
+    @handleExceptions
+    def isDrainable( self ):
+        if 0 == len( self.actors ):
+            return False
+        return all( x._is_drainable for x in self.actors.itervalues() )
+
+    def _drainActor( self, actor ):
+        isDrained = True
+        if actor.isRunning() and hasattr( actor, 'drain' ):
+            actor.drain()
+        while not self.stopEvent.wait( 5 ):
+            if actor._n_free_handlers != actor._n_concurrent:
+                continue
+            isDrained = True
+            for h in actor.getPending():
+                if 0 == len( h ): 
+                    isDrained = False
+                    break
+            if isDrained: break
+        return isDrained
+
+    @handleExceptions
+    def drain( self ):
+        if self.isDrainable():
+            self.isOpen = False
+            self.log( "Draining..." )
+            drained = parallelExec( self._drainActor, self.actors.values() )
+            self.log( "Drained." )
+            gevent.spawn_later( 2, _stopAllActors )
+            return True
+        else:
+            self.log( "Cannot drain, some Actors are not drainable." )
+            return False
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.instanceId )

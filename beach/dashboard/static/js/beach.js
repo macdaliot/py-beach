@@ -7,7 +7,7 @@ var chart_data_cpu = [];
 var chart_cpu;
 var chart_data_qps = [];
 var chart_qps;
-var max_timeline_values = ((60/5)*60*24);
+var max_timeline_values = ((60/10)*60*12);
 
 
 function avg_array( arr )
@@ -85,6 +85,8 @@ function display_data( data )
         }
     }
 
+    var tmp_qps = {};
+
     for( var k in data.load )
     {
         var actor_id = k;
@@ -94,17 +96,26 @@ function display_data( data )
         if( !(actor_name in health_data_qps) )
         {
             health_data_qps[ actor_name ] = { legendText: actor_name,
-                                             type: 'line',
-                                             showInLegend: true,
-                                             xValueType: "dateTime",
-                                             dataPoints: [] };
+                                              type: 'line',
+                                              showInLegend: true,
+                                              xValueType: "dateTime",
+                                              dataPoints: [] };
             chart_data_qps.push( health_data_qps[ actor_name ] );
         }
-        health_data_qps[ actor_name ].dataPoints.push( { x: (new Date).getTime(),
-                                                         y: loads[ 3 ] } );
-        if( health_data_qps[ actor_name ].dataPoints.length > max_timeline_values )
+        if( !( actor_name in tmp_qps ) )
         {
-            health_data_qps[ actor_name ].dataPoints.shift();
+            tmp_qps[ actor_name ] = 0;
+        }
+        tmp_qps[ actor_name ] += loads[ 3 ];
+    }
+
+    for( var k in tmp_qps )
+    {
+        health_data_qps[ k ].dataPoints.push( { x: (new Date).getTime(),
+                                                         y: tmp_qps[ k ] } );
+        if( health_data_qps[ k ].dataPoints.length > max_timeline_values )
+        {
+            health_data_qps[ k ].dataPoints.shift();
         }
     }
 
@@ -175,9 +186,12 @@ $(function() {
         axisX:{
             title: "Time",
         },
-
+        toolTip: {
+            content: "{x}<br/> <span style='\"'color: {color};'\"'>{legendText}:</span> {y}",
+        },
          axisY:{
             title: "%",
+            maximum: 100,
         },
 
         data : chart_data_mem
@@ -192,9 +206,12 @@ $(function() {
         axisX:{
             title: "Time",
         },
-
+        toolTip: {
+            content: "{x}<br/> <span style='\"'color: {color};'\"'>{legendText}:</span> {y}",
+        },
          axisY:{
             title: "%",
+            maximum: 100,
         },
 
         data : chart_data_cpu
@@ -209,7 +226,9 @@ $(function() {
         axisX:{
             title: "Time",
         },
-
+        toolTip: {
+            content: "{x}<br/> <span style='\"'color: {color};'\"'>{legendText}:</span> {y}",
+        },
          axisY:{
             title: "Queries",
         },
