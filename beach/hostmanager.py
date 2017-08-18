@@ -181,7 +181,7 @@ class HostManager ( object ):
             self._log( "Using seed node: %s" % s )
 
         self.directoryPort = _ZMREP( self.configFile.get( 'directory_port',
-                                                         'ipc:///tmp/py_beach_directory_port' ),
+                                                          'ipc:///tmp/py_beach_directory_port' ),
                                     isBind = True,
                                     private_key = self.private_key )
         
@@ -872,6 +872,13 @@ class HostManager ( object ):
     def _logCritical( self, msg ):
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
     
+#import GreenletProfiler
+
+#def printStats():
+#    GreenletProfiler.stop()
+#    stats = GreenletProfiler.get_func_stats()
+#    stats.print_all()
+#    stats.save('profile.callgrind', type='callgrind')
 
 if __name__ == '__main__':
     import argparse
@@ -909,5 +916,10 @@ if __name__ == '__main__':
     #    gevent.spawn_later( 60 * 30, printProfile )
     #    cnt += 1
     #gevent.spawn_later( 60 * 30, printProfile )
+
+    #GreenletProfiler.set_clock_type('cpu')
+    #GreenletProfiler.start()
+
+    #gevent.spawn_later( 60 * 2, printStats )
 
     hostManager = HostManager( args.configFile, args.loglevel, args.logdest, iface = args.iface )

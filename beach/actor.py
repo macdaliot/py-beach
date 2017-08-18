@@ -226,6 +226,11 @@ class Actor( gevent.Greenlet ):
         self._q_total_time = 0.0
         self._q_avg = 0.0
 
+        # Z values is a generic location to put various environment status
+        # and stats relating to the Actor that can be queried in a generic
+        # way through the default command 'z' handled by all Actors.
+        self._z = {}
+
         # We have some special magic parameters
         self._trace_enabled = self._parameters.get( 'beach_trace_enabled', False )
 
@@ -243,6 +248,7 @@ class Actor( gevent.Greenlet ):
 
         self._vHandles = []
         self.schedule( 10, self._generateQpsCount )
+        self.handle( 'z', self._getZValues )
 
     def _run( self ):
         try:
@@ -279,6 +285,26 @@ class Actor( gevent.Greenlet ):
             if self._is_initted and hasattr( self, 'deinit' ):
                 self.deinit()
 
+    def _getZValues( self, msg ):
+        return ( True, self._z )
+
+    def zSet( self, var, val ):
+        '''Set a Z variable to a specific value.
+
+        :param var: the Z var to set
+        :param val: the value to set it to
+        '''
+        self._z[ var ] = val
+
+    def zInc( self, var, val = 1 ):
+        '''Increment the Z variable by one or by optional val.
+        
+        :param var: the Z var to increment
+        :param val: the value increment with, or one by default
+        '''
+        self._z.setdefault( var, 0 )
+        self._z[ var ] += val
+
     def _generateQpsCount( self ):
         now = time.time()
         self._qps = round( self._q_counter / ( now - self._last_qps_count ), 3 )
@@ -286,6 +312,8 @@ class Actor( gevent.Greenlet ):
         self._last_qps_count = now
         self._q_counter = 0
         self._q_total_time = 0.0
+        self.zSet( 'qps', self._qps )
+        self.zSet( 'avg_q_time', self._q_avg )
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
