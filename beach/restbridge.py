@@ -25,6 +25,7 @@ import traceback
 import web
 import time
 import json
+import msgpack
 from functools import wraps
 
 
@@ -74,25 +75,42 @@ def jsonApi( f ):
             return json.dumps( { 'error' : str( r ) } )
     return wrapped
 
+def msgpackApi( f ):
+    ''' Decorator to basic exception handling on function. '''
+    @wraps( f )
+    def wrapped( *args, **kwargs ):
+        web.header( 'Content-Type', 'application/msgpack' )
+        r = f( *args, **kwargs )
+        try:
+            return msgpack.packb( r )
+        except:
+            return msgpack.packb( { 'error' : str( r ) } )
+    return wrapped
+
+def jsonData( data ):
+    web.header( 'Content-Type', 'application/json' )
+    return json.dumps( data )
+
+def msgpackData( data ):
+    web.header( 'Content-Type', 'application/msgpack' )
+    return msgpack.packb( data )
 
 ###############################################################################
 # PAGES
 ###############################################################################
 class Bridge:
-    @jsonApi
     def GET( self, category ):
         if not ENABLE_GET:
             raise web.HTTPError( '405 Method Not Allowed' )
         return self.action( category )
 
-    @jsonApi
     def POST( self, category ):
         return self.action( category )
 
     def action( self, category ):
         data = {}
 
-        params = web.input( _timeout = None, _ident = None, _key = None, _action = None, _secret = None )
+        params = web.input( _timeout = None, _ident = None, _key = None, _action = None, _secret = None, _format = 'json' )
 
         ident = params._ident
         timeout = params._timeout
@@ -155,7 +173,12 @@ class Bridge:
 
         #print( "Response: %s" % ( json.dumps( data, indent = 2 ), ) )
 
-        return data
+        if 'json' == params._format:
+            return jsonData( data )
+        elif 'msgpack' == params._format:
+            return msgpackData( data )
+        else:
+            raise web.HTTPError( '500 Internal Server Error: Unknown Format' )
 
 
 ###############################################################################
