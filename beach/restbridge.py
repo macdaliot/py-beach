@@ -110,7 +110,7 @@ class Bridge:
     def action( self, category ):
         data = {}
 
-        params = web.input( _timeout = None, _ident = None, _key = None, _action = None, _secret = None, _format = 'json' )
+        params = web.input( _timeout = None, _ident = None, _key = None, _action = None, _secret = None, _format = 'json', _json_data = None )
 
         ident = params._ident
         timeout = params._timeout
@@ -149,6 +149,9 @@ class Bridge:
         for k, v in params.iteritems():
             if not k.startswith( '_' ):
                 req[ k ] = v
+
+        if params._json_data is not None:
+            req.update( json.loads( params._json_data ) )
 
         cacheKey = '%s-%s' % ( category, ident )
 
