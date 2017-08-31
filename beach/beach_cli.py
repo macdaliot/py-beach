@@ -29,17 +29,21 @@ import yaml
 import json
 import traceback
 from beach.beach_api import Beach
+
+def eprint( msg ):
+    print >> sys.stderr, msg
+
 try:
     import M2Crypto
 except:
-    print( "Beach crypto facilities disable due to failure to load M2Crypto." )
+    eprint( "Beach crypto facilities disable due to failure to load M2Crypto." )
 
 def report_errors( func ):
     def silenceit( *args, **kwargs ):
         try:
             return func( *args,**kwargs )
         except:
-            print( traceback.format_exc() )
+            eprint( traceback.format_exc() )
             return None
     return( silenceit )
 
@@ -416,6 +420,13 @@ if __name__ == '__main__':
                          dest = 'req_ident',
                          help = 'identity to assume while issuing the request' )
 
+    parser.add_argument( '--is-broadcast',
+                         required = False,
+                         default = False,
+                         action = 'store_true',
+                         dest = 'is_broadcast',
+                         help = 'if specified, the request is broadcast to all actors' )
+
     args = parser.parse_args()
     if args.config is None:
         with open( '~/.beach', 'r' ) as f:
@@ -436,12 +447,30 @@ if __name__ == '__main__':
         else:
             beach = Beach( conf, realm = args.req_realm )
             h = beach.getActorHandle( args.req_cat, ident = args.req_ident )
-            resp = h.request( args.req_cmd, data = args.req_data )
-            h.close()
-            beach.close()
-            if not resp.isSuccess:
-                print( resp )
-                sys.exit( 1 )
+            if args.is_broadcast:
+                futures = h.requestFromAll( args.req_cmd, data = args.req_data )
             else:
-                print( json.dumps( resp.data, indent = 4 ) )
-                sys.exit( 0 )
+                resp = h.request( args.req_cmd, data = args.req_data )
+                h.close()
+                beach.close()
+
+            if args.is_broadcast:
+                while not futures.isFinished():
+                    if not futures.waitForResults( timeout = 30 ):
+                        eprint( "timeout after 30 seconds" )
+                        break
+                    results = futures.getNewResults()
+                    for resp in results:
+                        if not resp.isSuccess:
+                            print( resp )
+                        else:
+                            print( json.dumps( resp.data, indent = 4 ) )
+                h.close()
+                beach.close()
+            else:
+                if not resp.isSuccess:
+                    print( resp )
+                    sys.exit( 1 )
+                else:
+                    print( json.dumps( resp.data, indent = 4 ) )
+                    sys.exit( 0 )

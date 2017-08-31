@@ -40,6 +40,9 @@ from beach.actor import ActorHandleGroup
 from beach.utils import _getIpv4ForIface
 from beach.utils import _getPublicInterfaces
 
+def eprint( msg ):
+    print >> sys.stderr, msg
+
 class Beach ( object ):
 
     def __init__( self, configFile, realm = 'global' ):
@@ -105,7 +108,7 @@ class Beach ( object ):
                              isBind = False,
                              private_key = self._private_key )
         self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None, 'is_seed' : isSeed }
-        print( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
+        eprint( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 
     def _getHostInfo( self, zSock ):
         info = None
@@ -113,7 +116,7 @@ class Beach ( object ):
         if isMessageSuccess( resp ):
             info = resp[ 'data' ][ 'info' ]
         else:
-            print( "HOSTINFO: %s" % resp )
+            eprint( "HOSTINFO: %s" % resp )
         return info
 
     def _updateNodes( self ):
