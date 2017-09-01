@@ -669,3 +669,15 @@ class RWLock( object ):
 
     def reader( self ):
         return _rwlock_r( self )
+
+
+import inspect
+
+class Counter( object ):
+    def __init__( self ):
+        self.counters = {}
+
+    def count( self ):
+        ( frame, filename, line_number, function_name, lines, index ) = inspect.getouterframes( inspect.currentframe() )[ 1 ]
+        self.counters.setdefault( line_number, 0 )
+        self.counters[ line_number ] += 1

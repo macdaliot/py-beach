@@ -226,6 +226,11 @@ class Actor( gevent.Greenlet ):
         self._q_total_time = 0.0
         self._q_avg = 0.0
 
+        # Z values is a generic location to put various environment status
+        # and stats relating to the Actor that can be queried in a generic
+        # way through the default command 'z' handled by all Actors.
+        self._z = {}
+
         # We have some special magic parameters
         self._trace_enabled = self._parameters.get( 'beach_trace_enabled', False )
 
@@ -243,6 +248,9 @@ class Actor( gevent.Greenlet ):
 
         self._vHandles = []
         self.schedule( 10, self._generateQpsCount )
+        self.handle( 'z', self._getZValues )
+
+        self.zSet( 'started', int( time.time() ) )
 
     def _run( self ):
         try:
@@ -279,6 +287,26 @@ class Actor( gevent.Greenlet ):
             if self._is_initted and hasattr( self, 'deinit' ):
                 self.deinit()
 
+    def _getZValues( self, msg ):
+        return ( True, self._z )
+
+    def zSet( self, var, val ):
+        '''Set a Z variable to a specific value.
+
+        :param var: the Z var to set
+        :param val: the value to set it to
+        '''
+        self._z[ var ] = val
+
+    def zInc( self, var, val = 1 ):
+        '''Increment the Z variable by one or by optional val.
+        
+        :param var: the Z var to increment
+        :param val: the value increment with, or one by default
+        '''
+        self._z.setdefault( var, 0 )
+        self._z[ var ] += val
+
     def _generateQpsCount( self ):
         now = time.time()
         self._qps = round( self._q_counter / ( now - self._last_qps_count ), 3 )
@@ -286,6 +314,8 @@ class Actor( gevent.Greenlet ):
         self._last_qps_count = now
         self._q_counter = 0
         self._q_total_time = 0.0
+        self.zSet( 'qps', self._qps )
+        self.zSet( 'avg_q_time', self._q_avg )
 
     def AddConcurrentHandler( self ):
         '''Add a new thread handling requests to the actor.'''
@@ -310,6 +340,9 @@ class Actor( gevent.Greenlet ):
                 request = ActorRequest( msg )
             except:
                 request = None
+            
+            self.zInc( 'processed' )
+
             if not self.stopEvent.wait( 0 ):
                 if request is not None:
                     #self.log( "Received: %s" % request.req )
@@ -317,9 +350,11 @@ class Actor( gevent.Greenlet ):
                     if request.dst != self.name:
                         ret = errorMessage( 'wrong dest' )
                         self.log( "Request is for wrong destination from %s, requesting %s but we are %s." % ( request.ident, request.dst, self.name ) )
+                        self.zInc( 'bad_dest' )
                     elif 0 != len( self._trusted ) and request.ident not in self._trusted:
                         ret = errorMessage( 'unauthorized' )
                         self.log( "Received unauthorized request from %s." % ( request.ident, ) )
+                        self.zInc( 'unauthorized' )
                     else:
                         handler = self._handlers.get( request.req, self._defaultHandler )
                         self._q_counter += 1
@@ -683,12 +718,12 @@ class ActorHandle ( object ):
         try:
             ret = z.request( msg, timeout = timeout )
         except:
-            raise
+            ret = { 'status' : { 'success' : False, 'error' : traceback.format_exc() } }
         finally:
             self._pending[ z_ident ] -= 1
             if 0 == self._pending[ z_ident ]:
                 del( self._pending[ z_ident ] )
-
+        
         return ret
 
     def _requestToFuture( self, futureResults, *args, **kwargs ):
@@ -824,6 +859,8 @@ class ActorHandle ( object ):
 
         if ret.isTimedOut:
             self._log( "Request failed after %s retries %s:%s." % ( curRetry, self._cat, requestType) )
+            if self._fromActor is not None:
+                self._fromActor.zInc( 'dropped' )
 
         if not ret.isSuccess and onFailure is not None:
             onFailure( data )
@@ -907,7 +944,7 @@ class ActorHandle ( object ):
                 z.close()
                 self._updateDirectory()
 
-        futureResults._addNewResult( resp )
+        futureResults._addNewResult( interpretedRet )
 
     def shoot( self, requestType, data = {}, timeout = None, key = None, nRetries = None, onFailure = None ):
         '''Send a message to the one actor without waiting for a response.
@@ -1009,6 +1046,7 @@ class FutureResults( object ):
 
     def _addNewResult( self, res ):
         self._results.append( res )
+        self._nReceivedResults += 1
         if self._nExpectedResults <= self._nReceivedResults:
             self._isAllReceived = True
         self._newResultEvent.set()
