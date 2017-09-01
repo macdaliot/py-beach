@@ -427,6 +427,13 @@ if __name__ == '__main__':
                          dest = 'is_broadcast',
                          help = 'if specified, the request is broadcast to all actors' )
 
+    parser.add_argument( '--req-timeout',
+                         type = int,
+                         required = False,
+                         default = 30,
+                         dest = 'req_timeout',
+                         help = 'timeout for the request' )
+
     args = parser.parse_args()
     if args.config is None:
         with open( '~/.beach', 'r' ) as f:
