@@ -385,49 +385,49 @@ if __name__ == '__main__':
                          default = None,
                          help = 'cluster config file' )
 
-    parser.add_argument( '--req-realm',
+    parser.add_argument( '-rm', '--req-realm',
                          type = str,
                          required = False,
                          default = None,
                          dest = 'req_realm',
                          help = 'the realm to issue the request to' )
 
-    parser.add_argument( '--req-cat',
+    parser.add_argument( '-rcat', '--req-cat',
                          type = str,
                          required = False,
                          default = None,
                          dest = 'req_cat',
                          help = 'category to issue a request against' )
 
-    parser.add_argument( '--req-cmd',
+    parser.add_argument( '-rcmd', '--req-cmd',
                          type = str,
                          required = False,
                          default = None,
                          dest = 'req_cmd',
                          help = 'command to issue with request' )
 
-    parser.add_argument( '--req-data',
+    parser.add_argument( '-rd', '--req-data',
                          type = json.loads,
                          required = False,
                          default = '{}',
                          dest = 'req_data',
                          help = 'data, as JSON to include in the request' )
 
-    parser.add_argument( '--req-ident',
+    parser.add_argument( '-ri', '--req-ident',
                          type = str,
                          required = False,
                          default = None,
                          dest = 'req_ident',
                          help = 'identity to assume while issuing the request' )
 
-    parser.add_argument( '--is-broadcast',
+    parser.add_argument( '-b', '--is-broadcast',
                          required = False,
                          default = False,
                          action = 'store_true',
                          dest = 'is_broadcast',
                          help = 'if specified, the request is broadcast to all actors' )
 
-    parser.add_argument( '--req-timeout',
+    parser.add_argument( '-rt', '--req-timeout',
                          type = int,
                          required = False,
                          default = 30,
@@ -453,7 +453,7 @@ if __name__ == '__main__':
             parser.error( '--req-* components missing to execute a request.' )
         else:
             beach = Beach( conf, realm = args.req_realm )
-            h = beach.getActorHandle( args.req_cat, ident = args.req_ident )
+            h = beach.getActorHandle( args.req_cat, ident = args.req_ident, timeout = args.req_timeout )
             if args.is_broadcast:
                 futures = h.requestFromAll( args.req_cmd, data = args.req_data )
             else:
@@ -463,8 +463,8 @@ if __name__ == '__main__':
 
             if args.is_broadcast:
                 while not futures.isFinished():
-                    if not futures.waitForResults( timeout = 30 ):
-                        eprint( "timeout after 30 seconds" )
+                    if not futures.waitForResults( timeout = args.req_timeout ):
+                        eprint( "timeout after %d seconds" % args.req_timeout )
                         break
                     results = futures.getNewResults()
                     for resp in results:
