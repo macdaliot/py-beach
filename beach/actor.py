@@ -351,7 +351,7 @@ class Actor( gevent.Greenlet ):
                         ret = errorMessage( 'wrong dest' )
                         self.log( "Request is for wrong destination from %s, requesting %s but we are %s." % ( request.ident, request.dst, self.name ) )
                         self.zInc( 'bad_dest' )
-                    elif 0 != len( self._trusted ) and request.ident not in self._trusted:
+                    elif 'z' != request.req and 0 != len( self._trusted ) and request.ident not in self._trusted:
                         ret = errorMessage( 'unauthorized' )
                         self.log( "Received unauthorized request from %s." % ( request.ident, ) )
                         self.zInc( 'unauthorized' )
