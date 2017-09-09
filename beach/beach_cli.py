@@ -407,7 +407,7 @@ if __name__ == '__main__':
                          help = 'command to issue with request' )
 
     parser.add_argument( '-rd', '--req-data',
-                         type = json.loads,
+                         type = eval,
                          required = False,
                          default = '{}',
                          dest = 'req_data',
