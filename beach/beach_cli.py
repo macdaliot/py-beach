@@ -407,7 +407,7 @@ if __name__ == '__main__':
                          help = 'command to issue with request' )
 
     parser.add_argument( '-rd', '--req-data',
-                         type = json.loads,
+                         type = eval,
                          required = False,
                          default = '{}',
                          dest = 'req_data',
@@ -449,7 +449,7 @@ if __name__ == '__main__':
         if args.req_realm is None and args.req_cat is None and args.req_cmd is None and args.req_ident is None:
             app = BeachShell( conf )
             app.cmdloop()
-        elif args.req_realm is None or args.req_cat is None or args.req_cmd is None or args.req_ident is None:
+        elif args.req_realm is None or args.req_cat is None or args.req_cmd is None:
             parser.error( '--req-* components missing to execute a request.' )
         else:
             beach = Beach( conf, realm = args.req_realm )
