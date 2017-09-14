@@ -18,6 +18,7 @@
 
 
 from beach.beach_api import Beach
+from gevent.lock import BoundedSemaphore
 import logging
 import logging.handlers
 import signal
@@ -28,6 +29,7 @@ from sets import Set
 from collections import OrderedDict
 import traceback
 import urllib2
+import hashlib
 
 
 class Patrol ( object ):
@@ -50,9 +52,15 @@ class Patrol ( object ):
         self._threads = gevent.pool.Group()
 
         self._owner = 'beach.patrol/%s' % ( identifier, )
+        self._mutex = BoundedSemaphore( value = 1 )
         self._entries = OrderedDict()
         self._watch = {}
         self._freq = sync_frequency
+        self._updateFreq = 60 * 60
+
+        self._patrolHash = None
+        self._patrolUrl = None
+        self._isMonitored = False
 
         self._beach = Beach( configFile, realm = realm )
 
@@ -118,6 +126,11 @@ class Patrol ( object ):
                                                                    currentScale, 
                                                                    actorEntry.scalingFactor,
                                                                    targetNum ) )
+                # If we're only spawning a single actor, it must not be drained
+                # so that availability is maintained.
+                if 1 == targetNum and actorEntry.actorArgs[ 1 ].get( 'is_drainable', False ):
+                    actorEntry.actorArgs[ 1 ][ 'is_drainable' ] = False
+                    self._log( 'actor %s was set to drainable but only starting once instance to turning it off' % ( actorName, ) )
             if current < targetNum:
                 newOwner = '%s/%s' % ( self._owner, actorName )
                 self._log( 'actor %s has %d instances but requires %d, spawning' % ( actorName,
@@ -192,10 +205,12 @@ class Patrol ( object ):
 
     def _sync( self ):
         while not self._stopEvent.wait( self._freq ):
+            self._mutex.acquire( blocking = True )
             self._log( 'running sync' )
             directory = self._beach.getDirectory( timeout = 120 )
             if type( directory ) is not dict:
                 self._logCritical( 'error getting directory' )
+                self._mutex.release()
                 continue
             self._log( 'found %d actors, testing for %d' % ( len( directory[ 'reverse' ] ), len( self._watch ) ) )
             for actorId in self._watch.keys():
@@ -204,6 +219,7 @@ class Patrol ( object ):
                     self._log( 'actor %s has fallen' % actorId )
                     if self._processFallenActor( self._watch[ actorId ] ):
                         del( self._watch[ actorId ] )
+            self._mutex.release()
 
     def remove( self, name = None, isStopToo = True ):
         removed = []
@@ -227,7 +243,7 @@ class Patrol ( object ):
 
         return removed
 
-    def loadFromUrl( self, url ):
+    def _getPatrolFromUrl( self, url ):
         if '://' in url:
             patrolFilePath = url
             if patrolFilePath.startswith( 'file://' ):
@@ -236,8 +252,36 @@ class Patrol ( object ):
         else:
             patrolFilePath = os.path.abspath( url )
             patrolFile = open( patrolFilePath, 'r' )
-        exec( patrolFile.read(), { 'Patrol' : self.monitor,
+        return patrolFile.read(), patrolFilePath
+
+    def loadFromUrl( self, url, isMonitorForUpdates = False ):
+        patrolContent, patrolFilePath = self._getPatrolFromUrl( url )
+        self._patrolUrl = url
+        self._patrolHash = hashlib.sha256( patrolContent ).hexdigest()
+        exec( patrolContent, { 'Patrol' : self.monitor,
+                               '__file__' : patrolFilePath } )
+        if isMonitorForUpdates and not self._isMonitored:
+            self._isMonitored = True
+            self._threads.add( gevent.spawn( self._updatePatrol ) )
+
+    def _updatePatrol( self ):
+        while not self._stopEvent.wait( self._updateFreq ):
+            try:
+                patrolContent, patrolFilePath = self._getPatrolFromUrl( self._patrolUrl )
+            except:
+                return
+            if self._patrolHash == hashlib.sha256( patrolContent ).hexdigest():
+                return
+            self._mutex.acquire( blocking = True )
+            self._entries = OrderedDict()
+            self._watch = {}
+            self._patrolUrl = url
+            self._patrolHash = hashlib.sha256( patrolContent ).hexdigest()
+            exec( patrolContent, { 'Patrol' : self.monitor,
                                    '__file__' : patrolFilePath } )
+            self._mutex.release()
+            
+
 
 class _PatrolEntry ( object ):
     def __init__( self ):
