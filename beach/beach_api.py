@@ -148,8 +148,7 @@ class Beach ( object ):
                         if nodeInfo is not None:
                             nodeInfo[ 'socket' ].close()
 
-                if self._lastCacheUpdate < ( time.time() - 30 ):
-                    self.getDirectory()
+                self.getDirectory()
 
                 self._isInited.set()
                 break
@@ -229,8 +228,7 @@ class Beach ( object ):
         if type( category ) is str or type( category ) is unicode:
             category = ( category, )
 
-        if self._lastCacheUpdate < ( time.time() - 30 ):
-            self.getDirectory()
+        self.getDirectory()
 
         if 'random' == strategy or strategy is None:
             node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -240,7 +238,7 @@ class Beach ( object ):
                                                                 len( x[ 'info' ][ 'cpu' ] ) +
                                                                 x[ 'info' ][ 'mem' ] ) / 2 )[ 'socket' ]
         elif 'affinity' == strategy:
-            nodeList = self._dirCache.get( strategy_hint, {} ).values()
+            nodeList = self._dirCache[ 'realms' ].get( self._realm, {} ).get( strategy_hint, {} ).values()
             population = {}
             for n in nodeList:
                 name = n.split( ':' )[ 1 ][ 2 : ]
@@ -251,7 +249,7 @@ class Beach ( object ):
                 node = self._nodes[ affinityNode ].get( 'socket', None )
                 # We create a temporary entry to allow us to do multiple Add in a row
                 for cat in category:
-                    self._dirCache.setdefault( cat, {} )[ str(uuid.uuid4()) ] = '%s:XXXX' % affinityNode
+                    self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str(uuid.uuid4()) ] = '%s:XXXX' % affinityNode
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -264,7 +262,7 @@ class Beach ( object ):
 
             if strategy_hint is None:
                 strategy_hint = category[ 0 ]
-            nodeList = self._dirCache.get( strategy_hint, {} ).values()
+            nodeList = self._dirCache[ 'realms' ].get( self._realm, {} ).get( strategy_hint, {} ).values()
 
             for n in nodeList:
                 name = n.split( ':' )[ 1 ][ 2 : ]
@@ -276,7 +274,7 @@ class Beach ( object ):
                 node = self._nodes[ affinityNode ].get( 'socket', None )
                 # We create a temporary entry to allow us to do multiple Add in a row
                 for cat in category:
-                    self._dirCache.setdefault( cat, {} )[ str(uuid.uuid4()) ] = 'tcp://%s:XXXX' % affinityNode
+                    self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str(uuid.uuid4()) ] = 'tcp://%s:XXXX' % affinityNode
             else:
                 # There is nothing in play, fall back to random
                 node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -316,22 +314,25 @@ class Beach ( object ):
 
         return resp
 
-    def getDirectory( self, timeout = 10 ):
+    def getDirectory( self, timeout = 10, isForce = False ):
         '''Retrieve the directory from a random node, all nodes have a directory that
            is eventually-consistent. Side-effect of this call is to update the internal
            cache, so it can be used as a "forceRefresh".
 
         :returns: the realm directory of the cluster
         '''
-        node = random.choice( self._nodes.values() )[ 'socket' ]
-        resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
-        if isMessageSuccess( resp ):
-            resp = resp[ 'data' ]
-            if 'realms' in resp:
-                self._dirCache = resp[ 'realms' ].get( self._realm, {} )
-                self._lastCacheUpdate = time.time()
+        if isForce or ( self._lastCacheUpdate < ( time.time() - 30 ) ):
+            node = random.choice( self._nodes.values() )[ 'socket' ]
+            resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
+            if isMessageSuccess( resp ):
+                resp = resp[ 'data' ]
+                if 'realms' in resp:
+                    self._dirCache = resp
+                    self._lastCacheUpdate = time.time()
+            else:
+                resp = False
         else:
-            resp = False
+            return self._dirCache
         return resp
 
     def flush( self ):
@@ -385,7 +386,7 @@ class Beach ( object ):
             else:
                 toRemove += withId
 
-        tmpDir = self.getDirectory()
+        tmpDir = self.getDirectory( isForce = True )
 
         if tmpDir is not False and 'realms' in tmpDir:
             if withCategory is not None:
