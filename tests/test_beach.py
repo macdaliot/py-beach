@@ -54,7 +54,7 @@ def test_admin_privileges():
     a1 = beach.addActor( 'Ping', 'pingers', parameters={"a":1}, resources = {'pongers':'pongers'} )
     assert( isMessageSuccess( a1 ) )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
     assert( beach.flush() )
@@ -68,7 +68,7 @@ def test_flushing_single_node_cluster():
     f = beach.flush()
     assert( f )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
@@ -81,7 +81,7 @@ def test_actor_creation():
     a2 = beach.addActor( 'Pong', 'pongers', parameters={"a":4}, resources = {} )
     assert( isMessageSuccess( a2 ) )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
@@ -93,7 +93,7 @@ def test_isolated_actor_creation():
     a1 = beach.addActor( 'Ping', 'pingers', isIsolated = True, parameters={"a":5}, resources = {'pongers':'pongers'} )
     assert( isMessageSuccess( a1 ) )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pongers', {} ) ) )
 
@@ -223,7 +223,7 @@ def test_private_params():
 def test_host_affinity():
     global beach
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
     a1 = beach.addActor( 'Ping', 'pingers',
@@ -243,18 +243,18 @@ def test_host_affinity():
                          strategy_hint = thisIface )
     assert( isMessageSuccess( a1 ) )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
     assert( beach.flush() )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
 def test_multi_category():
     global beach
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
 
     a1 = beach.addActor( 'MultiPing', [ 'pingers', 'oobers', 'oobers2' ], parameters={"a":18}, resources = {} )
@@ -263,7 +263,7 @@ def test_multi_category():
     a2 = beach.addActor( 'MultiPing', [ 'oobers', ], parameters={"a":19}, resources = {} )
     assert( isMessageSuccess( a2 ) )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 2 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
@@ -278,13 +278,13 @@ def test_multi_category():
     assert( resp.isSuccess and 'cmdresult' in resp.data )
 
     assert( beach.removeFromCategory( a1[ 'data' ][ 'uid' ], 'oobers' ) )
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
 
     assert( beach.addToCategory( a1[ 'data' ][ 'uid' ], 'newcat' ) )
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( 1 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'newcat', {} ) ) )
 
     assert( beach.flush() )
@@ -322,7 +322,7 @@ def test_tons_of_actors():
         assert( isMessageSuccess( a ) )
         actors.append( a )
 
-    d = beach.getDirectory()
+    d = beach.getDirectory( isForce = True )
     assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
     assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
     assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
