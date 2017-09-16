@@ -60,6 +60,7 @@ class Beach ( object ):
         self._isInited = gevent.event.Event()
         self._vHandles = []
         self._dirCache = {}
+        self._lastCacheUpdate = 0
         self._lastAddActorNode = None
 
         with open( self._configFile, 'r' ) as f:
@@ -147,9 +148,8 @@ class Beach ( object ):
                         if nodeInfo is not None:
                             nodeInfo[ 'socket' ].close()
 
-                tmpDir = self.getDirectory()
-                if tmpDir is not False and 'realms' in tmpDir:
-                    self._dirCache = tmpDir[ 'realms' ].get( self._realm, {} )
+                if self._lastCacheUpdate < ( time.time() - 30 ):
+                    self.getDirectory()
 
                 self._isInited.set()
                 break
@@ -228,6 +228,9 @@ class Beach ( object ):
 
         if type( category ) is str or type( category ) is unicode:
             category = ( category, )
+
+        if self._lastCacheUpdate < ( time.time() - 30 ):
+            self.getDirectory()
 
         if 'random' == strategy or strategy is None:
             node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
@@ -320,11 +323,13 @@ class Beach ( object ):
 
         :returns: the realm directory of the cluster
         '''
-        node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+        node = random.choice( self._nodes.values() )[ 'socket' ]
         resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
         if isMessageSuccess( resp ):
             resp = resp[ 'data' ]
-            self._dirCache = resp
+            if 'realms' in resp:
+                self._dirCache = resp[ 'realms' ].get( self._realm, {} )
+                self._lastCacheUpdate = time.time()
         else:
             resp = False
         return resp
@@ -350,7 +355,7 @@ class Beach ( object ):
 
         :param category: the name of the category holding actors to get the handle to
         :param mode: the method actors are queried by the handle, currently
-            handles: random
+            handles: random, local
         :param nRetries: number of times the handle should attempt to retry the request if
             it times out
         :param timeout: number of seconds to wait before re-issuing a request or failing
@@ -446,7 +451,7 @@ class Beach ( object ):
 
         :param category: the name of the category holding actors to get the handle to
         :param mode: the method actors are queried by the handle, currently
-            handles: random
+            handles: random, local
         :param nRetries: number of times the handle should attempt to retry the request if
             it times out
         :param timeout: number of seconds to wait before re-issuing a request or failing

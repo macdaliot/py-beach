@@ -681,3 +681,25 @@ class Counter( object ):
         ( frame, filename, line_number, function_name, lines, index ) = inspect.getouterframes( inspect.currentframe() )[ 1 ]
         self.counters.setdefault( line_number, 0 )
         self.counters[ line_number ] += 1
+
+class ZSelector( object ):
+    def __init__( self, timeout, *sockets ):
+        self._timeout = timeout
+        self._poller = zmq.Poller()
+        self._rev = {}
+        for s in sockets:
+            self._poller.register( s._z, zmq.POLLIN )
+            self._rev[ s._z ] = s
+        self._res = {}
+
+    def next( self ):
+        if 0 == len( self._res ):
+            self._res = dict( self._poller.poll( timeout = self._timeout * 1000 ) )
+        
+        if 0 == len( self._res ):
+            return None
+
+        ret = self._res.keys()[ 0 ]
+        del( self._res[ ret ] )
+
+        return self._rev[ ret ]

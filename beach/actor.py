@@ -26,6 +26,7 @@ from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 from beach.utils import loadModuleFrom
+from beach.utils import ZSelector
 import random
 import logging
 import logging.handlers
@@ -38,6 +39,7 @@ import copy
 import Queue
 from types import ModuleType
 import syslog
+from sets import Set
 
 def withLogException( f, actor = None ):
     def _tmp( *args, **kw_args ):
@@ -246,6 +248,10 @@ class Actor( gevent.Greenlet ):
                                   isBind = True,
                                   private_key = self._private_key )
 
+        # This is the local version of the ops socket.
+        #self._opsSocketLocal = _ZMREP( 'ipc:///tmp/tmp_lc_actor_sock_%d' % ( self._port, ),
+        #                               isBind = True )
+
         self._vHandles = []
         self.schedule( 10, self._generateQpsCount )
         self.handle( 'z', self._getZValues )
@@ -323,10 +329,18 @@ class Actor( gevent.Greenlet ):
         self._threads.add( gevent.spawn( withLogException( self._opsHandler, actor = self ) ) )
 
     def _opsHandler( self ):
+        #z_remote = self._opsSocket.getChild()
+        #z_local = self._opsSocketLocal.getChild()
         z = self._opsSocket.getChild()
         isNaturalCleanup = False
+        #ready = ZSelector( 10, z_remote, z_local )
         while not self.stopEvent.wait( 0 ):
             self._n_free_handlers += 1
+            #z = ready.next()
+            #if z is not None:
+            #    msg = z.recv( timeout = 10 )
+            #else:
+            #    msg = False
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
 
@@ -394,6 +408,8 @@ class Actor( gevent.Greenlet ):
             self.yieldCpu()
 
         self.log( "Stopping processing Actor ops requests" )
+        #z_remote.close()
+        #z_local.close()
         z.close()
 
     def _defaultHandler( self, msg ):
@@ -504,7 +520,7 @@ class Actor( gevent.Greenlet ):
         '''
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
 
-    def getActorHandle( self, category, mode = 'random', nRetries = None, timeout = None ):
+    def getActorHandle( self, category, mode = 'local', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
 
         :param category: the name of the category holding actors to get the handle to
@@ -538,7 +554,7 @@ class Actor( gevent.Greenlet ):
 
         return isAvailable
 
-    def getActorHandleGroup( self, categoryRoot, mode = 'random', nRetries = None, timeout = None ):
+    def getActorHandleGroup( self, categoryRoot, mode = 'local', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
 
         :param category: the name of the category holding actors to get the handle to
@@ -658,7 +674,7 @@ class ActorHandle ( object ):
     def __init__( self,
                   realm,
                   category,
-                  mode = 'random',
+                  mode = 'local',
                   nRetries = None,
                   timeout = None,
                   ident = None,
@@ -672,6 +688,7 @@ class ActorHandle ( object ):
         self._ident = ident
         self._endpoints = {}
         self._peerSockets = {}
+        self._localSockets = Set()
         self._threads = gevent.pool.Group()
         self._lastDirUpdate = 0
         self._threads.add( gevent.spawn_later( 0, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
@@ -692,8 +709,15 @@ class ActorHandle ( object ):
             if 'affinity' != self._mode:
                 for z_ident, z_url in self._endpoints.items():
                     if z_ident not in self._peerSockets:
-                        # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
-                        newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                        if self._fromActor is not None and self._fromActor._ip in z_url:
+                            # This is on the current box, we can use the IPC optimization.
+                            #port = int( z_url.split( ':' )[ -1 ] )
+                            #newSocket = _ZMREQ( 'ipc:///tmp/tmp_lc_actor_sock_%d' % ( port, ), isBind = False, congestionCB = self._reportCongestion )
+                            newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                            self._localSockets.add( z_ident )
+                        else:
+                            # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
+                            newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
                         if z_ident not in self._peerSockets:
                             self._peerSockets[ z_ident ] = newSocket
                         else:
@@ -811,12 +835,25 @@ class ActorHandle ( object ):
                         else:
                             if 'random' == self._mode:
                                 try:
-                                    endpoints = self._endpoints.keys()
-                                    z_ident = endpoints[ random.randint( 0, len( endpoints ) - 1 ) ]
+                                    z_ident = random.choice( self._endpoints.keys() )
                                     z = self._peerSockets[ z_ident ]
                                 except:
                                     z = None
                                     z_ident = None
+                            elif 'local' == self._mode:
+                                try:
+                                    z_ident = random.choice( self._localSockets )
+                                    z = self._peerSockets[ z_ident ]
+                                except:
+                                    z_ident = None
+                                    z = None
+                                if z is None:
+                                    try:
+                                        z_ident = random.choice( self._endpoints.keys() )
+                                        z = self._peerSockets[ z_ident ]
+                                    except:
+                                        z_ident = None
+                                        z = None
                         if z is None:
                             gevent.sleep( 0.1 )
             except _TimeoutException:
@@ -848,6 +885,7 @@ class ActorHandle ( object ):
                             self._affinityCache.pop( affinityKey, None )
                         else:
                             self._peerSockets.pop( z_ident, None )
+                            self._localSockets.pop( z_ident, None )
                         z.close()
                     z = None
                     curRetry += 1
@@ -941,6 +979,7 @@ class ActorHandle ( object ):
                 # There has been no new response in the last history timeframe, or it's a wrong dest.
                 if 'affinity' != self._mode:
                     self._peerSockets.pop( z_ident, None )
+                    self._localSockets.pop( z_ident, None )
                 z.close()
                 self._updateDirectory()
 
@@ -1067,7 +1106,7 @@ class ActorHandleGroup( object ):
     def __init__( self,
                   realm,
                   categoryRoot,
-                  mode = 'random',
+                  mode = 'local',
                   nRetries = None,
                   timeout = None,
                   ident = None,
@@ -1101,7 +1140,7 @@ class ActorHandleGroup( object ):
     def _getCategories( cls, realm, catRoot ):
         msg = False
         if 0 != len( cls._zDir ):
-            z = cls._zDir[ random.randint( 0, len( cls._zDir ) - 1 ) ]
+            z = random.choice( cls._zDir )
             # These requests can be sent to the directory service of a HostManager
             # or the ops service of the HostManager. Directory service is OOB from the
             # ops but is only available locally to Actors. The ops is available from outside

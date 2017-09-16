@@ -823,7 +823,7 @@ class HostManager ( object ):
                     break
                 continue
             else:
-                nextWait = self.directory_sync_seconds / len( self.nodes )
+                nextWait = self.directory_sync_seconds
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
                     #self._log( "Issuing directory sync with node %s" % nodeName )
