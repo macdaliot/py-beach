@@ -79,41 +79,13 @@ def parallelExec( f, objects, timeout = None ):
     g.join( timeout = timeout )
     return results
 
-def _sanitizeJson( obj ):
-    def _sanitizeJsonValue( value ):
-        if type( value ) is uuid.UUID:
-            value = str( value )
-        elif type( value ) is datetime.datetime:
-            value = value.strftime( '%Y-%m-%d %H:%M:%S' )
-        elif value is not None and type( value ) not in ( str, unicode, bool, int, float ):
-            value = str( value )
-        return value
-    
-    def _sanitizeJsonStruct( obj ):
-        if issubclass( type( obj ), dict ) or type( obj ) is PrefixDict:
-            data = {}
-            for key, value in obj.iteritems():
-                if type( key ) not in ( str, unicode, bool, int, float, tuple ):
-                    key = str( key )
-                try:
-                    data[ key ] = _sanitizeJsonStruct( value )
-                except AttributeError:
-                    data[ key ] = _sanitizeJsonValue( value )
-        elif issubclass( type( obj ), list ) or issubclass( type( obj ), tuple ):
-            data = []
-            for value in obj:
-                try:
-                    data.append( _sanitizeJsonStruct( value ) )
-                except AttributeError:
-                    data.append( _sanitizeJsonValue( value ) )
-        elif type( obj ) is bool:
-            data = obj
-        else:
-            raise AttributeError
-                    
-        return data
-    
-    return _sanitizeJsonStruct( obj )
+def _sanitizeData( obj ):
+    if isinstance( obj, datetime.datetime ):
+        return obj.strftime( '%Y-%m-%d %H:%M:%S' )
+    elif isinstance( obj, PrefixDict ):
+        return dict( obj )
+    else:
+        return str( obj )
 
 def isMessageSuccess( msg ):
     '''Checks if request was a success.
@@ -187,7 +159,7 @@ class _ZSocket( object ):
         # If socket is None it means someone closed it.
         if self.s is None: return False
 
-        data = msgpack.packb( _sanitizeJson( data ) )
+        data = msgpack.packb( data, default = _sanitizeData )
 
         if self._private_key is not None:
             sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )
@@ -372,7 +344,7 @@ class _ZMREQ ( object ):
         ts = time.time()
         try:
             with gevent.Timeout( timeout, _TimeoutException ):
-                data = msgpack.packb( _sanitizeJson( data ) )
+                data = msgpack.packb( data, default = _sanitizeData )
 
                 if self._private_key is not None:
                     sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )
@@ -500,7 +472,7 @@ class _ZMREP ( object ):
             if isSkipSanitization:
                 data = msgpack.packb( data )
             else:
-                data = msgpack.packb( _sanitizeJson( data ) )
+                data = msgpack.packb( data, default = _sanitizeData )
 
             if self._private_key is not None:
                 sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )
@@ -684,25 +656,3 @@ class Counter( object ):
         ( frame, filename, line_number, function_name, lines, index ) = inspect.getouterframes( inspect.currentframe() )[ 1 ]
         self.counters.setdefault( line_number, 0 )
         self.counters[ line_number ] += 1
-
-class ZSelector( object ):
-    def __init__( self, timeout, *sockets ):
-        self._timeout = timeout
-        self._poller = zmq.Poller()
-        self._rev = {}
-        for s in sockets:
-            self._poller.register( s._z, zmq.POLLIN )
-            self._rev[ s._z ] = s
-        self._res = {}
-
-    def next( self ):
-        if 0 == len( self._res ):
-            self._res = dict( self._poller.poll( timeout = self._timeout * 1000 ) )
-        
-        if 0 == len( self._res ):
-            return None
-
-        ret = self._res.keys()[ 0 ]
-        del( self._res[ ret ] )
-
-        return self._rev[ ret ]
