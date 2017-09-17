@@ -26,7 +26,6 @@ from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 from beach.utils import loadModuleFrom
-from beach.utils import ZSelector
 import random
 import logging
 import logging.handlers
