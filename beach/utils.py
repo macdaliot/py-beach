@@ -494,10 +494,13 @@ class _ZMREP ( object ):
                 self._z.close()
                 self._z = None
 
-        def send( self, data, timeout = None ):
+        def send( self, data, timeout = None, isSkipSanitization = False ):
             isSuccess = False
 
-            data = msgpack.packb( _sanitizeJson( data ) )
+            if isSkipSanitization:
+                data = msgpack.packb( data )
+            else:
+                data = msgpack.packb( _sanitizeJson( data ) )
 
             if self._private_key is not None:
                 sym_iv = M2Crypto.Rand.rand_bytes( IV_LENGTH )

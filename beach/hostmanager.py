@@ -564,7 +564,7 @@ class HostManager ( object ):
                     z.send( successMessage( self.lastHostInfo ) )
                 elif 'get_full_dir' == action:
                     with self.dirLock.reader():
-                        z.send( successMessage( { 'realms' : self.directory, 'reverse' : self.reverseDir } ) )
+                        z.send( successMessage( { 'realms' : { k : dict( v ) for k, v in self.directory.iteritems() }, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
                 elif 'get_dir' == action:
                     realm = data.get( 'realm', 'global' )
                     if 'cat' in data:
@@ -611,7 +611,7 @@ class HostManager ( object ):
                             self.isActorChanged.set()
                 elif 'get_dir_sync' == action:
                     with self.dirLock.reader():
-                        z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones, 'reverse' : self.reverseDir } ) )
+                        z.send( successMessage( { 'directory' : { k : dict( v ) for k, v in self.directory.iteritems() }, 'tombstones' : self.tombstones, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
                 elif 'push_dir_sync' == action:
                     if 'directory' in data and 'tombstones' in data and 'reverse' in data:
                         z.send( successMessage() )
