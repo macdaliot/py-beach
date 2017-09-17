@@ -256,6 +256,7 @@ class Actor( gevent.Greenlet ):
         self.handle( 'z', self._getZValues )
 
         self.zSet( 'started', int( time.time() ) )
+        self.zSet( 'id', self.name )
 
     def _run( self ):
         try:
