@@ -62,6 +62,7 @@ class Beach ( object ):
         self._dirCache = {}
         self._lastCacheUpdate = 0
         self._lastAddActorNode = None
+        self._dirCacheTtl = 10.0
 
         with open( self._configFile, 'r' ) as f:
             self._configFile = yaml.load( f )
@@ -321,7 +322,7 @@ class Beach ( object ):
 
         :returns: the realm directory of the cluster
         '''
-        if isForce or ( self._lastCacheUpdate < ( time.time() - 30 ) ):
+        if isForce or ( self._lastCacheUpdate < ( time.time() - self._dirCacheTtl ) ):
             node = random.choice( self._nodes.values() )[ 'socket' ]
             resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
             if isMessageSuccess( resp ):
