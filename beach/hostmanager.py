@@ -96,6 +96,9 @@ class HostManager ( object ):
         self.configFilePath = os.path.abspath( configFile )
         self.configFile = None
         self.directory = {}
+        # This is an unoptimized version of self.directory we maintain because converting
+        # the optimized version to a striaght is very expensive.
+        self.nonOptDir = {}
         self.reverseDir = {}
         self.tombstones = {}
         self.actorInfo = {}
@@ -284,9 +287,11 @@ class HostManager ( object ):
             for realm in self.directory.keys():
                 for cname, c in self.directory[ realm ].items():
                     if c.pop( uid, None ) is not None:
+                        self.nonOptDir[ realm ][ cname ].pop( uid, None )
                         isFound = True
                         if 0 == len( c ):
                             self.directory.get( realm, {} ).pop( cname, None )
+                            self.nonOptDir[ realm ].pop( cname, None )
                 if isFound:
                     self.isActorChanged.set()
                     break
@@ -321,13 +326,17 @@ class HostManager ( object ):
         while not self.stopEvent.wait( 300 ):
             self._log( "Cleaning up directory" )
             newDir = {}
+            newNonOptDir = {}
             with self.dirLock.writer():
                 for realmName, realm in self.directory.iteritems():
                     newDir[ realmName ] = PrefixDict()
+                    newNonOptDir[ realmName ] = {}
                     for catName, cat in realm.iteritems():
                         if 0 != len( cat ):
                             newDir[ realmName ][ catName ] = cat
+                            newNonOptDir[ realmName ][ catName ] = cat
                 self.directory = newDir
+                self.nonOptDir = newNonOptDir
 
     def _removeInstanceActorsFromDirectory( self, instance ):
         for uid, actor in self.actorInfo.items():
@@ -372,7 +381,7 @@ class HostManager ( object ):
             else:
                 info[ 'params' ][ k ] = parameters[ k ]
 
-    def _updateDirectoryWith( self, curDir, newDir, newReverse ):
+    def _updateDirectoryWith( self, curDir, nonOptDir, newDir, newReverse ):
         ourNode = 'tcp://%s:' % ( self.ifaceIp4, )
         isGhostActorsFound = False
         with self.dirLock.writer():
@@ -381,9 +390,11 @@ class HostManager ( object ):
                     self.reverseDir[ uid ] = dest
             for realm, catMap in newDir.iteritems():
                 curDir.setdefault( realm, PrefixDict() )
+                nonOptDir.setdefault( realm, {} )
                 for cat, endpoints in catMap.iteritems():
                     if 0 == len( endpoints ): continue
                     curDir[ realm ].setdefault( cat, {} )
+                    nonOptDir[ realm ].setdefault( cat, {} )
                     for uid, endpoint in endpoints.iteritems():
                         if uid in self.tombstones: continue
                         # Check for ghost directory entries that report to be from here
@@ -395,8 +406,9 @@ class HostManager ( object ):
                             # Only add to this directory other node's info since
                             # we are authoritative here.
                             curDir[ realm ][ cat ][ uid ] = endpoint
+                            nonOptDir[ realm ][ cat ][ uid ] = endpoint
 
-        return curDir
+        return curDir, nonOptDir
 
     def _getDirectoryEntriesFor( self, realm, category ):
         endpoints = {}
@@ -493,11 +505,19 @@ class HostManager ( object ):
                                                            PrefixDict() ).setdefault( '_ACTORS/%s' % ( uid, ),
                                                                                       {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                                       port )
+                                self.nonOptDir.setdefault( realm,
+                                                           {} ).setdefault( '_ACTORS/%s' % ( uid, ),
+                                                                            {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                            port )
                                 for category in categories:
                                     self.directory.setdefault( realm,
                                                                PrefixDict() ).setdefault( category,
                                                                                           {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                                           port )
+                                    self.nonOptDir.setdefault( realm,
+                                                               {} ).setdefault( category,
+                                                                                {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                                port )
                             self.isActorChanged.set()
                         else:
                             self._logCritical( 'Error loading actor %s: %s.' % ( actorName, newMsg ) )
@@ -564,7 +584,8 @@ class HostManager ( object ):
                     z.send( successMessage( self.lastHostInfo ) )
                 elif 'get_full_dir' == action:
                     with self.dirLock.reader():
-                        z.send( successMessage( { 'realms' : self.directory, 'reverse' : self.reverseDir } ) )
+                        #z.send( successMessage( { 'realms' : { k : dict( v ) for k, v in self.directory.iteritems() }, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
+                        z.send( successMessage( { 'realms' : self.nonOptDir, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
                 elif 'get_dir' == action:
                     realm = data.get( 'realm', 'global' )
                     if 'cat' in data:
@@ -611,13 +632,14 @@ class HostManager ( object ):
                             self.isActorChanged.set()
                 elif 'get_dir_sync' == action:
                     with self.dirLock.reader():
-                        z.send( successMessage( { 'directory' : self.directory, 'tombstones' : self.tombstones, 'reverse' : self.reverseDir } ) )
+                        #z.send( successMessage( { 'directory' : { k : dict( v ) for k, v in self.directory.iteritems() }, 'tombstones' : self.tombstones, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
+                        z.send( successMessage( { 'directory' : self.nonOptDir, 'tombstones' : self.tombstones, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
                 elif 'push_dir_sync' == action:
                     if 'directory' in data and 'tombstones' in data and 'reverse' in data:
                         z.send( successMessage() )
                         for uid, ts in data[ 'tombstones' ].iteritems():
                             self._addTombstone( uid, ts )
-                        self._updateDirectoryWith( self.directory, data[ 'directory' ], data[ 'reverse' ] )
+                        self._updateDirectoryWith( self.directory, self.nonOptDir, data[ 'directory' ], data[ 'reverse' ] )
                     else:
                         z.send( errorMessage( 'missing information to update directory' ) )
                 elif 'get_full_mtd' == action:
@@ -642,6 +664,10 @@ class HostManager ( object ):
                                                            PrefixDict() ).setdefault( category,
                                                                                       {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                                       info[ 'port' ] )
+                                self.nonOptDir.setdefault( info[ 'realm' ],
+                                                           {} ).setdefault( category,
+                                                                            {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
+                                                                                                            info[ 'port' ] )
                         except:
                             z.send( errorMessage( 'error associating, actor hosted here?' ) )
                         else:
@@ -657,8 +683,10 @@ class HostManager ( object ):
                             info = self.actorInfo[ uid ]
                             with self.dirLock.writer():
                                 del( self.directory[ info[ 'realm' ] ][ category ][ uid ] )
+                                del( self.nonOptDir[ info[ 'realm' ] ][ category ][ uid ] )
                                 if 0 == len( self.directory[ info[ 'realm' ] ][ category ] ):
                                     del( self.directory[ info[ 'realm' ] ][ category ] )
+                                    del( self.nonOptDir[ info[ 'realm' ] ][ category ] )
                         except:
                             z.send( errorMessage( 'error associating, actor exists in category?' ) )
                         else:
@@ -823,7 +851,7 @@ class HostManager ( object ):
                     break
                 continue
             else:
-                nextWait = self.directory_sync_seconds / len( self.nodes )
+                nextWait = self.directory_sync_seconds
             for nodeName, node in self.nodes.items():
                 if nodeName != self.ifaceIp4:
                     #self._log( "Issuing directory sync with node %s" % nodeName )
@@ -832,7 +860,7 @@ class HostManager ( object ):
                     if isMessageSuccess( data ):
                         for uid, ts in data[ 'data' ][ 'tombstones' ].iteritems():
                             self._addTombstone( uid, ts )
-                        self._updateDirectoryWith( self.directory, data[ 'data' ][ 'directory' ], data[ 'data' ][ 'reverse' ] )
+                        self._updateDirectoryWith( self.directory, self.nonOptDir, data[ 'data' ][ 'directory' ], data[ 'data' ][ 'reverse' ] )
                     else:
                         self._log( "Failed to get directory sync with node %s" % nodeName )
                     if self.stopEvent.wait( nextWait ):
@@ -848,7 +876,7 @@ class HostManager ( object ):
             gevent.sleep( 5 )
             self.isActorChanged.clear()
             with self.dirLock.reader():
-                tmpDir = copy.deepcopy( self.directory )
+                tmpDir = copy.deepcopy( self.nonOptDir )
                 tmpTomb = copy.deepcopy( self.tombstones )
                 tmpReverse = copy.deepcopy( self.reverseDir )
             for nodeName, node in self.nodes.items():
