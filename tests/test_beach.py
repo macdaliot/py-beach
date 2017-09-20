@@ -315,12 +315,18 @@ def test_pending_metric():
 def test_tons_of_actors():
     global beach
 
+    d = beach.getDirectory( isForce = True )
+    assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )
+    assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers', {} ) ) )
+    assert( 0 == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'oobers2', {} ) ) )
+
     actors = []
     total = 50
     for i in range( total ):
         a = beach.addActor( 'MultiPing', [ 'pingers', 'oobers', 'oobers2' ], parameters={"a":18}, resources = {} )
         assert( isMessageSuccess( a ) )
         actors.append( a )
+
 
     d = beach.getDirectory( isForce = True )
     assert( total == len( d.get( 'realms', {} ).get( 'global', {} ).get( 'pingers', {} ) ) )

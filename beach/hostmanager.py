@@ -285,13 +285,11 @@ class HostManager ( object ):
             if self.reverseDir.pop( uid, None ) is not None:
                 self.isActorChanged.set()
             for realm in self.directory.keys():
-                for cname, c in self.directory[ realm ].items():
-                    if c.pop( uid, None ) is not None:
-                        self.nonOptDir[ realm ][ cname ].pop( uid, None )
+                for cname in self.directory[ realm ].keys():
+                    if uid in self.directory[ realm ][ cname ]:
                         isFound = True
-                        if 0 == len( c ):
-                            self.directory.get( realm, {} ).pop( cname, None )
-                            self.nonOptDir[ realm ].pop( cname, None )
+                    self.directory[ realm ][ cname ].pop( uid, None )
+                    self.nonOptDir[ realm ][ cname ].pop( uid, None )
                 if isFound:
                     self.isActorChanged.set()
                     break
@@ -323,20 +321,23 @@ class HostManager ( object ):
 
     @handleExceptions
     def _svc_cleanupCats( self ):
-        while not self.stopEvent.wait( 300 ):
-            self._log( "Cleaning up directory" )
-            newDir = {}
-            newNonOptDir = {}
-            with self.dirLock.writer():
-                for realmName, realm in self.directory.iteritems():
-                    newDir[ realmName ] = PrefixDict()
-                    newNonOptDir[ realmName ] = {}
-                    for catName, cat in realm.iteritems():
-                        if 0 != len( cat ):
-                            newDir[ realmName ][ catName ] = cat
-                            newNonOptDir[ realmName ][ catName ] = cat
-                self.directory = newDir
-                self.nonOptDir = newNonOptDir
+        while not self.stopEvent.wait( 0 ):
+            if self.isActorChanged.wait( 2 ):
+                # Buffer changes over 5 seconds
+                gevent.sleep( 5 )
+                self._log( "Cleaning up directory" )
+                newDir = {}
+                newNonOptDir = {}
+                with self.dirLock.writer():
+                    for realmName, realm in self.directory.iteritems():
+                        newDir[ realmName ] = PrefixDict()
+                        newNonOptDir[ realmName ] = {}
+                        for catName, cat in realm.iteritems():
+                            if 0 != len( cat ):
+                                newDir[ realmName ][ catName ] = cat
+                                newNonOptDir[ realmName ][ catName ] = cat
+                    self.directory = newDir
+                    self.nonOptDir = newNonOptDir
 
     def _removeInstanceActorsFromDirectory( self, instance ):
         for uid, actor in self.actorInfo.items():
@@ -682,8 +683,8 @@ class HostManager ( object ):
                         try:
                             info = self.actorInfo[ uid ]
                             with self.dirLock.writer():
-                                del( self.directory[ info[ 'realm' ] ][ category ][ uid ] )
-                                del( self.nonOptDir[ info[ 'realm' ] ][ category ][ uid ] )
+                                self.directory[ info[ 'realm' ] ][ category ].pop( uid )
+                                self.nonOptDir[ info[ 'realm' ] ][ category ].pop( uid )
                                 if 0 == len( self.directory[ info[ 'realm' ] ][ category ] ):
                                     del( self.directory[ info[ 'realm' ] ][ category ] )
                                     del( self.nonOptDir[ info[ 'realm' ] ][ category ] )
@@ -699,7 +700,6 @@ class HostManager ( object ):
             else:
                 z.send( errorMessage( 'invalid request' ) )
                 self._logCritical( "Received completely invalid request" )
-
     
     @handleExceptions
     def _svc_directory_requests( self ):
