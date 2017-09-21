@@ -344,8 +344,16 @@ class Actor( gevent.Greenlet ):
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
 
-            if 3 > self._n_free_handlers and 100 > self._n_concurrent:
-                self.AddConcurrentHandler()
+            if 3 > self._n_free_handlers:
+                if 100 > self._n_concurrent:
+                    self.AddConcurrentHandler()
+                else:
+                    # Handlers are full, we start sending back failures
+                    # immediately so that callers don't HAVE to way for their
+                    # timeout when it's likely it's what will happen.
+                    z.send( errorMessage( 'queue full' ) )
+                    self.zInc( 'rejected_queue_full' )
+                    msg = False
 
             if msg is False: 
                 continue
@@ -833,7 +841,9 @@ class ActorHandle ( object ):
                                     z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
                                     self._affinityCache[ affinityKey ] = z, z_ident
                         else:
-                            if 'random' == self._mode:
+                            # If we're in a retry, the strategy goes out the window and we just
+                            # revert to random.
+                            if 'random' == self._mode or curRetry != 0:
                                 try:
                                     z_ident = random.choice( self._endpoints.keys() )
                                     z = self._peerSockets[ z_ident ]
@@ -873,7 +883,7 @@ class ActorHandle ( object ):
 
                 # If we hit a timeout or wrong dest we don't take chances
                 # and remove that socket
-                if not ret.isTimedOut and ( ret.isSuccess or ret.error != 'wrong dest' ):
+                if not ret.isTimedOut and ( ret.isSuccess or ( ret.error not in ( 'wrong dest', 'queue full' ) ) ):
                     break
                 else:
                     #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
