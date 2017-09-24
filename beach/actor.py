@@ -179,7 +179,7 @@ class Actor( gevent.Greenlet ):
         return ret
 
     @classmethod
-    def initTestActor( cls, parameters = {}, resources = {} ):
+    def initTestActor( cls, parameters = {}, resources = {}, mock_actor_handle = None ):
         uid = str( uuid.uuid4() )
         a = cls( '127.0.0.1',
                  'global',
@@ -196,7 +196,8 @@ class Actor( gevent.Greenlet ):
                  n_concurrent = 1,
                  private_key = None,
                  is_drainable = False,
-                 is_also_log_to_stderr = True )
+                 is_also_log_to_stderr = True,
+                 mock_actor_handle = mock_actor_handle )
         # If the actor is tested via the Python interactive command prompt we need to specifically
         # tell it to yield to the initialization function initially.
         a.start()
@@ -224,7 +225,8 @@ class Actor( gevent.Greenlet ):
                   n_concurrent = 1,
                   private_key = None,
                   is_drainable = False,
-                  is_also_log_to_stderr = False ):
+                  is_also_log_to_stderr = False,
+                  mock_actor_handle = None ):
         gevent.Greenlet.__init__( self )
 
         self.name = uid
@@ -248,6 +250,8 @@ class Actor( gevent.Greenlet ):
         self._n_concurrent = 0
         self._private_key = private_key
         self._is_drainable = is_drainable
+
+        self._mock_actor_handle = mock_actor_handle
 
         self._exception = None
 
@@ -590,14 +594,17 @@ class Actor( gevent.Greenlet ):
         :param timeout: number of seconds to wait before re-issuing a request or failing
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm,
-                         category,
-                         mode,
-                         ident = self._ident,
-                         nRetries = nRetries,
-                         timeout = timeout,
-                         fromActor = self )
-        self._vHandles.append( v )
+        if self._mock_actor_handle is None:
+            v = ActorHandle( self._realm,
+                             category,
+                             mode,
+                             ident = self._ident,
+                             nRetries = nRetries,
+                             timeout = timeout,
+                             fromActor = self )
+            self._vHandles.append( v )
+        else:
+            v = self._mock_actor_handle( category )
         return v
 
     def isCategoryAvailable( self, category ):
