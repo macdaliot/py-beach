@@ -62,7 +62,7 @@ class Beach ( object ):
         self._dirCache = {}
         self._lastCacheUpdate = 0
         self._lastAddActorNode = None
-        self._dirCacheTtl = 10.0
+        self._dirCacheTtl = 2.0
 
         with open( self._configFile, 'r' ) as f:
             self._configFile = yaml.load( f )
