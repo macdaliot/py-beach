@@ -21,7 +21,8 @@ import gevent.event
 import gevent.pool
 import traceback
 import time
-from beach.utils import *
+import uuid
+import beach.utils
 from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
@@ -189,8 +190,8 @@ class Actor( gevent.Greenlet ):
                  10,
                  '/dev/log',
                  '/tmp/%s_beach.conf' % uid,
-                 parameters = {},
-                 resources = {},
+                 parameters = parameters,
+                 resources = resources,
                  ident = None,
                  trusted = [],
                  n_concurrent = 1,
@@ -554,6 +555,16 @@ class Actor( gevent.Greenlet ):
         :param kw_args: keyword arguments to the function
         '''
         self._threads.add( gevent.spawn_later( 0, withLogException( func, actor = self ), self.stopEvent, *args, **kw_args ) )
+
+    def parallelExec( self, f, objects, timeout = None ):
+        '''Applies a function to N objects in parallel in N threads and waits to return the list results.
+        
+        :param f: the function to apply
+        :param objects: the collection of objects to apply using f
+        :param timeouts: number of seconds to wait for results, or None for indefinitely
+        '''
+
+        return beach.utils.parallelExec( f, objects, timeout )
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )
