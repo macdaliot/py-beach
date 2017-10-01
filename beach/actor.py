@@ -21,11 +21,15 @@ import gevent.event
 import gevent.pool
 import traceback
 import time
-from beach.utils import *
+import uuid
+import beach.utils
 from beach.utils import _TimeoutException
 from beach.utils import _ZMREQ
 from beach.utils import _ZMREP
 from beach.utils import loadModuleFrom
+from beach.utils import isMessageSuccess
+from beach.utils import errorMessage
+from beach.utils import successMessage
 import random
 import logging
 import logging.handlers
@@ -56,6 +60,8 @@ def withLogException( f, actor = None ):
             syslog.syslog( traceback.format_exc() )
     return _tmp
 
+def err_print( msg ):
+    sys.stderr.write( '%s\n' % msg )
 
 class ActorRequest( object ):
     '''Wrapper for requests to Actors. Not created directly.
@@ -176,6 +182,36 @@ class Actor( gevent.Greenlet ):
         hUrl.close()
         return ret
 
+    @classmethod
+    def initTestActor( cls, parameters = {}, resources = {}, mock_actor_handle = None ):
+        uid = str( uuid.uuid4() )
+        a = cls( '127.0.0.1',
+                 'global',
+                 '127.0.0.1',
+                 None,
+                 uid,
+                 10,
+                 '/dev/log',
+                 '/tmp/%s_beach.conf' % uid,
+                 parameters = parameters,
+                 resources = resources,
+                 ident = None,
+                 trusted = [],
+                 n_concurrent = 1,
+                 private_key = None,
+                 is_drainable = False,
+                 is_also_log_to_stderr = True,
+                 mock_actor_handle = mock_actor_handle )
+        # If the actor is tested via the Python interactive command prompt we need to specifically
+        # tell it to yield to the initialization function initially.
+        a.start()
+        a.sleep( 1 )
+        return a
+
+    @classmethod
+    def mockRequest( cls, data = {} ):
+        return ActorRequest( { 'mtd' : { 'id' : uuid.uuid4(), 'req' : 'test', 'dst' : 'test' }, 'data' : data } )
+
     '''Actors are not instantiated directly, you should create your actors as inheriting the beach.actor.Actor class.'''
     def __init__( self,
                   host,
@@ -192,7 +228,9 @@ class Actor( gevent.Greenlet ):
                   trusted = [],
                   n_concurrent = 1,
                   private_key = None,
-                  is_drainable = False ):
+                  is_drainable = False,
+                  is_also_log_to_stderr = False,
+                  mock_actor_handle = None ):
         gevent.Greenlet.__init__( self )
 
         self.name = uid
@@ -201,6 +239,7 @@ class Actor( gevent.Greenlet ):
         self._log_dest = log_dest
         self._beach_config_path = beach_config_path
         self._initLogging( log_level, log_dest )
+        self._isAlsoLogToStderr = is_also_log_to_stderr
 
         self.stopEvent = gevent.event.Event()
         self._realm = realm
@@ -215,6 +254,8 @@ class Actor( gevent.Greenlet ):
         self._n_concurrent = 0
         self._private_key = private_key
         self._is_drainable = is_drainable
+
+        self._mock_actor_handle = mock_actor_handle
 
         self._exception = None
 
@@ -243,9 +284,14 @@ class Actor( gevent.Greenlet ):
 
         # This socket receives all taskings for the actor and dispatch
         # the messages as requested by user
-        self._opsSocket = _ZMREP( 'tcp://%s:%d' % ( self._ip, self._port ),
-                                  isBind = True,
-                                  private_key = self._private_key )
+        if self._port is None:
+            self._opsSocket = _ZMREP( 'ipc:///tmp/test_beach_actor_%s' % ( self.name, ),
+                                      isBind = True,
+                                      private_key = self._private_key )
+        else:
+            self._opsSocket = _ZMREP( 'tcp://%s:%d' % ( self._ip, self._port ),
+                                      isBind = True,
+                                      private_key = self._private_key )
 
         # This is the local version of the ops socket.
         #self._opsSocketLocal = _ZMREP( 'ipc:///tmp/tmp_lc_actor_sock_%d' % ( self._port, ),
@@ -273,7 +319,9 @@ class Actor( gevent.Greenlet ):
 
             self.stopEvent.wait()
         except:
-            self.logCritical( traceback.format_exc() )
+            exc = traceback.format_exc()
+            self.logCritical( exc )
+            self._exception = exc
         finally:
             self.stop()
             self._opsSocket.close()
@@ -295,6 +343,13 @@ class Actor( gevent.Greenlet ):
 
     def _getZValues( self, msg ):
         return ( True, self._z )
+
+    def zGet( self, var ):
+        '''Get the value of a Z variable.
+
+        :param var: the Z var to get
+        '''
+        return self._z.get( var, None )
 
     def zSet( self, var, val ):
         '''Set a Z variable to a specific value.
@@ -504,6 +559,16 @@ class Actor( gevent.Greenlet ):
         '''
         self._threads.add( gevent.spawn_later( 0, withLogException( func, actor = self ), self.stopEvent, *args, **kw_args ) )
 
+    def parallelExec( self, f, objects, timeout = None ):
+        '''Applies a function to N objects in parallel in N threads and waits to return the list results.
+        
+        :param f: the function to apply
+        :param objects: the collection of objects to apply using f
+        :param timeouts: number of seconds to wait for results, or None for indefinitely
+        '''
+
+        return beach.utils.parallelExec( f, objects, timeout )
+
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )
         self._logger.setLevel( level )
@@ -520,6 +585,8 @@ class Actor( gevent.Greenlet ):
         :param msg: the message to log
         '''
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
+        if self._isAlsoLogToStderr:
+            err_print( '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def logCritical( self, msg ):
         '''Log errors.
@@ -527,6 +594,8 @@ class Actor( gevent.Greenlet ):
         :param msg: the message to log
         '''
         self._logger.error( '%s : %s', self.__class__.__name__, msg )
+        if self._isAlsoLogToStderr:
+            err_print( '%s : %s' % ( self.__class__.__name__, msg ) )
 
     def getActorHandle( self, category, mode = 'local', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
@@ -539,14 +608,17 @@ class Actor( gevent.Greenlet ):
         :param timeout: number of seconds to wait before re-issuing a request or failing
         :returns: an ActorHandle
         '''
-        v = ActorHandle( self._realm,
-                         category,
-                         mode,
-                         ident = self._ident,
-                         nRetries = nRetries,
-                         timeout = timeout,
-                         fromActor = self )
-        self._vHandles.append( v )
+        if self._mock_actor_handle is None:
+            v = ActorHandle( self._realm,
+                             category,
+                             mode,
+                             ident = self._ident,
+                             nRetries = nRetries,
+                             timeout = timeout,
+                             fromActor = self )
+            self._vHandles.append( v )
+        else:
+            v = self._mock_actor_handle( category )
         return v
 
     def isCategoryAvailable( self, category ):
