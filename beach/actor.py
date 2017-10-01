@@ -967,7 +967,7 @@ class ActorHandle ( object ):
                             self._affinityCache.pop( affinityKey, None )
                         else:
                             self._peerSockets.pop( z_ident, None )
-                            self._localSockets.pop( z_ident, None )
+                            self._localSockets.discard( z_ident )
                         z.close()
                     z = None
                     curRetry += 1
@@ -1061,7 +1061,7 @@ class ActorHandle ( object ):
                 # There has been no new response in the last history timeframe, or it's a wrong dest.
                 if 'affinity' != self._mode:
                     self._peerSockets.pop( z_ident, None )
-                    self._localSockets.pop( z_ident, None )
+                    self._localSockets.discard( z_ident )
                 z.close()
                 self._updateDirectory()
 
