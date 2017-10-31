@@ -725,11 +725,11 @@ class HostManager ( object ):
 
     @handleExceptions
     def _svc_instance_draining( self ):
-        while not self.stopEvent.wait( 60 * 10 ):
+        while not self.stopEvent.wait( 60 * 2 ):
             currentMemory = psutil.virtual_memory()
             # We start looking at draining if we hit more than 80% usage globally.
             if currentMemory.percent < self.highMemWatermark:
-                self._log( "Memory usage at %s percent, nothing to do." % currentMemory.percent )
+                #self._log( "Memory usage at %s percent, nothing to do." % currentMemory.percent )
                 continue
             self._log( "High memory watermark reached, trying to drain some instances." )
             now = time.time()

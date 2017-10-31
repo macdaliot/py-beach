@@ -268,11 +268,6 @@ class Actor( gevent.Greenlet ):
         self._q_total_time = 0.0
         self._q_avg = 0.0
 
-        # Z values is a generic location to put various environment status
-        # and stats relating to the Actor that can be queried in a generic
-        # way through the default command 'z' handled by all Actors.
-        self._z = {}
-
         # We have some special magic parameters
         self._trace_enabled = self._parameters.get( 'beach_trace_enabled', False )
 
@@ -281,6 +276,14 @@ class Actor( gevent.Greenlet ):
 
         # All user generated threads
         self._threads = gevent.pool.Group()
+
+        # Z values is a generic location to put various environment status
+        # and stats relating to the Actor that can be queried in a generic
+        # way through the default command 'z' handled by all Actors.
+        self._z = {}
+        self._z_eps = {}
+        self._z_eps_last_summary = time.time()
+        self.schedule( 10, self._summarizeEps )
 
         # This socket receives all taskings for the actor and dispatch
         # the messages as requested by user
@@ -344,6 +347,14 @@ class Actor( gevent.Greenlet ):
     def _getZValues( self, msg ):
         return ( True, self._z )
 
+    def _summarizeEps( self ):
+        now = time.time()
+        for k, v in self._z_eps.items():
+            self.zSet( k, round( v / ( now - self._z_eps_last_summary ), 3 ) )
+            self._z_eps[ k ] = 0
+        self._z_eps_last_summary = now
+
+
     def zGet( self, var ):
         '''Get the value of a Z variable.
 
@@ -367,6 +378,15 @@ class Actor( gevent.Greenlet ):
         '''
         self._z.setdefault( var, 0 )
         self._z[ var ] += val
+
+    def zIncPerSecond( self, var, val = 1 ):
+        '''Increment the Z variable by one or optional val, but generate an average per second.
+
+        :param var: the Z var to increment
+        :param val: the value to increment with, or one by default
+        '''
+        self._z_eps.setdefault( var, 0 )
+        self._z_eps[ var ] += val
 
     def _generateQpsCount( self ):
         now = time.time()
