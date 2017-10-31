@@ -35,6 +35,7 @@ import operator
 import gevent
 import gevent.pool
 import gevent.event
+import operator
 from beach.actor import ActorHandle
 from beach.actor import ActorHandleGroup
 from beach.utils import _getIpv4ForIface
@@ -259,26 +260,31 @@ class Beach ( object ):
             if node is not None:
                 node = node[ 'socket' ]
         elif 'repulsion' == strategy:
+            counts = {}
             possibleNodes = self._nodes.keys()
+            for name in possibleNodes:
+                counts[ name ] = 0
 
             if strategy_hint is None:
                 strategy_hint = category[ 0 ]
-            nodeList = self._dirCache[ 'realms' ].get( self._realm, {} ).get( strategy_hint, {} ).values()
 
-            for n in nodeList:
+            for n in self._dirCache[ 'realms' ].get( self._realm, {} ).get( strategy_hint, {} ).values():
                 name = n.split( ':' )[ 1 ][ 2 : ]
-                if name in possibleNodes:
-                    possibleNodes.remove( name )
+                counts[ name ] += 1
 
-            if 0 != len( possibleNodes ):
-                affinityNode = possibleNodes[ random.randint( 0, len( possibleNodes ) - 1 ) ]
-                node = self._nodes[ affinityNode ].get( 'socket', None )
-                # We create a temporary entry to allow us to do multiple Add in a row
-                for cat in category:
-                    self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str(uuid.uuid4()) ] = 'tcp://%s:XXXX' % affinityNode
-            else:
-                # There is nothing in play, fall back to random
-                node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+            # Pick the node with the least number of actors.
+            orderedNodes = sorted( counts.items(), key = operator.itemgetter( 1 ) )
+            evenNodes = [ orderedNodes[ 0 ] ]
+            for n in orderedNodes[ 1 : ]:
+                if n[ 1 ] == evenNodes[ 0 ][ 1 ]:
+                    evenNodes.append( n )
+            random.shuffle( evenNodes )
+            affinityNode = evenNodes[ 0 ][ 0 ]
+            node = self._nodes[ affinityNode ].get( 'socket', None )
+
+            # We create a temporary entry to allow us to do multiple Add in a row
+            for cat in category:
+                self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str( uuid.uuid4() ) ] = 'tcp://%s:XXXX' % affinityNode
         elif 'roundrobin' == strategy:
             if 0 != len( self._nodes ):
                 curI = ( self._lastAddActorNode + 1 ) if self._lastAddActorNode is not None else 0
