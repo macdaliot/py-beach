@@ -409,11 +409,16 @@ class Beach ( object ):
             req = { 'req' : 'kill_actor', 'uid' : toRemove }
             if self._admin_token is not None:
                 req[ 'admin_token' ] = self._admin_token
-            for k, node in self._nodes.items():
-                resp = node[ 'socket' ].request( req, timeout = 30 )
-                isSuccess[ k ] = resp
-                if delay is not None:
-                    gevent.sleep( delay )
+
+            if delay is None:
+                isSuccess = parallelExec( lambda node: node[ 'socket' ].request( req, timeout = 60 ), 
+                                          self._nodes.itervalues() )
+            else:
+                for k, node in self._nodes.items():
+                    resp = node[ 'socket' ].request( req, timeout = 60 )
+                    isSuccess[ k ] = resp
+                    if delay is not None:
+                        gevent.sleep( delay )
 
         return isSuccess
 

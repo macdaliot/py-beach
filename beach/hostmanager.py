@@ -326,6 +326,7 @@ class HostManager ( object ):
                 # Buffer changes over 5 seconds
                 gevent.sleep( 5 )
                 self._log( "Cleaning up directory" )
+                self.isActorChanged.clear()
                 newDir = {}
                 newNonOptDir = {}
                 with self.dirLock.writer():
