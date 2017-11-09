@@ -47,17 +47,14 @@ from sets import Set
 def withLogException( f, actor = None ):
     def _tmp( *args, **kw_args ):
         try:
-            try:
-                return f( *args, **kw_args )
-            except gevent.GreenletExit:
-                pass
-            except:
-                if actor is not None:
-                    actor.logCritical( traceback.format_exc() )
-                else:
-                    syslog.syslog( traceback.format_exc() )
+            return f( *args, **kw_args )
+        except gevent.GreenletExit:
+            raise
         except:
-            syslog.syslog( traceback.format_exc() )
+            if actor is not None:
+                actor.logCritical( traceback.format_exc() )
+            else:
+                syslog.syslog( traceback.format_exc() )
     return _tmp
 
 def err_print( msg ):
@@ -353,7 +350,7 @@ class Actor( gevent.Greenlet ):
             self.zSet( k, round( v / ( now - self._z_eps_last_summary ), 3 ) )
             self._z_eps[ k ] = 0
         self._z_eps_last_summary = now
-
+        self.zSet( 'n_greenlet', len( self._threads ) )
 
     def zGet( self, var ):
         '''Get the value of a Z variable.
@@ -568,7 +565,7 @@ class Actor( gevent.Greenlet ):
         :param args: positional arguments to the function
         :param kw_args: keyword arguments to the function
         '''
-        self._threads.add( gevent.spawn_later( inDelay, func, *args, **kw_args ) )
+        self._threads.add( gevent.spawn_later( inDelay, withLogException( func, actor = self ), *args, **kw_args ) )
 
     def newThread( self, func, *args, **kw_args ):
         '''Starts a function in a new thread. The first argument to the function will be an event signaled when it is time to stop.
