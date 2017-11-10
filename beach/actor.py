@@ -351,6 +351,7 @@ class Actor( gevent.Greenlet ):
             self._z_eps[ k ] = 0
         self._z_eps_last_summary = now
         self.zSet( 'n_greenlet', len( self._threads ) )
+        self.zSet( 'greenlets', ', '.join( [ str( ( x.args, x.kwargs ) ) for x in self._threads ] ) )
 
     def zGet( self, var ):
         '''Get the value of a Z variable.
@@ -552,10 +553,13 @@ class Actor( gevent.Greenlet ):
         :param kw_args: keyword arguments to the function
         '''
         if not self.stopEvent.wait( 0 ):
-            func( *args, **kw_args )
-
-            if not self.stopEvent.wait( 0 ):
-                self._threads.add( gevent.spawn_later( delay, withLogException( self.schedule, actor = self ), delay, func, *args, **kw_args ) )
+            try:
+                func( *args, **kw_args )
+            except:
+                raise
+            finally:
+                if not self.stopEvent.wait( 0 ):
+                    self._threads.add( gevent.spawn_later( delay, withLogException( self.schedule, actor = self ), delay, func, *args, **kw_args ) )
 
     def delay( self, inDelay, func, *args, **kw_args ):
         '''Delay the execution of a function.
@@ -823,13 +827,17 @@ class ActorHandle ( object ):
                 self._initialRefreshDone.set()
 
     def _svc_refreshDir( self ):
-        self._updateDirectory()
-        if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
-            self._quick_refresh_timeout -= 1
-            # No Actors yet, be more agressive to look for some
-            self._threads.add( gevent.spawn_later( 2, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
-        else:
-            self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
+        try:
+            self._updateDirectory()
+        except:
+            raise
+        finally:
+            if ( 0 == len( self._endpoints ) ) and ( 0 < self._quick_refresh_timeout ):
+                self._quick_refresh_timeout -= 1
+                # No Actors yet, be more agressive to look for some
+                self._threads.add( gevent.spawn_later( 2, withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
+            else:
+                self._threads.add( gevent.spawn_later( 60 + random.randint( 0, 10 ), withLogException( self._svc_refreshDir, actor = self._fromActor ) ) )
 
     def _accountedSend( self, z, z_ident, msg, timeout ):
         if z_ident not in self._pending:
