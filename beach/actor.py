@@ -351,7 +351,6 @@ class Actor( gevent.Greenlet ):
             self._z_eps[ k ] = 0
         self._z_eps_last_summary = now
         self.zSet( 'n_greenlet', len( self._threads ) )
-        self.zSet( 'greenlets', ', '.join( [ str( ( x.args, x.kwargs ) ) for x in self._threads ] ) )
 
     def zGet( self, var ):
         '''Get the value of a Z variable.
@@ -414,6 +413,13 @@ class Actor( gevent.Greenlet ):
             #    msg = z.recv( timeout = 10 )
             #else:
             #    msg = False
+            
+            # Reset payload variables so that they can get garbage
+            # collected when many handlers are started and become idle.
+            msg = None
+            request = None
+            ret = None
+
             msg = z.recv( timeout = 10 )
             self._n_free_handlers -= 1
 
