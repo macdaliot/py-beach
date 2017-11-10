@@ -242,10 +242,10 @@ class ActorHost ( object ):
                             actor = self.actors[ uid ]
                             del( self.actors[ uid ] )
                             actor.stop()
-                            actor.join( timeout = 10 )
+                            actor.join( timeout = 60 )
                             info = None
                             if not actor.ready():
-                                actor.kill( timeout = 10 )
+                                actor.kill( timeout = 60 )
                                 info = { 'error' : 'timeout' }
                                 self.log( "Actor %s timedout while exiting" % uid )
                             z.send( successMessage( data = info ) )
