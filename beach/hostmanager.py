@@ -726,7 +726,7 @@ class HostManager ( object ):
 
     @handleExceptions
     def _svc_instance_draining( self ):
-        while not self.stopEvent.wait( 60 * 2 ):
+        while not self.stopEvent.wait( 60 * 1 ):
             currentMemory = psutil.virtual_memory()
             # We start looking at draining if we hit more than 80% usage globally.
             if currentMemory.percent < self.highMemWatermark:
@@ -757,6 +757,8 @@ class HostManager ( object ):
                         self._log( 'Failed to drain: %s.' % str( resp ) )
                 else:
                     self._log( 'Error asking instance to drain: %s.' % str( resp ) )
+                # Either way we set now as current start so that if we failed we go to the next.
+                oldest[ 'start' ] = time.time()
                 self.isInstanceChanged.set()
 
     @handleExceptions
