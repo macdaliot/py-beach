@@ -378,6 +378,12 @@ class BeachShell ( cmd.Cmd ):
 if __name__ == '__main__':
     conf = None
 
+    def evalCliData( data ):
+        try:
+            return eval( data )
+        except:
+            raise argparse.ArgumentTypeError( 'failed to parse data: %s' % traceback.format_exc() )
+
     parser = argparse.ArgumentParser( description = 'CLI for a Beach cluster.' )
 
     parser.add_argument( 'config',
@@ -407,7 +413,7 @@ if __name__ == '__main__':
                          help = 'command to issue with request' )
 
     parser.add_argument( '-rd', '--req-data',
-                         type = eval,
+                         type = evalCliData,
                          required = False,
                          default = '{}',
                          dest = 'req_data',

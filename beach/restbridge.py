@@ -170,7 +170,7 @@ class Bridge:
             raise web.HTTPError( '500 Internal Server Error: Request timed out' )
 
         if not resp.isSuccess:
-            raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp.error )
+            raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp )
 
         data = resp.data
 
@@ -213,18 +213,18 @@ if __name__ == '__main__':
     parser.add_argument( '--ssl-cert',
                          required = False,
                          dest = 'sslCert',
-                         default =  'rest.beach.crt',
+                         default = os.path.abspath( 'rest.beach.crt' ),
                          help = 'path to the SSL cert to use' )
     parser.add_argument( '--ssl-key',
                          required = False,
                          dest = 'sslKey',
-                         default =  'rest.beach.key',
+                         default = os.path.abspath( 'rest.beach.key' ),
                          help = 'path to the SSL key to use' )
     parser.add_argument( '--ssl-self-signed',
                          required = False,
                          dest = 'sslSelfSigned',
                          action = 'store_true',
-                         default =  False,
+                         default = False,
                          help = 'if set a self-signed certificate will be generated and used' )
     args = parser.parse_args()
 
@@ -232,9 +232,9 @@ if __name__ == '__main__':
     ENABLE_GET = args.withGet
 
     if args.sslSelfSigned:
-        args.sslCert = tempfile.mktemp()
-        args.sslKey = tempfile.mktemp()
-        if 0 != os.system( 'openssl req -x509 -days 36500 -newkey rsa:4096 -keyout %s -out %s -nodes -sha256 -subj "/C=US/ST=CA/L=Mountain View/O=refractionPOINT/CN=limacharlie.appliance" > /dev/null 2>&1' % ( args.sslKey, args.sslCert ) ):
+        if not os.path.isfile( args.sslCert ) and not os.path.isfile( args.sslKey ):
+            print( "Generating self-signed certs." )
+        if 0 != os.system( 'openssl req -x509 -days 36500 -newkey rsa:4096 -keyout %s -out %s -nodes -sha256 -subj "/C=US/ST=CA/L=Mountain View/O=refractionPOINT/CN=restbridge.beach" > /dev/null 2>&1' % ( args.sslKey, args.sslCert ) ):
             print( "Failed to generate self-signed certificate." )
 
     if os.path.isfile( args.sslCert ) and os.path.isfile( args.sslKey ):

@@ -620,9 +620,9 @@ class Actor( gevent.Greenlet ):
 
         :param msg: the message to log
         '''
-        self._logger.error( '%s : %s', self.__class__.__name__, msg )
+        self._logger.error( '%s : !!!~~~!!! %s', self.__class__.__name__, msg )
         if self._isAlsoLogToStderr:
-            err_print( '%s : %s' % ( self.__class__.__name__, msg ) )
+            err_print( '%s : !!!~~~!!! %s' % ( self.__class__.__name__, msg ) )
 
     def getActorHandle( self, category, mode = 'local', nRetries = None, timeout = None ):
         '''Get a virtual handle to actors in the cluster.
