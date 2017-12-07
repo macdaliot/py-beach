@@ -26,8 +26,8 @@ import web
 import time
 import json
 import msgpack
+import tempfile
 from functools import wraps
-
 
 ###############################################################################
 # CUSTOM EXCEPTIONS
@@ -170,7 +170,7 @@ class Bridge:
             raise web.HTTPError( '500 Internal Server Error: Request timed out' )
 
         if not resp.isSuccess:
-            raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp.error )
+            raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp )
 
         data = resp.data
 
@@ -210,10 +210,40 @@ if __name__ == '__main__':
                          action = 'store_true',
                          default =  False,
                          help = 'if set HTTP GET is also accepted' )
+    parser.add_argument( '--ssl-cert',
+                         required = False,
+                         dest = 'sslCert',
+                         default = os.path.abspath( 'rest.beach.crt' ),
+                         help = 'path to the SSL cert to use' )
+    parser.add_argument( '--ssl-key',
+                         required = False,
+                         dest = 'sslKey',
+                         default = os.path.abspath( 'rest.beach.key' ),
+                         help = 'path to the SSL key to use' )
+    parser.add_argument( '--ssl-self-signed',
+                         required = False,
+                         dest = 'sslSelfSigned',
+                         action = 'store_true',
+                         default = False,
+                         help = 'if set a self-signed certificate will be generated and used' )
     args = parser.parse_args()
 
     SECRET_TOKEN = args.secret
     ENABLE_GET = args.withGet
+
+    if args.sslSelfSigned:
+        if not os.path.isfile( args.sslCert ) and not os.path.isfile( args.sslKey ):
+            print( "Generating self-signed certs." )
+        if 0 != os.system( 'openssl req -x509 -days 36500 -newkey rsa:4096 -keyout %s -out %s -nodes -sha256 -subj "/C=US/ST=CA/L=Mountain View/O=refractionPOINT/CN=restbridge.beach" > /dev/null 2>&1' % ( args.sslKey, args.sslCert ) ):
+            print( "Failed to generate self-signed certificate." )
+
+    if os.path.isfile( args.sslCert ) and os.path.isfile( args.sslKey ):
+        print( "Using SSL cert/key: %s and %s" % ( args.sslCert, args.sslKey ) )
+        from web.wsgiserver import CherryPyWSGIServer
+        CherryPyWSGIServer.ssl_certificate = args.sslCert
+        CherryPyWSGIServer.ssl_private_key = args.sslKey
+    else:
+        print( "No SSL cert/key at %s and %s so using normal HTTP." % ( args.sslCert, args.sslKey ) )
 
     urls = ( r'/(.*)', 'Bridge', )
     web.config.debug = False
