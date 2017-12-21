@@ -27,6 +27,7 @@ import inspect
 import shlex
 import yaml
 import json
+import base64
 import traceback
 from beach.beach_api import Beach
 
@@ -475,6 +476,13 @@ if __name__ == '__main__':
         else:
             beach = Beach( conf, realm = args.req_realm )
             h = beach.getActorHandle( args.req_cat, ident = args.req_ident, timeout = args.req_timeout )
+
+            if 0 == h.getNumAvailable():
+                h.close()
+                beach.close()
+                eprint( "no actors available in category" )
+                sys.exit( 1 )
+
             if args.is_broadcast:
                 futures = h.requestFromAll( args.req_cmd, data = args.req_data )
             else:

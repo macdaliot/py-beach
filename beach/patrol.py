@@ -30,7 +30,7 @@ from collections import OrderedDict
 import traceback
 import urllib2
 import hashlib
-
+import multiprocessing
 
 class Patrol ( object ):
 
@@ -113,15 +113,19 @@ class Patrol ( object ):
             if self._stopEvent.wait( 0 ): break
             actorName = actorEntry.name
             current = existing.get( actorName, 0 )
-            targetNum = actorEntry.initialInstances
+            if callable( actorEntry.initialInstances ):
+                targetNum = actorEntry.initialInstances()
+            else:
+                targetNum = actorEntry.initialInstances
             if currentScale is not None and actorEntry.scalingFactor is not None:
+                preScaleTarget = targetNum
                 targetNum = int( currentScale / actorEntry.scalingFactor )
                 if 0 != ( currentScale % actorEntry.scalingFactor ):
                     targetNum += 1
                 if actorEntry.maxInstances is not None and targetNum > actorEntry.maxInstances:
                     targetNum =  actor.maxInstances
-                if actorEntry.initialInstances is not None and targetNum < actorEntry.initialInstances:
-                    targetNum = actorEntry.initialInstances
+                if preScaleTarget is not None and targetNum < preScaleTarget:
+                    targetNum = preScaleTarget
                 self._log( 'actor %s scale %s / factor %s: %d' % ( actorName,
                                                                    currentScale, 
                                                                    actorEntry.scalingFactor,
@@ -259,7 +263,9 @@ class Patrol ( object ):
         self._patrolUrl = url
         self._patrolHash = hashlib.sha256( patrolContent ).hexdigest()
         exec( patrolContent, { 'Patrol' : self.monitor,
-                               '__file__' : patrolFilePath } )
+                               '__file__' : patrolFilePath,
+                               'NUM_CPU_CORES' : multiprocessing.cpu_count,
+                               'NUM_NODES' : self._beach.getNodeCount } )
         if isMonitorForUpdates and not self._isMonitored:
             self._isMonitored = True
             self._threads.add( gevent.spawn( self._updatePatrol ) )
