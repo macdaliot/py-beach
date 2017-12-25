@@ -397,12 +397,15 @@ class Beach ( object ):
 
         if tmpDir is not False and 'realms' in tmpDir:
             if withCategory is not None:
-                if not isinstance( withCategory, collections.Iterable ):
+                if not isinstance( withCategory, ( tuple, list ) ):
                     withCategory = ( withCategory, )
                 for cat in withCategory:
                     for realmCat in tmpDir[ 'realms' ].get( self._realm, {} ).keys():
                         if realmCat.startswith( cat ):
                             toRemove += tmpDir[ 'realms' ].get( self._realm, {} ).get( realmCat, {} ).keys()
+
+            if 0 == len( toRemove ):
+                return {}
 
             # We take the easy way out for now by just spamming the kill to every node.
             isSuccess = {}

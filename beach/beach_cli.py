@@ -27,6 +27,7 @@ import inspect
 import shlex
 import yaml
 import json
+import base64
 import traceback
 from beach.beach_api import Beach
 
@@ -384,6 +385,21 @@ if __name__ == '__main__':
         except:
             raise argparse.ArgumentTypeError( 'failed to parse data: %s' % traceback.format_exc() )
 
+    def _sanitizeJson( o ):
+        if isinstance( o, dict ):
+            for k, v in o.iteritems():
+                o[ k ] = _sanitizeJson( v )
+        elif isinstance( o, ( list, tuple ) ):
+            o = [ _sanitizeJson( x ) for x in o ]
+        else:
+            try:
+                if isinstance( o, ( str, unicode ) ) and "\x00" in o: raise Exception()
+                json.dumps( o )
+            except:
+                o = o.encode( 'hex' )
+
+        return o
+
     parser = argparse.ArgumentParser( description = 'CLI for a Beach cluster.' )
 
     parser.add_argument( 'config',
@@ -460,6 +476,13 @@ if __name__ == '__main__':
         else:
             beach = Beach( conf, realm = args.req_realm )
             h = beach.getActorHandle( args.req_cat, ident = args.req_ident, timeout = args.req_timeout )
+
+            if 0 == h.getNumAvailable():
+                h.close()
+                beach.close()
+                eprint( "no actors available in category" )
+                sys.exit( 1 )
+
             if args.is_broadcast:
                 futures = h.requestFromAll( args.req_cmd, data = args.req_data )
             else:
@@ -477,7 +500,7 @@ if __name__ == '__main__':
                         if not resp.isSuccess:
                             print( resp )
                         else:
-                            print( json.dumps( resp.data, indent = 4 ) )
+                            print( json.dumps( _sanitizeJson( resp.data ), indent = 4 ) )
                 h.close()
                 beach.close()
             else:
@@ -485,5 +508,5 @@ if __name__ == '__main__':
                     print( resp )
                     sys.exit( 1 )
                 else:
-                    print( json.dumps( resp.data, indent = 4 ) )
+                    print( json.dumps( _sanitizeJson( resp.data ), indent = 4 ) )
                     sys.exit( 0 )

@@ -119,7 +119,7 @@ class ActorHost ( object ):
 
         self.opsSocket = _ZMREP( 'ipc:///tmp/py_beach_instance_%s' % instanceId,
                                  isBind = True )
-        self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
+        #self.log( "Listening for ops on %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
         
         self.hostOpsPort = self.configFile.get( 'ops_port', 4999 )
         self.hostOpsSocket = _ZMREP( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ),
@@ -137,7 +137,7 @@ class ActorHost ( object ):
             gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
 
-        self.log( "Now open to actors" )
+        #self.log( "Now open to actors" )
 
         timeToStopEvent.wait()
         
