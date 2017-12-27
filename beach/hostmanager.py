@@ -96,6 +96,7 @@ class HostManager ( object ):
         self.configFilePath = os.path.abspath( configFile )
         self.configFile = None
         self.directory = {}
+        self.isInitialSyncDone = False
         # This is an unoptimized version of self.directory we maintain because converting
         # the optimized version to a striaght is very expensive.
         self.nonOptDir = {}
@@ -412,6 +413,17 @@ class HostManager ( object ):
 
         return curDir, nonOptDir
 
+    def _removeNodeActorsFromDir( self, nodeName ):
+        destPrefixToRemove = 'tcp://%s:' % ( nodeName, )
+        toRemove = Set()
+        with self.dirLock.writer():
+            for uid, dest in self.reverseDir.iteritems():
+                if dest.startswith( destPrefixToRemove ):
+                    toRemove.add( uid )
+        for uid in toRemove:
+            self._removeUidFromDirectory( uid )
+        return len( toRemove )
+
     def _getDirectoryEntriesFor( self, realm, category ):
         endpoints = {}
         with self.dirLock.reader():
@@ -587,7 +599,7 @@ class HostManager ( object ):
                 elif 'get_full_dir' == action:
                     with self.dirLock.reader():
                         #z.send( successMessage( { 'realms' : { k : dict( v ) for k, v in self.directory.iteritems() }, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
-                        z.send( successMessage( { 'realms' : self.nonOptDir, 'reverse' : self.reverseDir } ), isSkipSanitization = True )
+                        z.send( successMessage( { 'realms' : self.nonOptDir, 'reverse' : self.reverseDir, 'is_inited' : self.isInitialSyncDone } ), isSkipSanitization = True )
                 elif 'get_dir' == action:
                     realm = data.get( 'realm', 'global' )
                     if 'cat' in data:
@@ -769,7 +781,7 @@ class HostManager ( object ):
 
                 if self.initialProcesses and instance[ 'p' ] is not None:
                     # Only attempt keepalive if we know of a pid for it, otherwise it must be new
-                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 60 )
+                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 15 )
                 else:
                     # For first instances, immediately trigger the instance creation
                     data = False
@@ -831,13 +843,14 @@ class HostManager ( object ):
                     #self._log( "Issuing keepalive for node %s" % nodeName )
                     data = node[ 'socket' ].request( { 'req' : 'keepalive',
                                                        'from' : self.ifaceIp4,
-                                                       'others' : self.nodes.keys() }, timeout = 30 )
+                                                       'others' : self.nodes.keys() }, timeout = 10 )
 
                     if isMessageSuccess( data ):
                         node[ 'last_seen' ] = int( time.time() )
                     else:
                         self._log( "Removing node %s because of timeout" % nodeName )
                         del( self.nodes[ nodeName ] )
+                        self._log( "Removed %s actors originating from downed node" % self._removeNodeActorsFromDir( nodeName ) )
             
             if 0 == initialRefreshes:
                 gevent.sleep( self.peer_keepalive_seconds )
@@ -864,11 +877,14 @@ class HostManager ( object ):
                         for uid, ts in data[ 'data' ][ 'tombstones' ].iteritems():
                             self._addTombstone( uid, ts )
                         self._updateDirectoryWith( self.directory, self.nonOptDir, data[ 'data' ][ 'directory' ], data[ 'data' ][ 'reverse' ] )
+                        if 0 != len( data[ 'data' ][ 'reverse' ] ):
+                            self.isInitialSyncDone = True
                     else:
                         self._log( "Failed to get directory sync with node %s" % nodeName )
                     if self.stopEvent.wait( nextWait ):
                         break
                 elif 1 == len( self.nodes ) and self.stopEvent.wait( 1 ):
+                    self.isInitialSyncDone = True
                     break
 
     @handleExceptions

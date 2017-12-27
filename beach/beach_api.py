@@ -110,7 +110,7 @@ class Beach ( object ):
         nodeSocket = _ZMREQ( 'tcp://%s:%d' % ( host, self._opsPort ),
                              isBind = False,
                              private_key = self._private_key )
-        self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None, 'is_seed' : isSeed }
+        self._nodes[ host ] = { 'socket' : nodeSocket, 'info' : None, 'is_seed' : isSeed, 'offline' : False }
         eprint( "Connected to node ops at: %s:%d" % ( host, self._opsPort ) )
 
     def _getHostInfo( self, zSock ):
@@ -125,27 +125,40 @@ class Beach ( object ):
     def _updateNodes( self ):
         try:
             while True:
-                srcNodeIndex = random.randint( 0, len( self._nodes ) - 1 )
-                srcNodeKey = self._nodes.keys()[ srcNodeIndex ]
+                srcNodeKey = random.choice( self._nodes.keys() )
                 toQuery = self._nodes[ srcNodeKey ][ 'socket' ]
                 nodes = toQuery.request( { 'req' : 'get_nodes' }, timeout = 10 )
                 if isMessageSuccess( nodes ):
+                    self._nodes[ srcNodeKey ][ 'offline' ] = False
                     for k in nodes[ 'data' ][ 'nodes' ].keys():
                         if k not in self._nodes:
                             self._connectToNode( k )
-                elif not self._nodes[ srcNodeKey ][ 'is_seed' ]:
+                elif self._nodes[ srcNodeKey ][ 'is_seed' ]:
+                    # It's a seed node so we keep it in the list but indicate
+                    # we couldn't actually talk to it.
+                    self._nodes[ srcNodeKey ][ 'offline' ] = True
+                    continue
+                else:
                     # Couldn't get node list, assuming it's dead.
+                    self._nodes[ srcNodeKey ][ 'offline' ] = True
                     nodeInfo = self._nodes.pop( srcNodeKey, None )
                     if nodeInfo is not None:
                         nodeInfo[ 'socket' ].close()
                     continue
+                    
 
                 for nodeName, node in self._nodes.items():
                     newInfo = self._getHostInfo( node[ 'socket' ] )
                     if newInfo is not None:
                         self._nodes[ nodeName ][ 'info' ] = newInfo
-                    elif not self._nodes[ nodeName ][ 'is_seed' ]:
+                        self._nodes[ srcNodeKey ][ 'offline' ] = False
+                    elif self._nodes[ nodeName ][ 'is_seed' ]:
+                        # It's a seed node so we keep it in the list but indicate
+                        # we couldn't actually talk to it.
+                        self._nodes[ srcNodeKey ][ 'offline' ] = True
+                    else:
                         # Assuming it's dead.
+                        self._nodes[ srcNodeKey ][ 'offline' ] = True
                         nodeInfo = self._nodes.pop( nodeName, None )
                         if nodeInfo is not None:
                             nodeInfo[ 'socket' ].close()
@@ -178,7 +191,11 @@ class Beach ( object ):
 
         :returns: the number of nodes in the cluster we are connected to
         '''
-        return len( self._nodes )
+        self._isInited.wait( 30 )
+        return len( [ k for k, v in self._nodes.iteritems() if v[ 'offline' ] is False ] )
+
+    def _getRandomActiveNode( self ):
+        return random.choice( [ x for x in self._nodes.itervalues() if x[ 'offline' ] is False ] )
 
     def addActor( self, actorName, category,
                   strategy = 'random',
@@ -233,7 +250,7 @@ class Beach ( object ):
         self.getDirectory()
 
         if 'random' == strategy or strategy is None:
-            node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+            node = self._getRandomActiveNode()[ 'socket' ]
         elif 'resource' == strategy:
             # For now the simple version of this strategy is to just average the CPU and MEM %.
             node = min( self._nodes.values(), key = lambda x: ( sum( x[ 'info' ][ 'cpu' ] ) /
@@ -254,14 +271,16 @@ class Beach ( object ):
                     self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str(uuid.uuid4()) ] = '%s:XXXX' % affinityNode
             else:
                 # There is nothing in play, fall back to random
-                node = self._nodes.values()[ random.randint( 0, len( self._nodes ) - 1 ) ][ 'socket' ]
+                node = self._getRandomActiveNode()[ 'socket' ]
         elif 'host_affinity' == strategy:
             node = self._nodes.get( strategy_hint, None )
-            if node is not None:
+            if node is not None and node[ 'offline' ] is False:
                 node = node[ 'socket' ]
+            else:
+                node = self._getRandomActiveNode()[ 'socket' ]
         elif 'repulsion' == strategy:
             counts = {}
-            possibleNodes = self._nodes.keys()
+            possibleNodes = [ k for k, v in self._nodes.iteritems() if v[ 'offline' ] is False ]
             for name in possibleNodes:
                 counts[ name ] = 0
 
@@ -287,11 +306,15 @@ class Beach ( object ):
                 self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str( uuid.uuid4() ) ] = 'tcp://%s:XXXX' % affinityNode
         elif 'roundrobin' == strategy:
             if 0 != len( self._nodes ):
-                curI = ( self._lastAddActorNode + 1 ) if self._lastAddActorNode is not None else 0
-                if curI >= len( self._nodes ):
-                    curI = 0
-                self._lastAddActorNode = curI
-                node = self._nodes.values()[ curI ][ 'socket' ]
+                while True:
+                    curI = ( self._lastAddActorNode + 1 ) if self._lastAddActorNode is not None else 0
+                    if curI >= len( self._nodes ):
+                        curI = 0
+                    self._lastAddActorNode = curI
+                    node = self._nodes.values()[ curI ]
+                    if node[ 'offline' ] is False or 1 == len( self._nodes ):
+                        break
+                node = node[ 'socket' ]
 
         if node is not None:
             info = { 'req' : 'start_actor',
@@ -321,7 +344,7 @@ class Beach ( object ):
 
         return resp
 
-    def getDirectory( self, timeout = 10, isForce = False ):
+    def getDirectory( self, timeout = 10, isForce = False, nRetries = 3 ):
         '''Retrieve the directory from a random node, all nodes have a directory that
            is eventually-consistent. Side-effect of this call is to update the internal
            cache, so it can be used as a "forceRefresh".
@@ -329,15 +352,19 @@ class Beach ( object ):
         :returns: the realm directory of the cluster
         '''
         if isForce or ( self._lastCacheUpdate < ( time.time() - self._dirCacheTtl ) ):
-            node = random.choice( self._nodes.values() )[ 'socket' ]
-            resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
-            if isMessageSuccess( resp ):
-                resp = resp[ 'data' ]
-                if 'realms' in resp:
-                    self._dirCache = resp
-                    self._lastCacheUpdate = time.time()
-            else:
-                resp = False
+            curRetry = 0
+            while curRetry < nRetries:
+                node = random.choice( [ x for x in self._nodes.itervalues() if x[ 'offline' ] is False ] )[ 'socket' ]
+                resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
+                if isMessageSuccess( resp ):
+                    resp = resp[ 'data' ]
+                    if 'realms' in resp:
+                        self._dirCache = resp
+                        self._lastCacheUpdate = time.time()
+                        break
+                else:
+                    resp = False
+                curRetry += 1
         else:
             return self._dirCache
         return resp
@@ -352,6 +379,8 @@ class Beach ( object ):
         if self._admin_token is not None:
             req[ 'admin_token' ] = self._admin_token
         for node in self._nodes.values():
+            if node[ 'offline' ]:
+                continue
             resp = node[ 'socket' ].request( req, timeout = 30 )
             if not isMessageSuccess( resp ):
                 isFlushed = False
@@ -415,9 +444,11 @@ class Beach ( object ):
 
             if delay is None:
                 isSuccess = parallelExec( lambda node: node[ 'socket' ].request( req, timeout = 60 ), 
-                                          self._nodes.itervalues() )
+                                          ( x for x in self._nodes.itervalues() if x[ 'offline' ] is False ) )
             else:
                 for k, node in self._nodes.items():
+                    if node[ 'offline' ]:
+                        continue
                     resp = node[ 'socket' ].request( req, timeout = 60 )
                     isSuccess[ k ] = resp
                     if delay is not None:
@@ -445,6 +476,8 @@ class Beach ( object ):
         load = {}
 
         for node in self._nodes.values():
+            if node[ 'offline' ]:
+                continue
             resp = node[ 'socket' ].request( { 'req' : 'get_load_info' }, timeout = 30 )
             if isMessageSuccess( resp ):
                 load.update( resp[ 'data' ][ 'load' ] )
@@ -458,7 +491,8 @@ class Beach ( object ):
         '''
         mtd = {}
         for nodename, node in self._nodes.items():
-            mtd[ nodename ] = node[ 'socket' ].request( { 'req' : 'get_full_mtd' }, timeout = 10 )
+            if not node[ 'offline' ]:
+                mtd[ nodename ] = node[ 'socket' ].request( { 'req' : 'get_full_mtd' }, timeout = 10 )
 
         return mtd
 
@@ -495,6 +529,8 @@ class Beach ( object ):
             req[ 'admin_token' ] = self._admin_token
 
         for node in self._nodes.values():
+            if node[ 'offline' ]:
+                continue
             resp = node[ 'socket' ].request( req, timeout = 30 )
             if isMessageSuccess( resp ):
                 isSuccess = True
@@ -517,6 +553,8 @@ class Beach ( object ):
             req[ 'admin_token' ] = self._admin_token
 
         for node in self._nodes.values():
+            if node[ 'offline' ]:
+                continue
             resp = node[ 'socket' ].request( req, timeout = 30 )
             if isMessageSuccess( resp ):
                 isSuccess = True

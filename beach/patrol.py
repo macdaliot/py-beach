@@ -32,6 +32,16 @@ import urllib2
 import hashlib
 import multiprocessing
 
+def withLogException( f, patrol = None ):
+    def _tmp( *args, **kw_args ):
+        try:
+            return f( *args, **kw_args )
+        except gevent.GreenletExit:
+            raise
+        except:
+            patrol._log( traceback.format_exc() )
+    return _tmp
+
 class Patrol ( object ):
 
     def __init__( self,
@@ -93,59 +103,67 @@ class Patrol ( object ):
                 if self._stopEvent.wait( 0 ): break
                 owner = actor_mtd.get( 'owner', None )
                 if owner in self._entries:
-                    # Looks like a version of that actor was maintained by us before
-                    # so we'll add it to our roster.
-                    self._watch[ aid ] = self._entries[ owner ]
-                    self._log( 'adding pre-existing actor %s to patrol' % aid )
+                    if aid not in self._watch:
+                        self._watch[ aid ] = self._entries[ owner ]
+                        self._log( 'adding pre-existing actor %s to patrol' % aid )
                     tally.setdefault( self._entries[ owner ].name, 0 )
                     tally[ self._entries[ owner ].name ] += 1
         return tally
 
-    def _initializeMissingActors( self, existing ):
+    def _getTargetActorNum( self, actorEntry, currentScale ):
+        targetNum = 0
+
+        if callable( actorEntry.initialInstances ):
+            targetNum = actorEntry.initialInstances()
+        else:
+            targetNum = actorEntry.initialInstances        
+
+        if currentScale is not None and actorEntry.scalingFactor is not None:
+            preScaleTarget = targetNum
+            targetNum = int( currentScale / actorEntry.scalingFactor )
+            if 0 != ( currentScale % actorEntry.scalingFactor ):
+                targetNum += 1
+            if actorEntry.maxInstances is not None and targetNum > actorEntry.maxInstances:
+                targetNum =  actor.maxInstances
+            if preScaleTarget is not None and targetNum < preScaleTarget:
+                targetNum = preScaleTarget
+            self._log( 'actor %s scale %s / factor %s: %d' % ( actorName,
+                                                               currentScale, 
+                                                               actorEntry.scalingFactor,
+                                                               targetNum ) )
+            # If we're only spawning a single actor, it must not be drained
+            # so that availability is maintained.
+            if 1 == targetNum and actorEntry.actorArgs[ 1 ].get( 'is_drainable', False ):
+                actorEntry.actorArgs[ 1 ][ 'is_drainable' ] = False
+                self._log( 'actor %s was set to drainable but only starting once instance to turning it off' % ( actorName, ) )
+
+        return targetNum
+
+    def _getEffectiveScale( self ):
         if type( self._scale ) is int:
             currentScale = self._scale
         elif self._scale is not None:
             currentScale = self._scale()
         else:
             currentScale = None
+        return currentScale
+
+    def _initializeMissingActors( self, existing ):
+        currentScale = self._getEffectiveScale()
 
         for actorEntry in self._entries.itervalues():
             if self._stopEvent.wait( 0 ): break
             actorName = actorEntry.name
             current = existing.get( actorName, 0 )
-            if callable( actorEntry.initialInstances ):
-                targetNum = actorEntry.initialInstances()
-            else:
-                targetNum = actorEntry.initialInstances
-            if currentScale is not None and actorEntry.scalingFactor is not None:
-                preScaleTarget = targetNum
-                targetNum = int( currentScale / actorEntry.scalingFactor )
-                if 0 != ( currentScale % actorEntry.scalingFactor ):
-                    targetNum += 1
-                if actorEntry.maxInstances is not None and targetNum > actorEntry.maxInstances:
-                    targetNum =  actor.maxInstances
-                if preScaleTarget is not None and targetNum < preScaleTarget:
-                    targetNum = preScaleTarget
-                self._log( 'actor %s scale %s / factor %s: %d' % ( actorName,
-                                                                   currentScale, 
-                                                                   actorEntry.scalingFactor,
-                                                                   targetNum ) )
-                # If we're only spawning a single actor, it must not be drained
-                # so that availability is maintained.
-                if 1 == targetNum and actorEntry.actorArgs[ 1 ].get( 'is_drainable', False ):
-                    actorEntry.actorArgs[ 1 ][ 'is_drainable' ] = False
-                    self._log( 'actor %s was set to drainable but only starting once instance to turning it off' % ( actorName, ) )
+            targetNum = self._getTargetActorNum( actorEntry, currentScale )
+
             if current < targetNum:
                 newOwner = '%s/%s' % ( self._owner, actorName )
                 self._log( 'actor %s has %d instances but requires %d, spawning' % ( actorName,
                                                                                      current,
                                                                                      targetNum ) )
                 for _ in range( targetNum - current ):
-                    status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]),
-                                                   **(actorEntry.actorArgs[ 1 ]) )
-                    self._log( 'actor launched: %s' % status )
-                    if type( status ) is dict and status.get( 'status', {} ).get( 'success', False ):
-                        self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
+                    self._spawnNewActor( actorEntry )
             else:
                 self._log( 'actor %s is satisfied' % actorName )
 
@@ -160,7 +178,7 @@ class Patrol ( object ):
         if self._stopEvent.wait( 0 ): return
         self._log( 'starting patrol' )
         gevent.sleep(10)
-        self._threads.add( gevent.spawn( self._sync ) )
+        self._threads.add( gevent.spawn( withLogException( self._sync, patrol = self ) ) )
 
     def stop( self ):
         self._log( 'stopping patrol' )
@@ -174,7 +192,6 @@ class Patrol ( object ):
                  initialInstances,
                  maxInstances = None,
                  scalingFactor = None,
-                 relaunchOnFailure = True,
                  onFailureCall = None,
                  actorArgs = [], actorKwArgs = {} ):
         actorArgs = list( actorArgs )
@@ -185,44 +202,55 @@ class Patrol ( object ):
         record.initialInstances = initialInstances
         record.maxInstances = maxInstances
         record.scalingFactor = scalingFactor
-        record.relaunchOnFailure = relaunchOnFailure
         record.onFailureCall = onFailureCall
         actorKwArgs[ 'owner' ] = '%s/%s' % ( self._owner, name )
         record.actorArgs = ( actorArgs, actorKwArgs )
 
         self._entries[ '%s/%s' % ( self._owner, name ) ] = record
 
-    def _processFallenActor( self, actorEntry ):
-        isRelaunch = False
-        if actorEntry.relaunchOnFailure:
-            self._log( 'actor is set to relaunch on failure' )
-            status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
-            if status is not False and status is not None and 'data' in status and 'uid' in status[ 'data' ]:
-                self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
-                self._log( 'actor relaunched: %s' % status )
-                isRelaunch = True
-            else:
-                self._log( 'failed to launch actor: %s' % status )
+    def _spawnNewActor( self, actorEntry ):
+        status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
+        if status is not False and status is not None and 'data' in status and 'uid' in status[ 'data' ]:
+            self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
+            self._log( 'actor launched: %s' % status )
+            return True
+        elif status is False:
+            self._log( 'timeout waiting for actor to launch: will wait until next sync if it came online' )
         else:
-            self._log( 'actor is not set to relaunch on failure' )
-        return isRelaunch
+            self._log( 'failed to launch actor: %s' % status )
+            return False
 
     def _sync( self ):
         while not self._stopEvent.wait( self._freq ):
             self._mutex.acquire( blocking = True )
             self._log( 'running sync' )
-            directory = self._beach.getDirectory( timeout = 120 )
+            directory = self._beach.getDirectory( timeout = 15 )
             if type( directory ) is not dict:
                 self._logCritical( 'error getting directory' )
                 self._mutex.release()
                 continue
+            if directory[ 'is_inited' ] is False:
+                self._mutex.release()
+                continue
             self._log( 'found %d actors, testing for %d' % ( len( directory[ 'reverse' ] ), len( self._watch ) ) )
+            existing = self._scanForExistingActors()
+            toRemove = []
             for actorId in self._watch.keys():
                 if self._stopEvent.wait( 0 ): break
+                actorEntry = self._watch[ actorId ]
+                targetNum = self._getTargetActorNum( actorEntry, self._getEffectiveScale() )
+                current = existing.get( actorEntry.name, 0 )
+                
                 if actorId not in directory.get( 'reverse', {} ):
-                    self._log( 'actor %s has fallen' % actorId )
-                    if self._processFallenActor( self._watch[ actorId ] ):
-                        del( self._watch[ actorId ] )
+                    toRemove.append( actorId )
+                if targetNum > current:
+                    self._spawnNewActor( actorEntry )
+                    existing.setdefault( actorEntry.name, 0 )
+                    existing[ actorEntry.name ] += 1
+
+            for actorId in toRemove:
+                del( self._watch[ actorId ] )
+
             self._mutex.release()
 
     def remove( self, name = None, isStopToo = True ):
@@ -268,7 +296,7 @@ class Patrol ( object ):
                                'NUM_NODES' : self._beach.getNodeCount } )
         if isMonitorForUpdates and not self._isMonitored:
             self._isMonitored = True
-            self._threads.add( gevent.spawn( self._updatePatrol ) )
+            self._threads.add( gevent.spawn( withLogException( self._updatePatrol, patrol = self ) ) )
 
     def _updatePatrol( self ):
         while not self._stopEvent.wait( self._updateFreq ):
@@ -295,7 +323,6 @@ class _PatrolEntry ( object ):
         self.initialInstances = 1
         self.maxInstances = None
         self.scalingFactor = None
-        self.relaunchOnFailure = True
         self.onFailureCall = None
         self.actorArgs = None
 

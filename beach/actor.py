@@ -955,7 +955,7 @@ class ActorHandle ( object ):
                                     z_ident = None
                             elif 'local' == self._mode:
                                 try:
-                                    z_ident = random.choice( self._localSockets )
+                                    z_ident = random.choice( list( self._localSockets ) )
                                     z = self._peerSockets[ z_ident ]
                                 except:
                                     z_ident = None
