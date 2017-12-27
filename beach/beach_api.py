@@ -276,8 +276,6 @@ class Beach ( object ):
             node = self._nodes.get( strategy_hint, None )
             if node is not None and node[ 'offline' ] is False:
                 node = node[ 'socket' ]
-            else:
-                node = self._getRandomActiveNode()[ 'socket' ]
         elif 'repulsion' == strategy:
             counts = {}
             possibleNodes = [ k for k, v in self._nodes.iteritems() if v[ 'offline' ] is False ]
