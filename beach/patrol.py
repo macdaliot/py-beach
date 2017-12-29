@@ -64,7 +64,6 @@ class Patrol ( object ):
         self._owner = 'beach.patrol/%s' % ( identifier, )
         self._mutex = BoundedSemaphore( value = 1 )
         self._entries = OrderedDict()
-        self._watch = {}
         self._freq = sync_frequency
         self._updateFreq = 60 * 60
 
@@ -103,9 +102,6 @@ class Patrol ( object ):
                 if self._stopEvent.wait( 0 ): break
                 owner = actor_mtd.get( 'owner', None )
                 if owner in self._entries:
-                    if aid not in self._watch:
-                        self._watch[ aid ] = self._entries[ owner ]
-                        self._log( 'adding pre-existing actor %s to patrol' % aid )
                     tally.setdefault( self._entries[ owner ].name, 0 )
                     tally[ self._entries[ owner ].name ] += 1
         return tally
@@ -165,7 +161,8 @@ class Patrol ( object ):
                 for _ in range( targetNum - current ):
                     self._spawnNewActor( actorEntry )
             else:
-                self._log( 'actor %s is satisfied' % actorName )
+                #self._log( 'actor %s is satisfied (%d)' % ( actorName, targetNum ) )
+                pass
 
     def start( self ):
         self._stopEvent.clear()
@@ -211,7 +208,6 @@ class Patrol ( object ):
     def _spawnNewActor( self, actorEntry ):
         status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
         if status is not False and status is not None and 'data' in status and 'uid' in status[ 'data' ]:
-            self._watch[ status[ 'data' ][ 'uid' ] ] = actorEntry
             self._log( 'actor launched: %s' % status )
             return True
         elif status is False:
@@ -222,58 +218,24 @@ class Patrol ( object ):
 
     def _sync( self ):
         while not self._stopEvent.wait( self._freq ):
-            self._mutex.acquire( blocking = True )
-            self._log( 'running sync' )
-            directory = self._beach.getDirectory( timeout = 15 )
-            if type( directory ) is not dict:
-                self._logCritical( 'error getting directory' )
-                self._mutex.release()
-                continue
-            if directory[ 'is_inited' ] is False:
-                self._mutex.release()
-                continue
-            self._log( 'found %d actors, testing for %d' % ( len( directory[ 'reverse' ] ), len( self._watch ) ) )
-            existing = self._scanForExistingActors()
-            toRemove = []
-            for actorId in self._watch.keys():
-                if self._stopEvent.wait( 0 ): break
-                actorEntry = self._watch[ actorId ]
-                targetNum = self._getTargetActorNum( actorEntry, self._getEffectiveScale() )
-                current = existing.get( actorEntry.name, 0 )
-                
-                if actorId not in directory.get( 'reverse', {} ):
-                    toRemove.append( actorId )
-                if targetNum > current:
-                    self._spawnNewActor( actorEntry )
-                    existing.setdefault( actorEntry.name, 0 )
-                    existing[ actorEntry.name ] += 1
+            with self._mutex:
+                self._log( 'running sync' )
 
-            for actorId in toRemove:
-                del( self._watch[ actorId ] )
+                existing = self._scanForExistingActors()
+                self._initializeMissingActors( existing )
 
-            self._mutex.release()
+    def remove( self, name = None ):
+        with self._mutex:
+            if name is not None:
+                k ='%s/%s' % ( self._owner, name )
+                if k not in self._entries:
+                    return False
 
-    def remove( self, name = None, isStopToo = True ):
-        removed = []
-        if name is not None:
-            k ='%s/%s' % ( self._owner, name )
-            if k not in self._entries: return False
+                del( self._entries[ k ] )
+            else:
+                self._entries = OrderedDict()
 
-            record = self._entries[ k ]
-
-            for uid, entry in self._watch.items():
-                if entry == record:
-                    del( self._watch[ uid ] )
-                    removed.append( uid )
-
-            if isStopToo:
-                self._beach.stopActors( withId = removed )
-        else:
-            if self._beach.stopActors( withId = self._watch.keys() ):
-                removed = self._watch.keys()
-                self._watch = {}
-
-        return removed
+        return True
 
     def _getPatrolFromUrl( self, url ):
         if '://' in url:
@@ -306,14 +268,12 @@ class Patrol ( object ):
                 return
             if self._patrolHash == hashlib.sha256( patrolContent ).hexdigest():
                 return
-            self._mutex.acquire( blocking = True )
-            self._entries = OrderedDict()
-            self._watch = {}
-            self._patrolUrl = url
-            self._patrolHash = hashlib.sha256( patrolContent ).hexdigest()
-            exec( patrolContent, { 'Patrol' : self.monitor,
-                                   '__file__' : patrolFilePath } )
-            self._mutex.release()
+            with self._mutex:
+                self._entries = OrderedDict()
+                self._patrolUrl = url
+                self._patrolHash = hashlib.sha256( patrolContent ).hexdigest()
+                exec( patrolContent, { 'Patrol' : self.monitor,
+                                       '__file__' : patrolFilePath } )
             
 
 
