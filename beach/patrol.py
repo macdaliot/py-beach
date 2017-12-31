@@ -123,10 +123,10 @@ class Patrol ( object ):
                 targetNum =  actor.maxInstances
             if preScaleTarget is not None and targetNum < preScaleTarget:
                 targetNum = preScaleTarget
-            self._log( 'actor %s scale %s / factor %s: %d' % ( actorEntry.name,
-                                                               currentScale, 
-                                                               actorEntry.scalingFactor,
-                                                               targetNum ) )
+            #self._log( 'actor %s scale %s / factor %s: %d' % ( actorEntry.name,
+            #                                                   currentScale, 
+            #                                                   actorEntry.scalingFactor,
+            #                                                   targetNum ) )
             # If we're only spawning a single actor, it must not be drained
             # so that availability is maintained.
             if 1 == targetNum and actorEntry.actorArgs[ 1 ].get( 'is_drainable', False ):
