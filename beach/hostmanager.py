@@ -126,7 +126,7 @@ class HostManager ( object ):
         self.lastHostInfoCheck = 0
 
         # Cleanup potentially old sockets
-        os.system( 'rm /tmp/py_beach*' )
+        os.system( 'rm -f /tmp/py_beach*' )
 
         # Load default configs
         with open( self.configFilePath, 'r' ) as f:
