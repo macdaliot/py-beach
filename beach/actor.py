@@ -813,6 +813,7 @@ class ActorHandle ( object ):
         newDir = self._getDirectory( self._realm, self._cat )
         if newDir is not False:
             self._endpoints = newDir
+            # Add new endpoints if they are not there yet.
             if 'affinity' != self._mode:
                 for z_ident, z_url in self._endpoints.items():
                     if z_ident not in self._peerSockets:
@@ -829,6 +830,12 @@ class ActorHandle ( object ):
                             self._peerSockets[ z_ident ] = newSocket
                         else:
                             newSocket.close()
+            # Remove endpoints that are not in the dir anymore.
+            for z_ident in self._peerSockets.keys():
+                if z_ident not in self._endpoints:
+                    oldSocket = self._peerSockets.get( z_ident, None )
+                    if oldSocket is not None:
+                        oldSocket.close()
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -1054,11 +1061,12 @@ class ActorHandle ( object ):
 
         return ret
 
-    def requestFromAll( self, requestType, data = {} ):
+    def requestFromAll( self, requestType, data = {}, timeout = None ):
         '''Issue a request to all actors in the category of this handle and get responses in a FutureResults.
 
         :param requestType: the type of request to issue
         :param data: a dict of the data associated with the request
+        :param timeout: the number of seconds to wait for a response
         :returns: True since no validation on the reception or reply from any
             specific endpoint is made
         '''
@@ -1067,7 +1075,10 @@ class ActorHandle ( object ):
                                'req' : requestType,
                                'id' : str( uuid.uuid4() ) } }
 
-        self._initialRefreshDone.wait( timeout = self._timeout )
+        if timeout is None:
+            timeout = self._timeout
+
+        self._initialRefreshDone.wait( timeout = timeout )
 
         toSockets = self._peerSockets.items()
         futureResults = FutureResults( len( toSockets ) )
@@ -1075,7 +1086,7 @@ class ActorHandle ( object ):
         for z_ident, z in toSockets:
             envelope = copy.deepcopy( envelope )
             envelope[ 'mtd' ][ 'dst' ] = z_ident
-            self._threads.add( gevent.spawn( withLogException( self._directToFuture, actor = self._fromActor ), futureResults, z, z_ident, envelope, self._timeout ) )
+            self._threads.add( gevent.spawn( withLogException( self._directToFuture, actor = self._fromActor ), futureResults, z, z_ident, envelope, timeout ) )
 
         gevent.sleep( 0 )
 
