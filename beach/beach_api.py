@@ -352,16 +352,22 @@ class Beach ( object ):
         if isForce or ( self._lastCacheUpdate < ( time.time() - self._dirCacheTtl ) ):
             curRetry = 0
             while curRetry < nRetries:
-                node = random.choice( [ x for x in self._nodes.itervalues() if x[ 'offline' ] is False ] )[ 'socket' ]
-                resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
-                if isMessageSuccess( resp ):
-                    resp = resp[ 'data' ]
-                    if 'realms' in resp:
-                        self._dirCache = resp
-                        self._lastCacheUpdate = time.time()
-                        break
+                try:
+                    node = random.choice( [ x for x in self._nodes.itervalues() if x[ 'offline' ] is False ] )[ 'socket' ]
+                except:
+                    node = None
+                if node is not None:
+                    resp = node.request( { 'req' : 'get_full_dir' }, timeout = timeout )
+                    if isMessageSuccess( resp ):
+                        resp = resp[ 'data' ]
+                        if 'realms' in resp:
+                            self._dirCache = resp
+                            self._lastCacheUpdate = time.time()
+                            break
+                    else:
+                        resp = False
                 else:
-                    resp = False
+                    gevent.sleep( timeout )
                 curRetry += 1
         else:
             return self._dirCache
