@@ -110,13 +110,21 @@ class Bridge:
     def action( self, category ):
         data = {}
 
-        params = web.input( _timeout = None, _ident = None, _key = None, _action = None, _secret = None, _format = 'json', _json_data = None )
+        params = web.input( _timeout = None, 
+                            _ident = None, 
+                            _key = None, 
+                            _action = None, 
+                            _secret = None, 
+                            _format = 'json', 
+                            _json_data = None,
+                            _from_all = None )
 
         ident = params._ident
         timeout = params._timeout
         key = params._key
         action = params._action
         secret = params._secret
+        fromAll = params._from_all
 
         if action is None:
             action = web.ctx.env.get( 'HTTP_BEACH_ACTION', None )
@@ -124,9 +132,13 @@ class Bridge:
             timeout = web.ctx.env.get( 'HTTP_BEACH_TIMEOUT', None )
             key = web.ctx.env.get( 'HTTP_BEACH_KEY', None )
             secret = web.ctx.env.get( 'HTTP_BEACH_SECRET', None )
+            fromAll = web.ctx.env.get( 'HTTP_BEACH_FROM_ALL', None )
 
         if SECRET_TOKEN is not None and secret != SECRET_TOKEN:
             raise web.HTTPError( '401 Unauthorized' )
+
+        if fromAll is not None:
+            fromAll = ( fromAll == 'true' )
 
         if action is None:
             # We support api.ai
@@ -158,21 +170,30 @@ class Bridge:
         if cacheKey in handle_cache:
             handle = handle_cache[ cacheKey ]
         else:
-            print( "New handle: %s / %s / %s" % ( category, timeout, ident ) )
+            print( "New handle: %s / %s / %s / %s" % ( category, timeout, ident, fromAll ) )
             handle_cache[ cacheKey ] = beach.getActorHandle( category, ident = ident )
             handle = handle_cache[ cacheKey ]
 
         #print( "Requesting: %s - %s" % ( action, req ) )
         
-        resp = handle.request( action, data = req, timeout = timeout, key = key )
+        if fromAll:
+            respFuture = handle.requestFromAll( action, data = req, timeout = timeout )
 
-        if resp.isTimedOut:
-            raise web.HTTPError( '500 Internal Server Error: Request timed out' )
+            data = []
+            while respFuture.waitForResults( timeout = timeout ):
+                data += [ x.data for x in respFuture.getNewResults() if x.isSuccess ]
+                if respFuture.isFinished():
+                    break
+        else:
+            resp = handle.request( action, data = req, timeout = timeout, key = key )
 
-        if not resp.isSuccess:
-            raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp )
+            if resp.isTimedOut:
+                raise web.HTTPError( '500 Internal Server Error: Request timed out' )
 
-        data = resp.data
+            if not resp.isSuccess:
+                raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp )
+
+            data = resp.data
 
         #print( "Response: %s" % ( json.dumps( data, indent = 2 ), ) )
 
