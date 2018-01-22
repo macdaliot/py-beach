@@ -1009,7 +1009,7 @@ class ActorHandle ( object ):
                         z.close()
                     z = None
                     curRetry += 1
-                    if ret.error == 'wrong dest':
+                    if ret.isTimedOut or ret.error == 'wrong dest':
                         self._updateDirectory()
 
         if ret is None or ret is False:
