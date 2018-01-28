@@ -130,7 +130,8 @@ class ActorHost ( object ):
                                                           'ipc:///tmp/py_beach_directory_port' ),
                                      self.private_key )
 
-        ActorHandleGroup._setHostDirInfo( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ),
+        ActorHandleGroup._setHostDirInfo( self.configFile.get( 'directory_port',
+                                                               'ipc:///tmp/py_beach_directory_port' ),
                                           self.private_key )
         
         for _ in range( 20 ):

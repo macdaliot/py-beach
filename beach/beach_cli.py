@@ -29,6 +29,7 @@ import yaml
 import json
 import base64
 import traceback
+import getpass
 from beach.beach_api import Beach
 
 def eprint( msg ):
@@ -452,7 +453,7 @@ if __name__ == '__main__':
     parser.add_argument( '-rt', '--req-timeout',
                          type = int,
                          required = False,
-                         default = 30,
+                         default = None,
                          dest = 'req_timeout',
                          help = 'timeout for the request' )
 
