@@ -41,6 +41,7 @@ import logging
 import logging.handlers
 from functools import wraps
 import traceback
+import psutil
 
 timeToStopEvent = gevent.event.Event()
 
@@ -130,13 +131,13 @@ class ActorHost ( object ):
                                                           'ipc:///tmp/py_beach_directory_port' ),
                                      self.private_key )
 
-        ActorHandleGroup._setHostDirInfo( self.configFile.get( 'directory_port',
-                                                               'ipc:///tmp/py_beach_directory_port' ),
+        ActorHandleGroup._setHostDirInfo( 'tcp://%s:%d' % ( self.ifaceIp4, self.hostOpsPort ),
                                           self.private_key )
         
         for _ in range( 20 ):
             gevent.spawn( self.svc_receiveTasks )
         gevent.spawn( self.svc_monitorActors )
+        gevent.spawn( self.svc_reportUsage )
 
         #self.log( "Now open to actors" )
 
@@ -282,6 +283,11 @@ class ActorHost ( object ):
                     del( self.actors[ uid ] )
                     z.send( { 'req' : 'remove_actor', 'uid' : uid }, timeout = 5 )
             gevent.sleep( 30 )
+
+    @handleExceptions
+    def svc_reportUsage( self ):
+        while not self.stopEvent.wait( 60 * 60 ):
+            self.log( psutil.Process( os.getpid() ).memory_info() )
 
     @handleExceptions
     def isDrainable( self ):
