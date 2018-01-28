@@ -122,6 +122,7 @@ class Bridge:
 
         ident = params._ident
         timeout = params._timeout
+        nRetries = params._n_retries
         key = params._key
         action = params._action
         secret = params._secret
