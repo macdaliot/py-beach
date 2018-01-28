@@ -111,6 +111,7 @@ class Bridge:
         data = {}
 
         params = web.input( _timeout = None, 
+                            _n_retries = None,
                             _ident = None, 
                             _key = None, 
                             _action = None, 
@@ -130,6 +131,7 @@ class Bridge:
             action = web.ctx.env.get( 'HTTP_BEACH_ACTION', None )
             ident = web.ctx.env.get( 'HTTP_BEACH_IDENT', None )
             timeout = web.ctx.env.get( 'HTTP_BEACH_TIMEOUT', None )
+            nRetries = web.ctx.env.get( 'HTTP_BEACH_N_RETRIES', None )
             key = web.ctx.env.get( 'HTTP_BEACH_KEY', None )
             secret = web.ctx.env.get( 'HTTP_BEACH_SECRET', None )
             fromAll = web.ctx.env.get( 'HTTP_BEACH_FROM_ALL', None )
@@ -157,6 +159,9 @@ class Bridge:
         if timeout is not None:
             timeout = float( timeout )
 
+        if nRetries is not None:
+            nRetries = int( nRetries )
+
         req = {}
         for k, v in params.iteritems():
             if not k.startswith( '_' ):
@@ -170,22 +175,22 @@ class Bridge:
         if cacheKey in handle_cache:
             handle = handle_cache[ cacheKey ]
         else:
-            print( "New handle: %s / %s / %s / %s" % ( category, timeout, ident, fromAll ) )
+            print( "New handle: %s / %s / %s / %s / %s" % ( category, timeout, ident, fromAll, nRetries ) )
             handle_cache[ cacheKey ] = beach.getActorHandle( category, ident = ident )
             handle = handle_cache[ cacheKey ]
 
         #print( "Requesting: %s - %s" % ( action, req ) )
         
         if fromAll:
-            respFuture = handle.requestFromAll( action, data = req, timeout = timeout )
+            respFuture = handle.requestFromAll( action, data = req, timeout = timeout, nRetries = nRetries )
 
             data = []
-            while respFuture.waitForResults( timeout = timeout ):
+            while respFuture.waitForResults( timeout = timeout, nRetries = nRetries ):
                 data += [ x.data for x in respFuture.getNewResults() if x.isSuccess ]
                 if respFuture.isFinished():
                     break
         else:
-            resp = handle.request( action, data = req, timeout = timeout, key = key )
+            resp = handle.request( action, data = req, timeout = timeout, nRetries = nRetries, key = key )
 
             if resp.isTimedOut:
                 raise web.HTTPError( '500 Internal Server Error: Request timed out' )

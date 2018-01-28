@@ -656,3 +656,14 @@ class Counter( object ):
         ( frame, filename, line_number, function_name, lines, index ) = inspect.getouterframes( inspect.currentframe() )[ 1 ]
         self.counters.setdefault( line_number, 0 )
         self.counters[ line_number ] += 1
+
+class CreateOnAccess( object ):
+    def __init__( self, toCall, *args, **kwargs ):
+        self._toCall = toCall
+        self._args = args
+        self._kwargs = kwargs
+        self._instance = None
+    def __getattr__( self, item ):
+        if self._instance is None:
+            self._instance = self._toCall( *self._args, **self._kwargs )
+        return getattr( self._instance, item )

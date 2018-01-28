@@ -30,6 +30,7 @@ from beach.utils import loadModuleFrom
 from beach.utils import isMessageSuccess
 from beach.utils import errorMessage
 from beach.utils import successMessage
+from beach.utils import CreateOnAccess
 import random
 import logging
 import logging.handlers
@@ -821,11 +822,11 @@ class ActorHandle ( object ):
                             # This is on the current box, we can use the IPC optimization.
                             #port = int( z_url.split( ':' )[ -1 ] )
                             #newSocket = _ZMREQ( 'ipc:///tmp/tmp_lc_actor_sock_%d' % ( port, ), isBind = False, congestionCB = self._reportCongestion )
-                            newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                            newSocket = CreateOnAccess( _ZMREQ, z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
                             self._localSockets.add( z_ident )
                         else:
                             # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
-                            newSocket = _ZMREQ( z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                            newSocket = CreateOnAccess( _ZMREQ, z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
                         if z_ident not in self._peerSockets:
                             self._peerSockets[ z_ident ] = newSocket
                         else:
@@ -948,7 +949,7 @@ class ActorHandle ( object ):
                                     z, z_ident = self._affinityCache[ affinityKey ]
                                 else:
                                     z_ident, z = orderedEndpoints[ affinityKey ]
-                                    z = _ZMREQ( z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
+                                    z = CreateOnAccess( _ZMREQ, z, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
                                     self._affinityCache[ affinityKey ] = z, z_ident
                         else:
                             # If we're in a retry, the strategy goes out the window and we just
