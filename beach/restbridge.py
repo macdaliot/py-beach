@@ -32,7 +32,16 @@ from functools import wraps
 ###############################################################################
 # CUSTOM EXCEPTIONS
 ###############################################################################
-
+class RestError( web.HTTPError ):
+    def __init__( self, data, dataFormat ):
+        status = '400 Bad Request'
+        if 'json' == dataFormat:
+            data = json.dumps( data, indent = 4 )
+            headers = { 'Content-Type': 'application/json' }
+        elif 'msgpack' == dataFormat:
+            data = msgpack.packb( data )
+            headers = { 'Content-Type': 'application/msgpack' }
+        web.HTTPError.__init__( self, status, headers, data )
 
 ###############################################################################
 # REFERENCE ELEMENTS
@@ -194,10 +203,10 @@ class Bridge:
             resp = handle.request( action, data = req, timeout = timeout, nRetries = nRetries, key = key )
 
             if resp.isTimedOut:
-                raise web.HTTPError( '500 Internal Server Error: Request timed out' )
+                raise web.HTTPError( '408 Request Timeout' )
 
             if not resp.isSuccess:
-                raise web.HTTPError( '500 Internal Server Error: Failed - %s' % resp )
+                raise RestError( { 'error' : resp.error, 'data' : resp.data }, params._format )
 
             data = resp.data
 
