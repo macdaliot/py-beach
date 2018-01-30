@@ -368,7 +368,7 @@ class HostManager ( object ):
         
         return instance
 
-    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources ):
+    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain ):
         info = self.actorInfo.setdefault( uid, {} )
         info[ 'instance' ] = instance
         info[ 'instance_id' ] = instance[ 'id' ]
@@ -377,6 +377,8 @@ class HostManager ( object ):
         info[ 'isolated' ] = isIsolated
         info[ 'owner' ] = owner
         info[ 'resources' ] = resources
+        info[ 'time_to_drain' ] = time_to_drain
+        info[ 'start' ] = int( time.time() )
         info[ 'params' ] = {}
         for k in parameters.keys():
             if k.startswith( '_' ):
@@ -481,6 +483,7 @@ class HostManager ( object ):
                         trusted = data.get( 'trusted', [] )
                         n_concurrent = data.get( 'n_concurrent', 1 )
                         is_drainable = data.get( 'is_drainable', False )
+                        time_to_drain = data.get( 'time_to_drain', None )
                         owner = data.get( 'owner', None )
                         isIsolated = data.get( 'isolated', False )
                         log_level = data.get( 'loglevel', None )
@@ -489,7 +492,7 @@ class HostManager ( object ):
                         port = self._getAvailablePortForUid( uid )
                         instance = self._getInstanceForActor( isIsolated )
                         if instance is not None:
-                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters, resources )
+                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain )
                             newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
                                                                      'actor_name' : actorName,
                                                                      'realm' : realm,
@@ -736,9 +739,42 @@ class HostManager ( object ):
                 return p
         return None
 
+    def _doDrainInstance( self, p ):
+        self._removeInstanceActorsFromDirectory( p )
+        resp = p[ 'socket' ].request( { 'req' : 'drain' }, timeout = 600 )
+        if isMessageSuccess( resp ):
+            if resp[ 'data' ][ 'is_drained' ]:
+                self._log( 'Drained successfully.' )
+                return True
+            else:
+                self._log( 'Failed to drain: %s.' % str( resp ) )
+        else:
+            self._log( 'Error asking instance to drain: %s.' % str( resp ) )
+        # Either way we set now as current start so that if we failed we go to the next.
+        p[ 'start' ] = time.time()
+        return False
+
     @handleExceptions
     def _svc_instance_draining( self ):
         while not self.stopEvent.wait( 60 * 1 ):
+            now = int( time.time() )
+
+            # First we evaluate actors with a time_to_drain.
+            for uid, info in self.actorInfo.items():
+                if info[ 'time_to_drain' ] is None:
+                    continue
+
+                # This makes the assumption that the actor is running isolated, and if not the
+                # entire actor host instance will be dained anyway.
+                if now > info[ 'start' ] + info[ 'time_to_drain' ]:
+                    if self._isDrainable( info[ 'instance' ] ):
+                        self._log( 'Actor %s has reached time_to_drain, draining.' % info[ 'name' ] )
+                        self._doDrainInstance( info[ 'instance' ] )
+                        self.isInstanceChanged.set()
+                    else:
+                        self._log( 'Actor %s has reached time_to_drain, but instance marked undrainable.' % info[ 'name' ] )
+
+            # Then we look at the general draining case.
             currentMemory = psutil.virtual_memory()
             # We start looking at draining if we hit more than 80% usage globally.
             if currentMemory.percent < self.highMemWatermark:
@@ -760,17 +796,7 @@ class HostManager ( object ):
             if oldest is not None:
                 self._log( 'Trying to drain %s' % oldest[ 'id' ] )
                 # Remove all actors in that instance from the directory before draining.
-                self._removeInstanceActorsFromDirectory( oldest )
-                resp = oldest[ 'socket' ].request( { 'req' : 'drain' }, timeout = 600 )
-                if isMessageSuccess( resp ):
-                    if resp[ 'data' ][ 'is_drained' ]:
-                        self._log( 'Drained successfully.' )
-                    else:
-                        self._log( 'Failed to drain: %s.' % str( resp ) )
-                else:
-                    self._log( 'Error asking instance to drain: %s.' % str( resp ) )
-                # Either way we set now as current start so that if we failed we go to the next.
-                oldest[ 'start' ] = time.time()
+                self._doDrainInstance( oldest )
                 self.isInstanceChanged.set()
 
     @handleExceptions

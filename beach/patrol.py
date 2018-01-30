@@ -200,13 +200,21 @@ class Patrol ( object ):
         record.maxInstances = maxInstances
         record.scalingFactor = scalingFactor
         record.onFailureCall = onFailureCall
+        # If the time to drain is dynamic we keep a copy of the function.
+        ttd = actorKwArgs.get( 'time_to_drain', None )
+        if callable( ttd ):
+            record.timeToDrainFunc = ttd
         actorKwArgs[ 'owner' ] = '%s/%s' % ( self._owner, name )
         record.actorArgs = ( actorArgs, actorKwArgs )
 
         self._entries[ '%s/%s' % ( self._owner, name ) ] = record
 
     def _spawnNewActor( self, actorEntry ):
-        status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(actorEntry.actorArgs[ 1 ]) )
+        kwArgs = actorEntry.actorArgs[ 1 ]
+        if actorEntry.timeToDrainFunc is not None:
+            kwArgs = kwArgs.copy()
+            kwArgs[ 'time_to_drain' ] = actorEntry.timeToDrainFunc()
+        status = self._beach.addActor( *(actorEntry.actorArgs[ 0 ]), **(kwArgs) )
         if status is not False and status is not None and 'data' in status and 'uid' in status[ 'data' ]:
             self._log( 'actor launched: %s' % status )
             return True
@@ -285,6 +293,7 @@ class _PatrolEntry ( object ):
         self.scalingFactor = None
         self.onFailureCall = None
         self.actorArgs = None
+        self.timeToDrainFunc = None
 
 if __name__ == '__main__':
     import argparse
