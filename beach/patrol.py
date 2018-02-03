@@ -168,11 +168,21 @@ class Patrol ( object ):
         self._stopEvent.clear()
         self._log( 'starting, patrolling %d actors' % len( self._entries ) )
         self._log( 'discovering pre-existing actors' )
+
+        # For the first sync we may be adding a lot of actors. To remove
+        # the directory jitter we will suspend directory refresh temporarily.
+        originalTtl = self._beach._dirCacheTtl
+        self._beach._dirCacheTtl = 60 * 5
+
         existing = self._scanForExistingActors()
         if self._stopEvent.wait( 0 ): return
         self._log( '%d pre-existing actors' % len( existing ) )
         self._initializeMissingActors( existing )
         if self._stopEvent.wait( 0 ): return
+
+        # Restore the original ttl.
+        self._beach._dirCacheTtl = originalTtl
+
         self._log( 'starting patrol' )
         gevent.sleep(10)
         self._threads.add( gevent.spawn( withLogException( self._sync, patrol = self ) ) )

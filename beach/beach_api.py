@@ -89,7 +89,7 @@ class Beach ( object ):
                     interface = defaultInterfaces.pop()
                     mainIfaceIp = _getIpv4ForIface( interface )
             if mainIfaceIp is None:
-                self._log( "Failed to use interface %s." % self.interface )
+                eprint( "Failed to use interface %s." % self.interface )
             self._seedNodes.append( mainIfaceIp )
 
         for s in self._seedNodes:
@@ -118,8 +118,6 @@ class Beach ( object ):
         resp = zSock.request( { 'req' : 'host_info' }, timeout = 10 )
         if isMessageSuccess( resp ):
             info = resp[ 'data' ][ 'info' ]
-        else:
-            eprint( "HOSTINFO: %s" % resp )
         return info
 
     def _updateNodes( self ):
@@ -289,7 +287,8 @@ class Beach ( object ):
 
             for n in self._dirCache[ 'realms' ].get( self._realm, {} ).get( strategy_hint, {} ).values():
                 name = n.split( ':' )[ 1 ][ 2 : ]
-                counts[ name ] += 1
+                if name in counts:
+                    counts[ name ] += 1
 
             # Pick the node with the least number of actors.
             orderedNodes = sorted( counts.items(), key = operator.itemgetter( 1 ) )
@@ -303,7 +302,7 @@ class Beach ( object ):
 
             # We create a temporary entry to allow us to do multiple Add in a row
             for cat in category:
-                self._dirCache[ 'realms' ].get( self._realm, {} ).setdefault( cat, {} )[ str( uuid.uuid4() ) ] = 'tcp://%s:XXXX' % affinityNode
+                self._dirCache[ 'realms' ].setdefault( self._realm, {} ).setdefault( cat, {} )[ str( uuid.uuid4() ) ] = 'tcp://%s:XXXX' % affinityNode
         elif 'roundrobin' == strategy:
             if 0 != len( self._nodes ):
                 while True:
