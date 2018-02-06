@@ -325,10 +325,12 @@ class ActorHost ( object ):
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.instanceId )
+        self._logger.handlers = []
         self._logger.setLevel( level )
         handler = logging.handlers.SysLogHandler( address = dest )
         handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
         self._logger.addHandler( handler )
+        self._logger.propagate = False
 
     def log( self, msg ):
         self._logger.info( '%s-%s : %s', self.__class__.__name__, self.instanceId, msg )

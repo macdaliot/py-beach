@@ -80,11 +80,13 @@ class Patrol ( object ):
 
 
     def _initLogging( self, level, dest ):
-        self._logger = logging.getLogger()
+        self._logger = logging.getLogger( 'beach.patrol' )
+        self._logger.handlers = []
         self._logger.setLevel( level )
         handler = logging.handlers.SysLogHandler( address = dest )
         handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
         self._logger.addHandler( handler )
+        self._logger.propagate = False
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
@@ -167,21 +169,6 @@ class Patrol ( object ):
     def start( self ):
         self._stopEvent.clear()
         self._log( 'starting, patrolling %d actors' % len( self._entries ) )
-        self._log( 'discovering pre-existing actors' )
-
-        # For the first sync we may be adding a lot of actors. To remove
-        # the directory jitter we will suspend directory refresh temporarily.
-        originalTtl = self._beach._dirCacheTtl
-        self._beach._dirCacheTtl = 60 * 5
-
-        existing = self._scanForExistingActors()
-        if self._stopEvent.wait( 0 ): return
-        self._log( '%d pre-existing actors' % len( existing ) )
-        self._initializeMissingActors( existing )
-        if self._stopEvent.wait( 0 ): return
-
-        # Restore the original ttl.
-        self._beach._dirCacheTtl = originalTtl
 
         self._log( 'starting patrol' )
         gevent.sleep(10)
@@ -239,8 +226,18 @@ class Patrol ( object ):
             with self._mutex:
                 self._log( 'running sync' )
 
-                existing = self._scanForExistingActors()
-                self._initializeMissingActors( existing )
+                # We do a single refresh of the directory.
+                # Don't force since it may have already gotten a recent snapshot.
+                self._beach.getDirectory()
+
+                # To remove the directory jitter we will suspend directory refresh temporarily.
+                originalTtl = self._beach._dirCacheTtl
+                self._beach._dirCacheTtl = 60 * 5
+
+                self._initializeMissingActors( self._scanForExistingActors() )
+
+                # Restore the original ttl.
+                self._beach._dirCacheTtl = originalTtl
 
     def remove( self, name = None ):
         with self._mutex:

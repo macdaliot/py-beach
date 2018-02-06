@@ -599,10 +599,12 @@ class Actor( gevent.Greenlet ):
 
     def _initLogging( self, level, dest ):
         self._logger = logging.getLogger( self.name )
+        self._logger.handlers = []
         self._logger.setLevel( level )
         handler = logging.handlers.SysLogHandler( address = dest )
         handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
         self._logger.addHandler( handler )
+        self._logger.propagate = False
 
     def sleep( self, seconds ):
         gevent.sleep( seconds )
