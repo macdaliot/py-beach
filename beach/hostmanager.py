@@ -933,11 +933,13 @@ class HostManager ( object ):
                                                 'reverse' : tmpReverse } )
 
     def _initLogging( self, level, dest ):
-        self._logger = logging.getLogger()
+        self._logger = logging.getLogger( 'beach.hostmanager' )
+        self._logger.handlers = []
         self._logger.setLevel( level )
         handler = logging.handlers.SysLogHandler( address = dest )
         handler.setFormatter( logging.Formatter( "%(asctime)-15s %(message)s" ) )
         self._logger.addHandler( handler )
+        self._logger.propagate = False
 
     def _log( self, msg ):
         self._logger.info( '%s : %s', self.__class__.__name__, msg )
