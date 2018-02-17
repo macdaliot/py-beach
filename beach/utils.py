@@ -458,12 +458,12 @@ class _ZMREP ( object ):
 
         def _buildSocket( self ):
             if self._z is not None:
-                self._z.close()
+                self._z.close( linger = 0 )
             self._z = self._z_func()
 
         def close( self ):
             if self._z is not None:
-                self._z.close()
+                self._z.close( linger = 0 )
                 self._z = None
 
         def send( self, data, timeout = None, isSkipSanitization = False ):
@@ -492,10 +492,8 @@ class _ZMREP ( object ):
                 else:
                     self._z.send( data )
             except _TimeoutException:
-                self._z.close( linger = 0 )
                 self._buildSocket()
             except zmq.ZMQError, e:
-                self._z.close( linger = 0 )
                 self._buildSocket()
             else:
                 isSuccess = True
@@ -506,14 +504,13 @@ class _ZMREP ( object ):
             data = False
             try:
                 if timeout is not None:
-                    with gevent.Timeout( timeout, _TimeoutException ):
+                    if 0 != self._z.poll( timeout = timeout * 1000 ):
                         data = self._z.recv()
+                    else:
+                        data = False
                 else:
                     data = self._z.recv()
-            except _TimeoutException:
-                data = False
             except zmq.ZMQError, e:
-                self._z.close( linger = 0 )
                 self._buildSocket()
 
             if data is not None and data is not False:
