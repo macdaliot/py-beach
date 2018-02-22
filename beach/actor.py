@@ -340,7 +340,12 @@ class Actor( gevent.Greenlet ):
                 v.close()
 
             if self._is_initted and hasattr( self, 'deinit' ):
-                self.deinit()
+                try:
+                    self.deinit()
+                except:
+                    exc = traceback.format_exc()
+                    self.logCritical( exc )
+                    self._exception = exc
 
     def _getZValues( self, msg ):
         return ( True, self._z )

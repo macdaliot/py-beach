@@ -145,11 +145,12 @@ class ActorHost ( object ):
         
         self.log( "Exiting, stopping all actors." )
         
-        for actor in self.actors.values():
-            actor.stop()
-        
+        parallelExec( lambda x: x.stop(), self.actors.values() )
+
         gevent.joinall( self.actors.values() )
-        self.log( "All Actors exiting, exiting." )
+        self.hostOpsSocket.close()
+        self.opsSocket.close()
+        self.log( "All Actors exited, exiting." )
     
     @handleExceptions
     def svc_receiveTasks( self ):
@@ -243,14 +244,10 @@ class ActorHost ( object ):
                         if uid in self.actors:
                             actor = self.actors[ uid ]
                             del( self.actors[ uid ] )
-                            actor.stop()
-                            actor.join( timeout = 60 )
-                            info = None
-                            if not actor.ready():
+                            isStopped = self._drainActor( actor )
+                            if not isStopped:
                                 actor.kill( timeout = 60 )
-                                info = { 'error' : 'timeout' }
-                                self.log( "Actor %s timedout while exiting" % uid )
-                            z.send( successMessage( data = info ) )
+                            z.send( successMessage( data = { 'is_stopped' : isStopped } ) )
                         else:
                             z.send( errorMessage( 'actor not found' ) )
                 elif 'get_load_info' == action:
@@ -277,7 +274,7 @@ class ActorHost ( object ):
                 if not actor.isRunning():
                     exc = actor.getLastError()
                     if exc is not None:
-                        self.logCritical("Actor %s exited with exception: %s" % ( uid, str( exc ) ) )
+                        self.logCritical( "Actor %s exited with exception: %s" % ( uid, str( exc ) ) )
                     else:
                         self.log( "Actor %s is no longer running" % uid )
                     del( self.actors[ uid ] )
@@ -287,7 +284,9 @@ class ActorHost ( object ):
     @handleExceptions
     def svc_reportUsage( self ):
         while not self.stopEvent.wait( 60 * 60 ):
-            self.log( psutil.Process( os.getpid() ).memory_info() )
+            p = psutil.Process( os.getpid() )
+            self.log( p.memory_info() )
+            self.log( 'FDs: %s' % ( p.num_fds(), ) )
 
     @handleExceptions
     def isDrainable( self ):
@@ -296,19 +295,25 @@ class ActorHost ( object ):
         return all( x._is_drainable for x in self.actors.itervalues() )
 
     def _drainActor( self, actor ):
-        isDrained = True
         if actor.isRunning() and hasattr( actor, 'drain' ):
             actor.drain()
         while not self.stopEvent.wait( 5 ):
             if actor._n_free_handlers != actor._n_concurrent:
+                self.log( "%s waiting for handlers to finish: (%s/%s)" % ( actor.name, 
+                                                                           actor._n_free_handlers, 
+                                                                           actor._n_concurrent ) )
                 continue
-            isDrained = True
             for h in actor.getPending():
-                if 0 == len( h ): 
-                    isDrained = False
+                if 0 != len( h ): 
+                    self.log( "%s waiting on pending requests: %s" % ( actor.name, len( h ) ) )
                     break
-            if isDrained: break
-        return isDrained
+            else:
+                break
+        self.log( "stopping actor post draining" )
+        actor.stop()
+        isStopped = actor.join( timeout = 60 )
+        self.log( "actor stopped and drained" )
+        return isStopped
 
     @handleExceptions
     def drain( self ):

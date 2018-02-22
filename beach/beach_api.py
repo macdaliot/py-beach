@@ -249,6 +249,9 @@ class Beach ( object ):
 
         self.getDirectory()
 
+        if 0 == len( self._nodes ):
+            return False
+
         if 'random' == strategy or strategy is None:
             node = self._getRandomActiveNode()[ 'socket' ]
         elif 'resource' == strategy:
