@@ -648,22 +648,20 @@ class HostManager ( object ):
                         z.send( errorMessage( 'unprivileged' ) )
                     else:
                         resp = successMessage()
-                        for uid, actor in self.actorInfo.items():
-                            instance = actor[ 'instance' ]
-                            newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                     'uid' : uid },
-                                                                   timeout = 30 )
-                            if not isMessageSuccess( newMsg ):
-                                if newMsg is None or newMsg is False:
-                                    self._log( 'stopping actor timed out, not all is lost' )
-                                else:
-                                    resp = errorMessage( 'error stopping actor' )
+                        actors = self.actorInfo.items()
+                        for uid, actor in actors:
+                            self._removeUidFromDirectory( uid )
 
-                            if not self._removeUidFromDirectory( uid ):
-                                if isMessageSuccess( resp ):
-                                    resp = errorMessage( 'error removing actor from directory after stop' )
+                        results = parallelExec( lambda x: x[ 1 ][ 'instance' ][ 'socket' ].request( { 'req' : 'kill_actor', 'uid' : x[ 0 ] }, timeout = 30 ), 
+                                                actors )
+                        
+                        if all( isMessageSuccess( x ) for x in results ):
+                            self._log( "all actors stopped" )
+                        else:
+                            resp = errorMessage( 'error stopping actor' )
 
-                            self._removeInstanceIfIsolated( instance )
+                        for uid, actor in actors:
+                            self._removeInstanceIfIsolated( actor[ 'instance' ] )
 
                         z.send( resp )
 
