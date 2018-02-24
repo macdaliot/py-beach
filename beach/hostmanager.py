@@ -571,6 +571,7 @@ class HostManager ( object ):
                             self._logCritical( 'Error loading actor %s: %s.' % ( actorName, newMsg ) )
                             self._removeUidFromDirectory( uid )
                             self._addTombstone( uid )
+                            self._removeInstanceIfIsolated( instance )
                         z.send( newMsg )
                 elif 'kill_actor' == action:
                     if not self._isPrivileged( data ):

@@ -71,6 +71,8 @@ class Patrol ( object ):
         self._patrolUrl = None
         self._isMonitored = False
 
+        self._originalTtl = None
+
         self._beach = Beach( configFile, realm = realm )
 
         self._scale = scale
@@ -146,25 +148,47 @@ class Patrol ( object ):
             currentScale = None
         return currentScale
 
+    def _lockDirCache( self ):
+        # We do a single refresh of the directory.
+        # Don't force since it may have already gotten a recent snapshot.
+        self._beach.getDirectory( isForce = True )
+
+        # To remove the directory jitter we will suspend directory refresh temporarily.
+        self._originalTtl = self._beach._dirCacheTtl
+        self._beach._dirCacheTtl = 60 * 5
+
+    def _unlockDirCache( self ):
+        # Restore the original ttl.
+        self._beach._dirCacheTtl = self._originalTtl
+
     def _initializeMissingActors( self, existing ):
         currentScale = self._getEffectiveScale()
 
-        for actorEntry in self._entries.itervalues():
-            if self._stopEvent.wait( 0 ): break
-            actorName = actorEntry.name
-            current = existing.get( actorName, 0 )
-            targetNum = self._getTargetActorNum( actorEntry, currentScale )
+        self._lockDirCache()
 
-            if current < targetNum:
-                newOwner = '%s/%s' % ( self._owner, actorName )
-                self._log( 'actor %s has %d instances but requires %d, spawning' % ( actorName,
-                                                                                     current,
-                                                                                     targetNum ) )
-                for _ in range( targetNum - current ):
-                    self._spawnNewActor( actorEntry )
-            else:
-                #self._log( 'actor %s is satisfied (%d)' % ( actorName, targetNum ) )
-                pass
+        try:
+            for actorEntry in self._entries.itervalues():
+                if self._stopEvent.wait( 0 ): break
+                actorName = actorEntry.name
+                current = existing.get( actorName, 0 )
+
+                # This uses the allNodeMetadat which is NEVER cached.
+                targetNum = self._getTargetActorNum( actorEntry, currentScale )
+
+                if current < targetNum:
+                    newOwner = '%s/%s' % ( self._owner, actorName )
+                    self._log( 'actor %s has %d instances but requires %d, spawning' % ( actorName,
+                                                                                         current,
+                                                                                         targetNum ) )
+                    for _ in range( targetNum - current ):
+                        self._spawnNewActor( actorEntry )
+                else:
+                    #self._log( 'actor %s is satisfied (%d)' % ( actorName, targetNum ) )
+                    pass
+        except:
+            raise
+        finally:
+            self._unlockDirCache()
 
     def start( self ):
         self._stopEvent.clear()
@@ -225,19 +249,8 @@ class Patrol ( object ):
         while not self._stopEvent.wait( self._freq ):
             with self._mutex:
                 self._log( 'running sync' )
-
-                # We do a single refresh of the directory.
-                # Don't force since it may have already gotten a recent snapshot.
-                self._beach.getDirectory()
-
-                # To remove the directory jitter we will suspend directory refresh temporarily.
-                originalTtl = self._beach._dirCacheTtl
-                self._beach._dirCacheTtl = 60 * 5
-
+                
                 self._initializeMissingActors( self._scanForExistingActors() )
-
-                # Restore the original ttl.
-                self._beach._dirCacheTtl = originalTtl
 
     def remove( self, name = None ):
         with self._mutex:
