@@ -249,6 +249,9 @@ class Beach ( object ):
 
         self.getDirectory()
 
+        if 0 == len( self._nodes ):
+            return False
+
         if 'random' == strategy or strategy is None:
             node = self._getRandomActiveNode()[ 'socket' ]
         elif 'resource' == strategy:
@@ -443,24 +446,22 @@ class Beach ( object ):
                 return {}
 
             # We take the easy way out for now by just spamming the kill to every node.
-            isSuccess = {}
             req = { 'req' : 'kill_actor', 'uid' : toRemove }
             if self._admin_token is not None:
                 req[ 'admin_token' ] = self._admin_token
 
             if delay is None:
-                isSuccess = parallelExec( lambda node: node[ 'socket' ].request( req, timeout = 60 ), 
+                results = parallelExec( lambda node: node[ 'socket' ].request( req, timeout = 60 ), 
                                           ( x for x in self._nodes.itervalues() if x[ 'offline' ] is False ) )
             else:
-                for k, node in self._nodes.items():
-                    if node[ 'offline' ]:
-                        continue
-                    resp = node[ 'socket' ].request( req, timeout = 60 )
-                    isSuccess[ k ] = resp
-                    if delay is not None:
-                        gevent.sleep( delay )
+                results = []
+                for uid in toRemove:
+                    req = { 'req' : 'kill_actor', 'uid' : [ uid ] }
+                    results.append( parallelExec( lambda node: node[ 'socket' ].request( req, timeout = 60 ), 
+                                                    ( x for x in self._nodes.itervalues() if x[ 'offline' ] is False ) ) )
+                    gevent.sleep( delay )
 
-        return isSuccess
+        return results
 
     def getClusterHealth( self ):
         ''' Get the cached health information of every node in the cluster.

@@ -53,7 +53,12 @@ def handleExceptions( f ):
             try:
                 res = f( *args, **kwargs )
             except:
-                args[ 0 ].logCritical( traceback.format_exc() )
+                e = traceback.format_exc()
+                try:
+                    args[ 0 ].logCritical( e )
+                except:
+                    import syslog
+                    syslog.syslog( "UNCAUGHT ERROR: %s (%s)" % ( e, str( args[ 0 ] ) ) )
             else:
                 break
         return res
@@ -145,11 +150,12 @@ class ActorHost ( object ):
         
         self.log( "Exiting, stopping all actors." )
         
-        for actor in self.actors.values():
-            actor.stop()
-        
+        parallelExec( lambda x: x.stop(), self.actors.values() )
+
         gevent.joinall( self.actors.values() )
-        self.log( "All Actors exiting, exiting." )
+        self.hostOpsSocket.close()
+        self.opsSocket.close()
+        self.log( "All Actors exited, exiting." )
     
     @handleExceptions
     def svc_receiveTasks( self ):
@@ -240,19 +246,14 @@ class ActorHost ( object ):
                         z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uid = data[ 'uid' ]
-                        if uid in self.actors:
-                            actor = self.actors[ uid ]
-                            del( self.actors[ uid ] )
-                            actor.stop()
-                            actor.join( timeout = 60 )
-                            info = None
-                            if not actor.ready():
-                                actor.kill( timeout = 60 )
-                                info = { 'error' : 'timeout' }
-                                self.log( "Actor %s timedout while exiting" % uid )
-                            z.send( successMessage( data = info ) )
-                        else:
+                        actor = self.actors.get( uid, None )
+                        if actor is None:
                             z.send( errorMessage( 'actor not found' ) )
+
+                        isStopped = self._drainActor( uid )
+                        if not isStopped:
+                            actor.kill( timeout = 60 )
+                        z.send( successMessage( data = { 'is_stopped' : isStopped } ) )
                 elif 'get_load_info' == action:
                     info = {}
                     for uid, actor in self.actors.items():
@@ -277,7 +278,7 @@ class ActorHost ( object ):
                 if not actor.isRunning():
                     exc = actor.getLastError()
                     if exc is not None:
-                        self.logCritical("Actor %s exited with exception: %s" % ( uid, str( exc ) ) )
+                        self.logCritical( "Actor %s exited with exception: %s" % ( uid, str( exc ) ) )
                     else:
                         self.log( "Actor %s is no longer running" % uid )
                     del( self.actors[ uid ] )
@@ -287,35 +288,46 @@ class ActorHost ( object ):
     @handleExceptions
     def svc_reportUsage( self ):
         while not self.stopEvent.wait( 60 * 60 ):
-            self.log( psutil.Process( os.getpid() ).memory_info() )
+            p = psutil.Process( os.getpid() )
+            self.log( p.memory_info() )
+            self.log( 'FDs: %s' % ( p.num_fds(), ) )
 
     @handleExceptions
     def isDrainable( self ):
         if 0 == len( self.actors ):
             return False
-        return all( x._is_drainable for x in self.actors.itervalues() )
+        return all( x._is_drainable for x in self.actors.values() )
 
-    def _drainActor( self, actor ):
-        isDrained = True
+    def _drainActor( self, uid ):
+        actor = self.actors.pop( uid, None )
+        if actor is None: return True
+
         if actor.isRunning() and hasattr( actor, 'drain' ):
             actor.drain()
         while not self.stopEvent.wait( 5 ):
             if actor._n_free_handlers != actor._n_concurrent:
+                self.log( "%s waiting for handlers to finish: (%s/%s)" % ( actor.name, 
+                                                                           actor._n_free_handlers, 
+                                                                           actor._n_concurrent ) )
                 continue
-            isDrained = True
             for h in actor.getPending():
-                if 0 == len( h ): 
-                    isDrained = False
+                if 0 != len( [ x for x in h if 0 != len( x ) ] ): 
+                    self.log( "waiting on pending requests: %s" % ( str( h ), ) )
                     break
-            if isDrained: break
-        return isDrained
+            else:
+                break
+        self.log( "stopping actor post draining" )
+        actor.stop()
+        isStopped = actor.join( timeout = 60 )
+        self.log( "actor stopped and drained" )
+        return isStopped
 
     @handleExceptions
     def drain( self ):
         if self.isDrainable():
             self.isOpen = False
             self.log( "Draining..." )
-            drained = parallelExec( self._drainActor, self.actors.values() )
+            drained = parallelExec( self._drainActor, self.actors.keys() )
             self.log( "Drained." )
             gevent.spawn_later( 2, _stopAllActors )
             return True

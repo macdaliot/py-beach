@@ -113,7 +113,6 @@ def test_virtual_handles():
 
 def test_prefix_virtual_handles():
     global beach
-
     a1 = beach.addActor( 'Pong', 'pongers', parameters={"a":7}, resources = {} )
     a2 = beach.addActor( 'Ping', 'pingers', parameters={"a":8}, resources = {'pongers':'pongers'} )
     a3 = beach.addActor( 'Ping', 'pingers', parameters={"a":9}, resources = {'pongers':'pongers'} )
@@ -134,7 +133,6 @@ def test_prefix_virtual_handles():
 
 def test_trust():
     global beach
-
     a1 = beach.addActor( 'Pong', 'pongers/trust', trustedIdents = [ 'abc' ], parameters={"a":10}, resources = {} )
     assert( isMessageSuccess( a1 ) )
 

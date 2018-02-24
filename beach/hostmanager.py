@@ -39,7 +39,7 @@ import random
 from sets import Set
 import logging
 import logging.handlers
-import subprocess
+import gevent.subprocess as subprocess
 import psutil
 import collections
 import uuid
@@ -106,7 +106,6 @@ class HostManager ( object ):
         self.ports_available = Set()
         self.nProcesses = 0
         self.processes = []
-        self.initialProcesses = False
         self.seedNodes = []
         self.directoryPort = None
         self.opsPort = 0
@@ -119,7 +118,6 @@ class HostManager ( object ):
         self.instance_keepalive_seconds = 0
         self.tombstone_culling_seconds = 0
         self.isActorChanged = gevent.event.Event()
-        self.isInstanceChanged = gevent.event.Event()
         self.isTombstoneChanged = gevent.event.Event()
         self.dirLock = RWLock()
         self.lastHostInfo = None
@@ -234,8 +232,7 @@ class HostManager ( object ):
         timeToStopEvent.wait()
         
         # Any teardown required
-        for proc in self.processes:
-            self._sendQuitToInstance( proc )
+        parallelExec( self._teardownInstance, self.processes[:] )
         
         self._log( "Exiting." )
 
@@ -245,23 +242,48 @@ class HostManager ( object ):
     def _catToList( self, cat ):
         return [ x for x in str( cat ).split( '/' ) if '' != x ]
 
-    def _sendQuitToInstance( self, instance ):
-        if instance[ 'p' ] is not None:
+    def _teardownInstance( self, instance, isGraceful = True ):
+        # First remove it from operations.
+        try:
+            self.processes.remove( instance )
+        except ValueError:
+            pass
+
+        self._removeInstanceActorsFromDirectory( instance )
+
+        # Now do the real teardown.
+        if isGraceful:
             instance[ 'p' ].send_signal( signal.SIGTERM )
-            errorCode = instance[ 'p' ].wait()
-            if 0 != errorCode:
-                self._logCritical( 'actor host exited with error code: %d' % errorCode )
+        else:
+            instance[ 'p' ].kill()
+        self._log( "Instance signaled to exit, waiting." )
+        errorCode = instance[ 'p' ].wait()
+        if 0 != errorCode:
+            self._logCritical( 'actor host exited with error code: %d' % errorCode )
+        instance[ 'socket' ].close()
+
+        self._log( "Instance torn down." )
 
     def _startInstance( self, isIsolated = False ):
-        instanceId = str( uuid.uuid4() )
-        procSocket = _ZMREQ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, isBind = False )
-        instance = { 'socket' : procSocket, 
+        instance = { 'socket' : None, 
                      'p' : None, 
                      'isolated' : isIsolated, 
-                     'id' : instanceId, 
+                     'id' : str( uuid.uuid4() ), 
                      'start' : time.time() }
+        instance[ 'socket' ] = _ZMREQ( 'ipc:///tmp/py_beach_instance_%s' % instance[ 'id' ], isBind = False )
+        proc = subprocess.Popen( [ 'python',
+                                   '%s/actorhost.py' % self.py_beach_dir,
+                                    self.configFilePath,
+                                    instance[ 'id' ],
+                                    str( self._log_level ),
+                                    self._log_dest,
+                                    self.interface ],
+                                 close_fds = True )
+
+        instance[ 'p' ] = proc
+        instance[ 'start' ] = time.time()
         self.processes.append( instance )
-        self._log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instanceId, ) )
+        self._log( "Managing instance at: %s" % ( 'ipc:///tmp/py_beach_instance_%s' % instance[ 'id' ], ) )
         return instance
 
     def _removeInstanceIfIsolated( self, instance ):
@@ -269,8 +291,7 @@ class HostManager ( object ):
             # Isolated instances only have one Actor loaded
             # so this means we can remove this instance
             self._log( "Removing isolated host instance: %s" % instance[ 'id' ] )
-            self.processes.remove( instance )
-            self._sendQuitToInstance( instance )
+            self._teardownInstance( instance )
 
     def _connectToNode( self, ip ):
         ip = socket.gethostbyname( ip )
@@ -298,7 +319,11 @@ class HostManager ( object ):
         if uid in self.actorInfo:
             port = self.actorInfo[ uid ][ 'port' ]
             self.ports_available.add( port )
-            self.actorInfo.pop( uid, None )
+            instance = self.actorInfo.pop( uid, None )
+            if instance is not None:
+                s = instance.get( 'socket', None )
+                if s is not None:
+                    s.close()
             self.isActorChanged.set()
 
         return isFound
@@ -342,10 +367,17 @@ class HostManager ( object ):
                     self.nonOptDir = newNonOptDir
 
     def _removeInstanceActorsFromDirectory( self, instance ):
+        isActorsFound = False
         for uid, actor in self.actorInfo.items():
             if actor[ 'instance' ] == instance:
                 self._removeUidFromDirectory( uid )
                 self._addTombstone( uid )
+                isActorsFound = True
+        
+        if isActorsFound:
+            self.isActorChanged.set()
+
+        return isActorsFound
     
     def _getAvailablePortForUid( self, uid ):
         port = None
@@ -362,7 +394,6 @@ class HostManager ( object ):
         if isIsolated:
             self.nProcesses += 1
             instance = self._startInstance( isIsolated = True )
-            self.isInstanceChanged.set()
         elif self.instance_strategy == 'random':
             instance = random.choice( [ x for x in self.processes if x[ 'isolated' ] is False ] )
         
@@ -540,6 +571,7 @@ class HostManager ( object ):
                             self._logCritical( 'Error loading actor %s: %s.' % ( actorName, newMsg ) )
                             self._removeUidFromDirectory( uid )
                             self._addTombstone( uid )
+                            self._removeInstanceIfIsolated( instance )
                         z.send( newMsg )
                 elif 'kill_actor' == action:
                     if not self._isPrivileged( data ):
@@ -548,7 +580,7 @@ class HostManager ( object ):
                         z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uids = data[ 'uid' ]
-                        if not isinstance( uids, collections.Iterable ):
+                        if not isinstance( uids, ( tuple, list ) ):
                             uids = ( uids, )
 
                         failed = []
@@ -563,6 +595,7 @@ class HostManager ( object ):
                                                                          'uid' : uid },
                                                                        timeout = 20 )
                                 if not isMessageSuccess( newMsg ):
+                                    self._log( "failed to kill actor %s: %s" % ( uid, str( newMsg ) ) )
                                     failed.append( newMsg )
 
                                 if not self._removeUidFromDirectory( uid ):
@@ -626,22 +659,20 @@ class HostManager ( object ):
                         z.send( errorMessage( 'unprivileged' ) )
                     else:
                         resp = successMessage()
-                        for uid, actor in self.actorInfo.items():
-                            instance = actor[ 'instance' ]
-                            newMsg = instance[ 'socket' ].request( { 'req' : 'kill_actor',
-                                                                     'uid' : uid },
-                                                                   timeout = 30 )
-                            if not isMessageSuccess( newMsg ):
-                                if newMsg is None or newMsg is False:
-                                    self._log( 'stopping actor timed out, not all is lost' )
-                                else:
-                                    resp = errorMessage( 'error stopping actor' )
+                        actors = self.actorInfo.items()
+                        for uid, actor in actors:
+                            self._removeUidFromDirectory( uid )
 
-                            if not self._removeUidFromDirectory( uid ):
-                                if isMessageSuccess( resp ):
-                                    resp = errorMessage( 'error removing actor from directory after stop' )
+                        results = parallelExec( lambda x: x[ 1 ][ 'instance' ][ 'socket' ].request( { 'req' : 'kill_actor', 'uid' : x[ 0 ] }, timeout = 30 ), 
+                                                actors )
 
-                            self._removeInstanceIfIsolated( instance )
+                        if all( isMessageSuccess( x ) for x in results ):
+                            self._log( "all actors stopped" )
+                        else:
+                            resp = errorMessage( 'error stopping actor' )
+
+                        for uid, actor in actors:
+                            self._removeInstanceIfIsolated( actor[ 'instance' ] )
 
                         z.send( resp )
 
@@ -750,8 +781,9 @@ class HostManager ( object ):
                 self._log( 'Failed to drain: %s.' % str( resp ) )
         else:
             self._log( 'Error asking instance to drain: %s.' % str( resp ) )
-        # Either way we set now as current start so that if we failed we go to the next.
-        p[ 'start' ] = time.time()
+        
+        self._teardownInstance( p )
+
         return False
 
     @handleExceptions
@@ -764,15 +796,14 @@ class HostManager ( object ):
                 if info[ 'time_to_drain' ] is None:
                     continue
 
-                # This makes the assumption that the actor is running isolated, and if not the
-                # entire actor host instance will be dained anyway.
+                # Is it time to drain?
                 if now > info[ 'start' ] + info[ 'time_to_drain' ]:
+                    # Is this an isolated / drainable actorhost?
                     if self._isDrainable( info[ 'instance' ] ):
-                        self._log( 'Actor %s has reached time_to_drain, draining.' % info[ 'name' ] )
+                        self._log( 'Actor %s has reached time_to_drain, draining.' % uid )
                         self._doDrainInstance( info[ 'instance' ] )
-                        self.isInstanceChanged.set()
                     else:
-                        self._log( 'Actor %s has reached time_to_drain, but instance marked undrainable.' % info[ 'name' ] )
+                        self._log( 'Actor %s has reached time_to_drain, but instance marked undrainable.' % uid )
 
             # Then we look at the general draining case.
             currentMemory = psutil.virtual_memory()
@@ -797,68 +828,24 @@ class HostManager ( object ):
                 self._log( 'Trying to drain %s' % oldest[ 'id' ] )
                 # Remove all actors in that instance from the directory before draining.
                 self._doDrainInstance( oldest )
-                self.isInstanceChanged.set()
 
     @handleExceptions
     def _svc_instance_keepalive( self ):
-        while not self.stopEvent.wait( 0 ):
+        while not self.stopEvent.wait( self.instance_keepalive_seconds ):
             for instance in self.processes[:]:
                 #self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
 
-                if self.initialProcesses and instance[ 'p' ] is not None:
-                    # Only attempt keepalive if we know of a pid for it, otherwise it must be new
-                    data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 15 )
-                else:
-                    # For first instances, immediately trigger the instance creation
-                    data = False
+                data = instance[ 'socket' ].request( { 'req' : 'keepalive' }, timeout = 15 )
 
                 if not isMessageSuccess( data ):
-                    if not self.initialProcesses and instance[ 'p' ] is not None:
-                        self._logCritical( "Instance %s is dead (%s)." % ( instance[ 'id' ], data ) )
-                    isBrandNew = True
-                    if instance[ 'p' ] is not None:
-                        tmpInstance = instance[ 'p' ]
-                        instance[ 'p' ] = None
-                        self._logCritical( "Killing previous instance for %s" % instance[ 'id' ] )
-                        try:
-                            tmpInstance.kill()
-                        except:
-                            pass
-                        # Instance died, it means all Actors within are no longer reachable
-                        self._removeInstanceActorsFromDirectory( instance )
-                        self.isActorChanged.set()
-                        isBrandNew = False
-
-                    if isBrandNew or not instance[ 'isolated' ]:
-                        proc = subprocess.Popen( [ 'python',
-                                                   '%s/actorhost.py' % self.py_beach_dir,
-                                                    self.configFilePath,
-                                                    instance[ 'id' ],
-                                                    str( self._log_level ),
-                                                    self._log_dest,
-                                                    self.interface ] )
-
-                        instance[ 'p' ] = proc
-                        instance[ 'start' ] = time.time()
-
-                        if not isBrandNew:
-                            self._logCritical( "Instance %s died, restarting it, pid %d" % ( instance[ 'id' ], proc.pid ) )
-                        else:
-                            self._log( "Initial instance %s created with pid %d (isolation = %s)" % ( instance[ 'id' ], proc.pid, instance[ 'isolated' ] ) )
-                    else:
-                        # This means it's an isolated Actor that died, in this case
-                        # we don't restart it, we leave it to higher layers to restarts it
-                        # if they want.
-                        try:
-                            self.processes.remove( instance )
-                        except:
-                            pass
-
-            if not self.initialProcesses:
-                self.initialProcesses = True
-
-            self.isInstanceChanged.wait( self.instance_keepalive_seconds )
-            self.isInstanceChanged.clear()
+                    self._logCritical( "Instance %s is dead (%s)." % ( instance[ 'id' ], data ) )
+                    self._teardownInstance( instance, isGraceful = False )
+                    
+                    # An isolated instance we will be restarted naturally. A core instance should always
+                    # be present to we will start a new one right here.
+                    if not instance[ 'isolated' ]:
+                        instance = self._startInstance( isIsolated = False )
+                        self._logCritical( "Instance %s died, restarting it, pid %d" % ( instance[ 'id' ], proc.pid ) )
     
     @handleExceptions
     def _svc_host_keepalive( self ):
@@ -876,6 +863,7 @@ class HostManager ( object ):
                     else:
                         self._log( "Removing node %s because of timeout" % nodeName )
                         del( self.nodes[ nodeName ] )
+                        node[ 'socket' ].close()
                         self._log( "Removed %s actors originating from downed node" % self._removeNodeActorsFromDir( nodeName ) )
             
             if 0 == initialRefreshes:

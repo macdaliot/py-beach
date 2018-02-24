@@ -42,6 +42,8 @@ class _TimeoutException(Exception): pass
 global_z_context = zmq.Context()
 global_z_context.set( zmq.MAX_SOCKETS, 1024 * 10 )
 
+_heartbeat_ivl = 10 * 1000
+
 def loadModuleFrom( path, realm ):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -267,6 +269,9 @@ class _ZMREQ ( object ):
         zBack = self._ctx.socket( zmq.DEALER )
         zFront.set( zmq.LINGER, 0 )
         zBack.set( zmq.LINGER, 0 )
+        # zFront.set( zmq.ZMQ_HEARTBEAT_IVL, _heartbeat_ivl )
+        # zFront.set( zmq.ZMQ_HEARTBEAT_TIMEOUT, _heartbeat_ivl * 1.5 )
+        # zFront.set( zmq.ZMQ_HEARTBEAT_TTL, _heartbeat_ivl * 1.5 )
         if self._isBind:
             zBack.bind( self._url )
         else:
@@ -432,6 +437,9 @@ class _ZMREP ( object ):
         zBack = self._ctx.socket( zmq.DEALER )
         zFront.set( zmq.LINGER, 0 )
         zBack.set( zmq.LINGER, 0 )
+        # zFront.set( zmq.ZMQ_HEARTBEAT_IVL, _heartbeat_ivl )
+        # zFront.set( zmq.ZMQ_HEARTBEAT_TIMEOUT, _heartbeat_ivl * 1.5 )
+        # zFront.set( zmq.ZMQ_HEARTBEAT_TTL, _heartbeat_ivl * 1.5 )
         if self._isBind:
             zFront.bind( self._url )
         else:
