@@ -39,7 +39,7 @@ import random
 from sets import Set
 import logging
 import logging.handlers
-import subprocess
+import gevent.subprocess as subprocess
 import psutil
 import collections
 import uuid
@@ -118,7 +118,6 @@ class HostManager ( object ):
         self.instance_keepalive_seconds = 0
         self.tombstone_culling_seconds = 0
         self.isActorChanged = gevent.event.Event()
-        self.isInstanceChanged = gevent.event.Event()
         self.isTombstoneChanged = gevent.event.Event()
         self.dirLock = RWLock()
         self.lastHostInfo = None
@@ -245,9 +244,12 @@ class HostManager ( object ):
 
     def _teardownInstance( self, instance, isGraceful = True ):
         # First remove it from operations.
-        self.processes.remove( instance )
+        try:
+            self.processes.remove( instance )
+        except ValueError:
+            pass
+
         self._removeInstanceActorsFromDirectory( instance )
-        self.isActorChanged.set()
 
         # Now do the real teardown.
         if isGraceful:
@@ -259,6 +261,7 @@ class HostManager ( object ):
         if 0 != errorCode:
             self._logCritical( 'actor host exited with error code: %d' % errorCode )
         instance[ 'socket' ].close()
+
         self._log( "Instance torn down." )
 
     def _startInstance( self, isIsolated = False ):
@@ -364,10 +367,17 @@ class HostManager ( object ):
                     self.nonOptDir = newNonOptDir
 
     def _removeInstanceActorsFromDirectory( self, instance ):
+        isActorsFound = False
         for uid, actor in self.actorInfo.items():
             if actor[ 'instance' ] == instance:
                 self._removeUidFromDirectory( uid )
                 self._addTombstone( uid )
+                isActorsFound = True
+        
+        if isActorsFound:
+            self.isActorChanged.set()
+
+        return isActorsFound
     
     def _getAvailablePortForUid( self, uid ):
         port = None
@@ -384,7 +394,6 @@ class HostManager ( object ):
         if isIsolated:
             self.nProcesses += 1
             instance = self._startInstance( isIsolated = True )
-            self.isInstanceChanged.set()
         elif self.instance_strategy == 'random':
             instance = random.choice( [ x for x in self.processes if x[ 'isolated' ] is False ] )
         
@@ -570,7 +579,7 @@ class HostManager ( object ):
                         z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uids = data[ 'uid' ]
-                        if not isinstance( uids, collections.Iterable ):
+                        if not isinstance( uids, ( tuple, list ) ):
                             uids = ( uids, )
 
                         failed = []
@@ -585,6 +594,7 @@ class HostManager ( object ):
                                                                          'uid' : uid },
                                                                        timeout = 20 )
                                 if not isMessageSuccess( newMsg ):
+                                    self._log( "failed to kill actor %s: %s" % ( uid, str( newMsg ) ) )
                                     failed.append( newMsg )
 
                                 if not self._removeUidFromDirectory( uid ):
@@ -654,7 +664,7 @@ class HostManager ( object ):
 
                         results = parallelExec( lambda x: x[ 1 ][ 'instance' ][ 'socket' ].request( { 'req' : 'kill_actor', 'uid' : x[ 0 ] }, timeout = 30 ), 
                                                 actors )
-                        
+
                         if all( isMessageSuccess( x ) for x in results ):
                             self._log( "all actors stopped" )
                         else:
@@ -770,8 +780,9 @@ class HostManager ( object ):
                 self._log( 'Failed to drain: %s.' % str( resp ) )
         else:
             self._log( 'Error asking instance to drain: %s.' % str( resp ) )
-        # Either way we set now as current start so that if we failed we go to the next.
-        p[ 'start' ] = time.time()
+        
+        self._teardownInstance( p )
+
         return False
 
     @handleExceptions
@@ -790,7 +801,6 @@ class HostManager ( object ):
                     if self._isDrainable( info[ 'instance' ] ):
                         self._log( 'Actor %s has reached time_to_drain, draining.' % uid )
                         self._doDrainInstance( info[ 'instance' ] )
-                        self.isInstanceChanged.set()
                     else:
                         self._log( 'Actor %s has reached time_to_drain, but instance marked undrainable.' % uid )
 
@@ -817,11 +827,10 @@ class HostManager ( object ):
                 self._log( 'Trying to drain %s' % oldest[ 'id' ] )
                 # Remove all actors in that instance from the directory before draining.
                 self._doDrainInstance( oldest )
-                self.isInstanceChanged.set()
 
     @handleExceptions
     def _svc_instance_keepalive( self ):
-        while not self.stopEvent.wait( 0 ):
+        while not self.stopEvent.wait( self.instance_keepalive_seconds ):
             for instance in self.processes[:]:
                 #self._log( "Issuing keepalive for instance %s" % instance[ 'id' ] )
 
@@ -836,9 +845,6 @@ class HostManager ( object ):
                     if not instance[ 'isolated' ]:
                         instance = self._startInstance( isIsolated = False )
                         self._logCritical( "Instance %s died, restarting it, pid %d" % ( instance[ 'id' ], proc.pid ) )
-
-            self.isInstanceChanged.wait( self.instance_keepalive_seconds )
-            self.isInstanceChanged.clear()
     
     @handleExceptions
     def _svc_host_keepalive( self ):

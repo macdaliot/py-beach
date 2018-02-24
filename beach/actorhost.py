@@ -53,7 +53,12 @@ def handleExceptions( f ):
             try:
                 res = f( *args, **kwargs )
             except:
-                args[ 0 ].logCritical( traceback.format_exc() )
+                e = traceback.format_exc()
+                try:
+                    args[ 0 ].logCritical( e )
+                except:
+                    import syslog
+                    syslog.syslog( "UNCAUGHT ERROR: %s (%s)" % ( e, str( args[ 0 ] ) ) )
             else:
                 break
         return res
@@ -241,15 +246,14 @@ class ActorHost ( object ):
                         z.send( errorMessage( 'missing information to stop actor' ) )
                     else:
                         uid = data[ 'uid' ]
-                        if uid in self.actors:
-                            actor = self.actors[ uid ]
-                            del( self.actors[ uid ] )
-                            isStopped = self._drainActor( actor )
-                            if not isStopped:
-                                actor.kill( timeout = 60 )
-                            z.send( successMessage( data = { 'is_stopped' : isStopped } ) )
-                        else:
+                        actor = self.actors.get( uid, None )
+                        if actor is None:
                             z.send( errorMessage( 'actor not found' ) )
+
+                        isStopped = self._drainActor( uid )
+                        if not isStopped:
+                            actor.kill( timeout = 60 )
+                        z.send( successMessage( data = { 'is_stopped' : isStopped } ) )
                 elif 'get_load_info' == action:
                     info = {}
                     for uid, actor in self.actors.items():
@@ -292,9 +296,12 @@ class ActorHost ( object ):
     def isDrainable( self ):
         if 0 == len( self.actors ):
             return False
-        return all( x._is_drainable for x in self.actors.itervalues() )
+        return all( x._is_drainable for x in self.actors.values() )
 
-    def _drainActor( self, actor ):
+    def _drainActor( self, uid ):
+        actor = self.actors.pop( uid, None )
+        if actor is None: return True
+
         if actor.isRunning() and hasattr( actor, 'drain' ):
             actor.drain()
         while not self.stopEvent.wait( 5 ):
@@ -304,8 +311,8 @@ class ActorHost ( object ):
                                                                            actor._n_concurrent ) )
                 continue
             for h in actor.getPending():
-                if 0 != len( h ): 
-                    self.log( "%s waiting on pending requests: %s" % ( actor.name, len( h ) ) )
+                if 0 != len( [ x for x in h if 0 != len( x ) ] ): 
+                    self.log( "waiting on pending requests: %s" % ( str( h ), ) )
                     break
             else:
                 break
@@ -320,7 +327,7 @@ class ActorHost ( object ):
         if self.isDrainable():
             self.isOpen = False
             self.log( "Draining..." )
-            drained = parallelExec( self._drainActor, self.actors.values() )
+            drained = parallelExec( self._drainActor, self.actors.keys() )
             self.log( "Drained." )
             gevent.spawn_later( 2, _stopAllActors )
             return True
