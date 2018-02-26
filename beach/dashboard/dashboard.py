@@ -94,7 +94,7 @@ def updateMetrics():
     unique_actors = Set()
     n_realms = 0
     n_cats = 0
-    if info[ 'dir' ] is not False:
+    if 'dir' in info and info[ 'dir' ] is not False and 'realms' in info[ 'dir' ]:
         for realm, categories in info[ 'dir' ][ 'realms' ].items():
             n_realms += 1
             for cat_name, actors in categories.items():
