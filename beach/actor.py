@@ -841,9 +841,10 @@ class ActorHandle ( object ):
             # Remove endpoints that are not in the dir anymore.
             for z_ident in self._peerSockets.keys():
                 if z_ident not in self._endpoints:
-                    oldSocket = self._peerSockets.get( z_ident, None )
+                    oldSocket = self._peerSockets.pop( z_ident, None )
                     if oldSocket is not None:
                         oldSocket.close()
+                    self._localSockets.discard( z_ident )
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -1105,9 +1106,9 @@ class ActorHandle ( object ):
 
         interpretedRet = ActorResponse( resp )
         if not interpretedRet.isSuccess:
-            self._log( "Received failure (%s): %s" % ( self._cat, str( interpretedRet ) ) )
-            if interpretedRet.error == 'wrong dest' or interpretedRet.isTimedOut:
-                self._log( "Bad destination, recycling or timeout." )
+            self._log( "Received failure (%s) in future: %s" % ( self._cat, str( interpretedRet ) ) )
+            if interpretedRet.error == 'wrong dest':
+                self._log( "From future, bad destination, recycling." )
                 # There has been no new response in the last history timeframe, or it's a wrong dest.
                 if 'affinity' != self._mode:
                     self._peerSockets.pop( z_ident, None )
