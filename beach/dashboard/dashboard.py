@@ -29,6 +29,7 @@ import json
 from functools import wraps
 from sets import Set
 import gevent
+import syslog
 
 ###############################################################################
 # CUSTOM EXCEPTIONS
@@ -112,7 +113,10 @@ def updateMetrics():
 
 def periodicUpdate():
     while True:
-        updateMetrics()
+        try:
+            updateMetrics()
+        except:
+            syslog.syslog( traceback.format_exc() )
         gevent.sleep( SEC_PER_GEN )
 
 ###############################################################################
