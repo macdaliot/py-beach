@@ -379,12 +379,11 @@ class HostManager ( object ):
 
         return isActorsFound
     
-    def _getAvailablePortForUid( self, uid ):
+    def _getAvailablePort( self ):
         port = None
         
         if 0 != len( self.ports_available ):
             port = self.ports_available.pop()
-            self.actorInfo.setdefault( uid, {} )[ 'port' ] =  port
         
         return port
     
@@ -399,10 +398,11 @@ class HostManager ( object ):
         
         return instance
 
-    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain ):
+    def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain, port ):
         info = {}
         info[ 'instance' ] = instance
         info[ 'instance_id' ] = instance[ 'id' ]
+        info[ 'port' ] = port
         info[ 'name' ] = actorName
         info[ 'realm' ] = realm
         info[ 'isolated' ] = isIsolated
@@ -521,10 +521,10 @@ class HostManager ( object ):
                         log_level = data.get( 'loglevel', None )
                         log_dest = data.get( 'logdest', None )
                         uid = str( uuid.uuid4() )
-                        port = self._getAvailablePortForUid( uid )
                         instance = self._getInstanceForActor( isIsolated )
                         if instance is not None:
-                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain )
+                            port = self._getAvailablePort()
+                            self._setActorMtd( uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain, port )
                             newMsg = instance[ 'socket' ].request( { 'req' : 'start_actor',
                                                                      'actor_name' : actorName,
                                                                      'realm' : realm,
@@ -718,7 +718,7 @@ class HostManager ( object ):
                                                                             {} )[ uid ] = 'tcp://%s:%d' % ( self.ifaceIp4,
                                                                                                             info[ 'port' ] )
                         except:
-                            z.send( errorMessage( 'error associating, actor hosted here?' ) )
+                            z.send( errorMessage( 'error associating, actor hosted here? :: %s' % str( traceback.format_exc() ) ) )
                         else:
                             self.isActorChanged.set()
                             z.send( successMessage() )
