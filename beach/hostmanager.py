@@ -316,14 +316,14 @@ class HostManager ( object ):
                     self.isActorChanged.set()
                     break
 
-        if uid in self.actorInfo:
-            port = self.actorInfo[ uid ][ 'port' ]
-            self.ports_available.add( port )
-            instance = self.actorInfo.pop( uid, None )
-            if instance is not None:
-                s = instance.get( 'socket', None )
-                if s is not None:
-                    s.close()
+        instance = self.actorInfo.pop( uid, None )
+        if instance is not None:
+            port = instance.get( 'port', None )
+            if port is not None:
+                self.ports_available.add( port )
+            s = instance.get( 'socket', None )
+            if s is not None:
+                s.close()
             self.isActorChanged.set()
 
         return isFound
@@ -400,7 +400,7 @@ class HostManager ( object ):
         return instance
 
     def _setActorMtd( self, uid, instance, actorName, realm, isIsolated, owner, parameters, resources, time_to_drain ):
-        info = self.actorInfo.setdefault( uid, {} )
+        info = {}
         info[ 'instance' ] = instance
         info[ 'instance_id' ] = instance[ 'id' ]
         info[ 'name' ] = actorName
@@ -416,6 +416,7 @@ class HostManager ( object ):
                 info[ 'params' ][ k ] = '<PRIVATE>'
             else:
                 info[ 'params' ][ k ] = parameters[ k ]
+        self.actorInfo[ uid ] = info
 
     def _updateDirectoryWith( self, curDir, nonOptDir, newDir, newReverse ):
         ourNode = 'tcp://%s:' % ( self.ifaceIp4, )

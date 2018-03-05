@@ -612,7 +612,35 @@ class Actor( gevent.Greenlet ):
         self._logger.propagate = False
 
     def sleep( self, seconds ):
+        '''Sleeps for N seconds.
+
+        :param seconds: the number of seconds to sleep
+        '''
         gevent.sleep( seconds )
+
+    def retry( self, max_retry_num, delay_between_retry, f, *args, **kwargs ):
+        '''Retry the function (if it encounters an exception) up to N times with X seconds in between.
+
+        :param max_retry_num: maximum number of times to retry
+        :param delay_between_retry: number of seconds to sleep in between retries
+        :param f: the function to call
+
+        :returns: retrurn value from the retried function (or raises exception if last retry is failure)
+        '''
+        nRetry = 0
+        while True:
+            try:
+                ret = f( *args, **kwargs )
+            except:
+                if max_retry_num is not None:
+                    nRetry += 1
+                    if max_retry_num < nRetry:
+                        raise
+                if delay_between_retry is not None:
+                    gevent.sleep( delay_between_retry )
+            else:
+                break
+        return ret
 
     def log( self, msg ):
         '''Log debug statements.
