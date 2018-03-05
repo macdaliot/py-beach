@@ -89,6 +89,8 @@ def updateMetrics():
     for nodeMtd in mtd.values():
         if nodeMtd is False: continue
         for uid, actorMtd in nodeMtd.get( 'data', {} ).get( 'mtd', {} ).iteritems():
+            if 'realm' not in actorMtd or 'name' not in actorMtd:
+                continue
             metadata[ uid ] = '%s/%s' % ( actorMtd[ 'realm' ], actorMtd[ 'name' ] )
     info[ 'actor_mtd' ] = metadata
 
