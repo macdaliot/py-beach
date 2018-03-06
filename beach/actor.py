@@ -862,10 +862,8 @@ class ActorHandle ( object ):
                         else:
                             # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
                             newSocket = CreateOnAccess( _ZMREQ, z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
-                        if z_ident not in self._peerSockets:
-                            self._peerSockets[ z_ident ] = newSocket
-                        else:
-                            newSocket.close()
+                        self._peerSockets[ z_ident ] = newSocket
+                        #self._log( "New peer added: %s => %s" % ( z_ident, self._peerSockets.keys() ) )
             # Remove endpoints that are not in the dir anymore.
             for z_ident in self._peerSockets.keys():
                 if z_ident not in self._endpoints:
@@ -873,6 +871,7 @@ class ActorHandle ( object ):
                     if oldSocket is not None:
                         oldSocket.close()
                     self._localSockets.discard( z_ident )
+                    #self._log( "Peer not in directory, removed: %s => %s" % ( z_ident, self._peerSockets.keys() ) )
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -1069,6 +1068,7 @@ class ActorHandle ( object ):
                     except:
                         pass
                     z = None
+                    #self._log( "Removed peer socket, now %s left." % ( len( self._endpoints, ) ) )
 
                 curRetry += 1
                 self._updateDirectory()
