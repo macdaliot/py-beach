@@ -803,6 +803,9 @@ class HostManager ( object ):
                     if self._isDrainable( info[ 'instance' ] ):
                         self._log( 'Actor %s has reached time_to_drain, draining.' % uid )
                         self._doDrainInstance( info[ 'instance' ] )
+                        # We introduce a 1 drain per minute limitations to make sure we never
+                        # starve a category under normal conditions.
+                        break
                     else:
                         self._log( 'Actor %s has reached time_to_drain, but instance marked undrainable.' % uid )
 

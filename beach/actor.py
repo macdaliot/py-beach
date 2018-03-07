@@ -862,10 +862,8 @@ class ActorHandle ( object ):
                         else:
                             # Do this in two steps since creating a socket is blocking so not thread safe in gevent.
                             newSocket = CreateOnAccess( _ZMREQ, z_url, isBind = False, private_key = self._private_key, congestionCB = self._reportCongestion )
-                        if z_ident not in self._peerSockets:
-                            self._peerSockets[ z_ident ] = newSocket
-                        else:
-                            newSocket.close()
+                        self._peerSockets[ z_ident ] = newSocket
+                        #self._log( "New peer added: %s => %s" % ( z_ident, self._peerSockets.keys() ) )
             # Remove endpoints that are not in the dir anymore.
             for z_ident in self._peerSockets.keys():
                 if z_ident not in self._endpoints:
@@ -873,6 +871,7 @@ class ActorHandle ( object ):
                     if oldSocket is not None:
                         oldSocket.close()
                     self._localSockets.discard( z_ident )
+                    #self._log( "Peer not in directory, removed: %s => %s" % ( z_ident, self._peerSockets.keys() ) )
             if not self._initialRefreshDone.isSet():
                 self._initialRefreshDone.set()
 
@@ -1028,32 +1027,58 @@ class ActorHandle ( object ):
 
                 ret = ActorResponse( ret )
 
-                # If we hit a timeout or wrong dest we don't take chances
-                # and remove that socket
-                if not ret.isTimedOut and ( ret.isSuccess or ( ret.error not in ( 'wrong dest', 'queue full' ) ) ):
+                if ret.isSuccess:
+                    # Successful RPC, report it.
                     break
+
+                if not ret.isTimedOut and ret.error not in ( 'wrong dest', 'queue full' ):
+                    # General errors are reported right away as they are generated
+                    # on purpse and should not be retried.
+                    break
+
+                # So here we handle the following cases:
+                # 1- Wrong dest, probably an actor that restarted and dir has not caught up.
+                # 2- Queue full, this is pretty extreme, things might not go well.
+                # 3- Timeout while waiting for answer.
+
+                # For all those cases, we will remove that peer from list. It should be put back in
+                # rotation next directory refresh assuming that it's still alive. 
+
+                if ret.error == 'wrong dest':
+                    self._log( "Bad destination, recycling." )
+                elif ret.error == 'queue full':
+                    self._log( "Peer has full queues." )
+                elif ret.isTimedOut:
+                    self._log( "Peer timed out." )
                 else:
-                    #self._log( "Received failure (%s:%s) after %s: %s" % ( self._cat, requestType, ( time.time() - qStart ), str( ret ) ) )
-                    #self._log( "Received failure (%s:%s): %s" % ( self._cat, requestType, str( ret ) ) )
-                    if ret.error == 'wrong dest':
-                        self._log( "Bad destination, recycling." )
-                        # There has been no new response in the last history timeframe, or it's a wrong dest.
-                        if 'affinity' == self._mode:
-                            self._affinityCache.pop( affinityKey, None )
-                        else:
-                            self._peerSockets.pop( z_ident, None )
-                            self._localSockets.discard( z_ident )
+                    self._log( "RPC went wrong but how: %s" % str( ret ) )
+
+                # However, don't remove it from rotation if it's the only actor in rotation since it's
+                # better to have one peer in possibly bad state than no peer. Unless it's a wrong dest
+                # which means keeping it around is useless.
+                if ret.error == 'wrong dest' or 1 < len( self._endpoints ):
+                    if 'affinity' == self._mode:
+                        self._affinityCache.pop( affinityKey, None )
+                    else:
+                        self._peerSockets.pop( z_ident, None )
+                        self._localSockets.discard( z_ident )
+                    self._endpoints.pop( z_ident, None )
+                    try:
                         z.close()
+                    except:
+                        pass
                     z = None
-                    curRetry += 1
-                    if ret.isTimedOut or ret.error == 'wrong dest':
-                        self._updateDirectory()
+                    #self._log( "Removed peer socket, now %s left." % ( len( self._endpoints, ) ) )
+
+                curRetry += 1
+                self._updateDirectory()
 
         if ret is None or ret is False:
             ret = ActorResponse( ret )
 
-        if ret.isTimedOut:
-            self._log( "Request failed after %s retries %s:%s." % ( curRetry, self._cat, requestType) )
+        # Report actual drops, not all errors.
+        if not ret.isSuccess and ( ( ret.error in ( 'wrong dest', 'queue full' ) ) or ret.isTimedOut ):
+            self._log( "Request failed after %s retries %s:%s => %s." % ( curRetry, self._cat, requestType, ret.error ) )
             if self._fromActor is not None:
                 self._fromActor.zInc( 'dropped' )
 
