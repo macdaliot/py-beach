@@ -356,6 +356,7 @@ class Beach ( object ):
         '''
         if isForce or ( self._lastCacheUpdate < ( time.time() - self._dirCacheTtl ) ):
             curRetry = 0
+            resp = False
             while curRetry < nRetries:
                 try:
                     node = random.choice( [ x for x in self._nodes.itervalues() if x[ 'offline' ] is False ] )[ 'socket' ]
