@@ -31,6 +31,7 @@ import sys
 import os
 import warnings
 import time
+from sets import Set
 try:
     import M2Crypto
     IV_LENGTH = 0x10
@@ -86,6 +87,8 @@ def _sanitizeData( obj ):
         return obj.strftime( '%Y-%m-%d %H:%M:%S' )
     elif isinstance( obj, PrefixDict ):
         return dict( obj )
+    elif isinstance( obj, Set ):
+        return list( obj )
     else:
         return str( obj )
 
