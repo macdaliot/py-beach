@@ -500,7 +500,7 @@ class Actor( gevent.Greenlet ):
             # Proactively try to be fair to all handlers.
             self.yieldCpu()
 
-        self.log( "Stopping processing Actor ops requests" )
+        #self.log( "Stopping processing Actor ops requests" )
         #z_remote.close()
         #z_local.close()
         z.close()
