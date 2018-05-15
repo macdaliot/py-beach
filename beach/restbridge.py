@@ -192,10 +192,10 @@ class Bridge:
         #print( "Requesting: %s - %s" % ( action, req ) )
         
         if fromAll:
-            respFuture = handle.requestFromAll( action, data = req, timeout = timeout, nRetries = nRetries )
+            respFuture = handle.requestFromAll( action, data = req, timeout = timeout )
 
             data = []
-            while respFuture.waitForResults( timeout = timeout, nRetries = nRetries ):
+            while respFuture.waitForResults( timeout = timeout ):
                 data += [ x.data for x in respFuture.getNewResults() if x.isSuccess ]
                 if respFuture.isFinished():
                     break
