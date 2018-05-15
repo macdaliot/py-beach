@@ -295,6 +295,8 @@ class Beach ( object ):
 
             # Pick the node with the least number of actors.
             orderedNodes = sorted( counts.items(), key = operator.itemgetter( 1 ) )
+            if 0 == len( orderedNodes ):
+                return False
             evenNodes = [ orderedNodes[ 0 ] ]
             for n in orderedNodes[ 1 : ]:
                 if n[ 1 ] == evenNodes[ 0 ][ 1 ]:
